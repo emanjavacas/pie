@@ -12,11 +12,11 @@ class Dataset(object):
 
         self.indir = os.path.abspath(settings.input_dir)
         self.filenames = glob.glob(self.indir + f'/*.{settings.extension}')
-        random.shuffle(self.filenames)
         self.buffer_size = settings.buffer_size # nb of sentences per buffer
         self.sentence_length = settings.sentence_length
 
     def buffers(self, max_files=None):
+        random.shuffle(self.filenames)
         buff = []
 
         for filename in self.filenames[:max_files]:
