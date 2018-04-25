@@ -1,0 +1,6 @@
+{
+    "input_dir": "medieval_latin/train",
+    "extension": "tab",
+    "buffer_size": 10,
+    "sentence_length": 5
+}
