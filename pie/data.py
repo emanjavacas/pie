@@ -135,6 +135,17 @@ class ModalityLabelEncoder(object):
             return -1
         return len(self.table)
 
+    def __eq__(self, other):
+        if type(other) != ModalityLabelEncoder:
+            return False
+
+        return self.sequential == other.sequential and \
+            self.vocabsize == other.vocabsize and \
+            self.freqs == other.freqs and \
+            self.table == other.table and \
+            self.inverse_table == other.inverse_table and \
+            self.fitted == other.fitted
+
     def add(self, sent):
         if self.fitted:
             raise ValueError("Already fitted")
@@ -170,11 +181,11 @@ class ModalityLabelEncoder(object):
         if not self.fitted:
             raise ValueError("Attempted to serialize unfitted encoder")
 
-        return json.dump({'sequential': self.sequential,
-                          'vocabsize': self.vocabsize,
-                          'freqs': dict(self.freqs),
-                          'table': dict(self.table),
-                          'inverse_table': self.inverse_table})
+        return {'sequential': self.sequential,
+                'vocabsize': self.vocabsize,
+                'freqs': dict(self.freqs),
+                'table': dict(self.table),
+                'inverse_table': self.inverse_table}
 
     @classmethod
     def from_json(cls, obj):
@@ -183,6 +194,8 @@ class ModalityLabelEncoder(object):
         inst.table = dict(obj['table'])
         inst.inverse_table = list(obj['inverse_table'])
         inst.fitted = True
+
+        return inst
 
 
 class LabelEncoder(object):
@@ -201,7 +214,7 @@ class LabelEncoder(object):
         # TODO: lemma-only vocab size?
         self.lemma = ModalityLabelEncoder(sequential=True, vocabsize=vocabsize)
         self.morph = ModalityLabelEncoder(sequential=False)
-        self._all_encoders = [self.token, self.pos, self.lemma, self.morph]
+        self._all_encoders = [self.token, self.lemma, self.pos, self.morph]
 
     @classmethod
     def from_settings(cls, settings):
@@ -214,8 +227,8 @@ class LabelEncoder(object):
         """
         for sent in sents:
             self.token.add(sent.token)
-            self.pos.add(sent.pos)
             self.lemma.add(sent.lemma)
+            self.pos.add(sent.pos)
             self.morph.add(sent.morph)
 
         for le in self._all_encoders:
@@ -256,7 +269,7 @@ class LabelEncoder(object):
         inst.pos = ModalityLabelEncoder.from_json(obj['pos'])
         inst.lemma = ModalityLabelEncoder.from_json(obj['lemma'])
         inst.morph = ModalityLabelEncoder.from_json(obj['morph'])
-        inst._all_encoders = [inst.token, inst.pos, inst.lemma, inst._all_encoders]
+        inst._all_encoders = [inst.token, inst.lemma, inst.pos, inst.morph]
 
         return inst
 
