@@ -3,7 +3,7 @@ import os
 import glob
 import json
 import logging
-from collections import namedtuple
+from collections import namedtuple, Counter
 import random
 
 from .utils import chunks
@@ -91,14 +91,15 @@ class TabReader(BaseReader):
                 token, pos, lemma, morph = [], [], [], []
 
                 for line in f:
-                    # update counter to filename
                     self.current_line += 1
+
                     try:
                         t, p, l, m = self._parse_line(line.strip())
                     except Exception:
                         logging.warning("Parse error at [{}:n{}]".format(
                             self.current_fpath, self.current_line + 1))
                         continue
+
                     token.append(t)
                     pos.append(p)
                     lemma.append(l)
@@ -109,31 +110,141 @@ class TabReader(BaseReader):
                         token, pos, lemma, morph = [], [], [], []
 
 
+class ModalityLabelEncoder(object):
+    """
+    Label encoder for single modality.
+    """
+    def __init__(self, sequential, vocabsize=None):
+        self.sequential = sequential
+        self.vocabsize = vocabsize
+        self._reserved = (LabelEncoder.UNK,)
+        if sequential:
+            self._reserved += (LabelEncoder.EOS, LabelEncoder.PAD)
+
+        self.freqs = Counter()
+        self.table = None
+        self.inverse_table = None
+        self.fitted = False
+
+    def add(self, sent):
+        if self.fitted:
+            raise ValueError("Already fitted")
+        self.freqs.update(sent)
+
+    def compute_vocab(self):
+        if self.fitted:
+            raise ValueError("Cannot compute vocabulary, already fitted")
+
+        self.table = list(self._reserved)
+        if self.sequential and self.vocabsize is not None:
+            self.table += self.freqs.most_common(n=self.vocabsize)
+        else:
+            self.table += list(self.freqs)
+
+        self.inverse_table = {sym: idx for idx, sym in enumerate(self.table)}
+        self.fitted = True
+
+    def transform(self, sent):
+        if not self.fitted:
+            raise ValueError("Vocabulary hasn't been computed yet")
+
+        sent = [self.table.get(tok, self.table[LabelEncoder.UNK]) for tok in sent]
+
+        if self.sequential:
+            sent.append(self.table.get(LabelEncoder.EOS))
+
+        return sent
+
+    def jsonify(self):
+        if not self.fitted:
+            raise ValueError("Attempted to serialize unfitted encoder")
+
+        return json.dump({'sequential': self.sequential,
+                          'vocabsize': self.vocabsize,
+                          'freqs': dict(self.freqs),
+                          'table': self.table,
+                          'inverse_table': self.inverse_table})
+
+    @classmethod
+    def from_json(cls, obj):
+        inst = cls(obj['sequential'], obj['vocabsize'])
+        inst.freqs = Counter(obj['freqs'])
+        inst.table = list(obj['table'])
+        inst.inverse_table = dict(obj['inverse_table'])
+        inst.fitted = True
+
+
 class LabelEncoder(object):
+    """
+    Complex Label encoder for all modalities.
+    """
+
     EOS = '<eos>'
     PAD = '<pad>'
     UNK = '<unk>'
 
-    def fit(self, sents):
-        for sent in sents:
-            # TODO: fit sent-by-sent all sent.token, sent.pos, sent.lemma, sent.morph
-            pass
+    def __init__(self, vocabsize):
+        # TODO: set off modalities if required
+        self.token = ModalityLabelEncoder(sequential=True, vocabsize=vocabsize)
+        self.pos = ModalityLabelEncoder(sequential=True)
+        # TODO: lemma-only vocab size?
+        self.lemma = ModalityLabelEncoder(sequential=True, vocabsize=vocabsize)
+        self.morph = ModalityLabelEncoder(sequential=False)
+        self._all_encoders = [self.token, self.pos, self.lemma, self.morph]
 
-    def transform(self, sents):  # sents will be a batch
-        # TODO
-        pass
+    @classmethod
+    def from_settings(cls, settings):
+        return cls(settings.vocabsize)
+
+    def fit(self, sents):
+        """
+        Arguments:
+          - sents: list of Sent
+        """
+        for sent in sents:
+            self.token.add(sent.token)
+            self.pos.add(sent.pos)
+            self.lemma.add(sent.lemma)
+            self.morph.add(sent.morph)
+
+        for le in self._all_encoders:
+            le.compute_vocab()
+
+    def transform(self, sents):
+        """
+        Arguments:
+           - sents: list of Sent
+        """
+        token, pos, lemma, morph = [], [], [], []
+        for sent in sents:
+            token.append(self.token.transform(sent.token))
+            pos.append(self.pos.transform(sent.pos))
+            lemma.append(self.lemma.transform(sent.lemma))
+            morph.append(self.morph.transform(sent.morph))
+
+        return token, pos, lemma, morph
 
     def save(self, path):
         with open(path, 'w+') as f:
-            # TODO: extract necessary info
-            json.dumps(self, f)
+            json.dump({'token': self.token.jsonify(),
+                       'pos': self.pos.jsonify(),
+                       'lemma': self.lemma.jsonify(),
+                       'morph': self.morph.jsonify()}, f)
 
     @classmethod
     def load(cls, path):
         with open(path, 'r+') as f:
             obj = json.load(f)
-        # TODO: load necessary info
-        inst = cls(obj)
+
+        inst = cls(vocabsize=None)  # dummy instance to overwrite
+
+        # set encoders
+        inst.token = ModalityLabelEncoder.from_json(obj['token'])
+        inst.pos = ModalityLabelEncoder.from_json(obj['pos'])
+        inst.lemma = ModalityLabelEncoder.from_json(obj['lemma'])
+        inst.morph = ModalityLabelEncoder.from_json(obj['morph'])
+        inst._all_encoders = [inst.token, inst.pos, inst.lemma, inst._all_encoders]
+
         return inst
 
 
@@ -168,7 +279,7 @@ class Dataset(object):
     def pack_batch(self, batch):
         batch = sorted(batch, key=lambda sent: len(sent.token), reverse=True)
         lengths = [len(sent.token) for sent in batch]
-        token, pos, lemma, morph = zip(*self.label_encoder.transform(batch))
+        token, pos, lemma, morph = self.label_encoder.transform(batch)
 
         # TODO: transform to tensors
 
