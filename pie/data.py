@@ -9,7 +9,7 @@ import random
 from .utils import chunks
 
 
-Sent = namedtuple('Sent', ('token', 'pos', 'lemma', 'morph'))
+Sent = namedtuple('Sent', ('token', 'lemma', 'pos', 'morph'))
 
 
 class BaseReader(object):
@@ -90,13 +90,13 @@ class TabReader(BaseReader):
             self.current_fpath = fpath
 
             with open(fpath, 'r+') as f:
-                token, pos, lemma, morph = [], [], [], []
+                token, lemma, pos, morph = [], [], [], []
 
                 for line in f:
                     self.current_line += 1
 
                     try:
-                        t, p, l, m = self._parse_line(line.strip())
+                        t, l, p, m = self._parse_line(line.strip())
                     except Exception:
                         logging.warning("Parse error at [{}:n{}]".format(
                             self.current_fpath, self.current_line + 1))
@@ -108,8 +108,8 @@ class TabReader(BaseReader):
                     morph.append(m)
 
                     if self._check_breakline(pos):
-                        yield Sent(token, pos, lemma, morph)
-                        token, pos, lemma, morph = [], [], [], []
+                        yield Sent(token, lemma, pos, morph)
+                        token, lemma, pos, morph = [], [], [], []
 
         self.reset()
 
