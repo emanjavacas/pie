@@ -59,10 +59,15 @@ def settings_from_file(config_path, verbose=True):
     with open(os.sep.join((os.path.dirname(__file__),
                           'default_settings.json')), 'r') as f:
         defaults = json.load(f)
-
     for k in defaults:
         if k not in settings:
             settings[k] = defaults[k]
+
+    # ultimately overwrite settings from environ vars of the form PIE_{var}
+    for k in settings:
+        env_k = 'PIE_{}'.format(k.upper())
+        if env_k in os.environ:
+            settings[k] = type(settings[k])(os.environ[env_k])
 
     # store the config path too:
     settings.config_path = config_path
