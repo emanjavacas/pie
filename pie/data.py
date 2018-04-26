@@ -48,6 +48,8 @@ class TabReader(BaseReader):
     def __init__(self, settings):
         self.indir = os.path.abspath(settings.input_dir)
         self.filenames = glob.glob(self.indir + '/*.{}'.format(settings.extension))
+        if len(self.filenames) == 0:
+            raise ValueError("Couldn't find matching files in {}".format(self.indir))
         self.breakline_type = settings.breakline_type
         self.breakline_data = settings.breakline_data
         self.shuffle = settings.shuffle
@@ -109,6 +111,8 @@ class TabReader(BaseReader):
                         yield Sent(token, pos, lemma, morph)
                         token, pos, lemma, morph = [], [], [], []
 
+        self.reset()
+
 
 class ModalityLabelEncoder(object):
     """
@@ -126,6 +130,11 @@ class ModalityLabelEncoder(object):
         self.inverse_table = None
         self.fitted = False
 
+    def __len__(self):
+        if not self.fitted:
+            return -1
+        return len(self.table)
+
     def add(self, sent):
         if self.fitted:
             raise ValueError("Already fitted")
@@ -135,13 +144,15 @@ class ModalityLabelEncoder(object):
         if self.fitted:
             raise ValueError("Cannot compute vocabulary, already fitted")
 
-        self.table = list(self._reserved)
-        if self.sequential and self.vocabsize is not None:
-            self.table += self.freqs.most_common(n=self.vocabsize)
+        self.inverse_table = list(self._reserved)
+        if self.sequential:
+            self.inverse_table += [
+                sym for sym, _ in
+                self.freqs.most_common(n=self.vocabsize or len(self.freqs))]
         else:
-            self.table += list(self.freqs)
+            self.inverse_table += list(self.freqs)
 
-        self.inverse_table = {sym: idx for idx, sym in enumerate(self.table)}
+        self.table = {sym: idx for idx, sym in enumerate(self.inverse_table)}
         self.fitted = True
 
     def transform(self, sent):
@@ -162,15 +173,15 @@ class ModalityLabelEncoder(object):
         return json.dump({'sequential': self.sequential,
                           'vocabsize': self.vocabsize,
                           'freqs': dict(self.freqs),
-                          'table': self.table,
+                          'table': dict(self.table),
                           'inverse_table': self.inverse_table})
 
     @classmethod
     def from_json(cls, obj):
         inst = cls(obj['sequential'], obj['vocabsize'])
         inst.freqs = Counter(obj['freqs'])
-        inst.table = list(obj['table'])
-        inst.inverse_table = dict(obj['inverse_table'])
+        inst.table = dict(obj['table'])
+        inst.inverse_table = list(obj['inverse_table'])
         inst.fitted = True
 
 
@@ -209,6 +220,8 @@ class LabelEncoder(object):
 
         for le in self._all_encoders:
             le.compute_vocab()
+
+        return self
 
     def transform(self, sents):
         """
@@ -264,7 +277,7 @@ class Dataset(object):
       - evaluation: bool, whether the dataset is an evaluation dataset or not
       - label_encoder: optional, prefitted LabelEncoder object
     """
-    def __init__(self, settings, reader, evaluation=False, label_encoder=None):
+    def __init__(self, settings, evaluation=False, label_encoder=None):
         self.buffer_size = settings.buffer_size
         self.batch_size = settings.batch_size
         if self.batch_size > self.buffer_size:
@@ -273,8 +286,11 @@ class Dataset(object):
         self.device = settings.device
         self.shuffle = settings.shuffle
 
-        self.reader = reader
-        self.label_encoder = label_encoder or LabelEncoder().fit(self.reader)
+        self.reader = TabReader(settings)
+        self.label_encoder = label_encoder
+        if self.label_encoder is None:
+            self.label_encoder = LabelEncoder.from_settings(settings) \
+                                             .fit(self.reader.readsents())
 
     def pack_batch(self, batch):
         batch = sorted(batch, key=lambda sent: len(sent.token), reverse=True)
@@ -301,9 +317,9 @@ class Dataset(object):
                 for batch in chunks(buf, self.batch_size):
                     yield self.pack_batch(batch)
 
-                self.buf = []
+                buf = []
 
-            self.buf.append(sent)
+            buf.append(sent)
 
         if len(buf) > 0:
             for batch in chunks(buf, self.batch_size):

@@ -1,11 +1,13 @@
+
 import os
-from pie.utils import Settings, settings_from_file
+
+from pie.settings import settings_from_file
 from pie.data import Dataset
 
-s = settings_from_file(os.path.abspath('config.json'))
-data = Dataset(s)
+settings = settings_from_file(os.path.abspath('config.json'))
+data = Dataset(settings)
 
-for buff in data.buffers(max_files=2):
+for batch in data.batches():
     print()
-    for sentence in buff:
-        print(sentence)
+    for sent in batch:
+        print(sent)

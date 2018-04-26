@@ -1,6 +1,9 @@
 {
-    "input_dir": "medieval_latin/train",
-    "extension": "tab",
-    "buffer_size": 10,
-    "sentence_length": 5
+  "input_dir": "datasets/medieval_latin/train",
+  "extension": "tab",
+  "buffer_size": 10,
+  "batch_size": 2,
+  "breakline_type": "LENGTH",
+  "breakline_data": 5,
+  "shuffle": true
 }
