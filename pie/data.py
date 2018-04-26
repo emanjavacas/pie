@@ -34,16 +34,17 @@ class TabReader(BaseReader):
     modo	modus	NN	gender=MASCULINE|case=ABLATIVE|number=SINGULAR
     ...
 
-    Relevant settings:
-      - input_dir: str
-      - extension: str, type of csv
-      - breakline_type: str, one of "LENGTH" or "FULLSTOP".
-      - breakline_data: str or int, if breakline_type is LENGTH it will be assumed
-            to be an integer defining the number of words per sentence, and the
-            dataset will be break into equally sized chunks. If breakline_type is
-            FULLSTOP it will be assumed to be a POS tag to use as criterion to
-            split sentences.
-      - shuffle: bool, whether to shuffle files after each iteration.
+    Settings
+    ==========
+    input_dir : str
+    extension : str, type of csv
+    breakline_type : str, one of "LENGTH" or "FULLSTOP".
+    breakline_data : str or int, if breakline_type is LENGTH it will be assumed
+        to be an integer defining the number of words per sentence, and the
+        dataset will be break into equally sized chunks. If breakline_type is
+        FULLSTOP it will be assumed to be a POS tag to use as criterion to
+        split sentences.
+    shuffle : bool, whether to shuffle files after each iteration.
     """
     def __init__(self, settings):
         self.indir = os.path.abspath(settings.input_dir)
@@ -222,8 +223,9 @@ class LabelEncoder(object):
 
     def fit(self, sents):
         """
-        Arguments:
-          - sents: list of Sent
+        Parameters
+        ===========
+        sents : list of Sent
         """
         for sent in sents:
             self.token.add(sent.token)
@@ -238,8 +240,9 @@ class LabelEncoder(object):
 
     def transform(self, sents):
         """
-        Arguments:
-           - sents: list of Sent
+        Parameters
+        ===========
+        sents : list of Sent
         """
         token, pos, lemma, morph = [], [], [], []
         for sent in sents:
@@ -278,17 +281,19 @@ class Dataset(object):
     """
     Dataset class to encode files into integers and compute batches.
 
-    Relevant settings:
-      - buffer_size: int, maximum number of sentences in memory at any given time.
-           The larger the buffer size the more memory instensive the dataset will
-           be but also the more effective the shuffling over instances.
-      - batch_size: int, number of sentences per batch
-      - device: str, target device to put the processed batches on
-      - shuffle: bool, whether to shuffle items in the buffer
+    Settings
+    ===========
+    buffer_size : int, maximum number of sentences in memory at any given time.
+       The larger the buffer size the more memory instensive the dataset will
+       be but also the more effective the shuffling over instances.
+    batch_size : int, number of sentences per batch
+    device : str, target device to put the processed batches on
+    shuffle : bool, whether to shuffle items in the buffer
 
-    Arguments:
-      - evaluation: bool, whether the dataset is an evaluation dataset or not
-      - label_encoder: optional, prefitted LabelEncoder object
+    Parameters
+    ===========
+    evaluation : bool, whether the dataset is an evaluation dataset or not
+    label_encoder : optional, prefitted LabelEncoder object
     """
     def __init__(self, settings, evaluation=False, label_encoder=None):
         self.buffer_size = settings.buffer_size
