@@ -151,7 +151,6 @@ class TabReader(BaseReader):
             """
             Adds line to current sentence.
             """
-            # TODO: assumes modalities are always in order (token, lemma, pos, morph)
             mods = line.split()
             if len(mods) != len(self.data):
                 raise LineParseException(
@@ -159,6 +158,7 @@ class TabReader(BaseReader):
                     "Expected {} but got {} at line {}.".format(
                         len(self.data), len(mods), linenum))
 
+            # TODO: assumes modalities are always in order (token, lemma, pos, morph)
             for mod, data in zip(MODALITIES, line.split()):
                 # TODO: parse morph into something meaningful
                 self.data[mod].append(data)
@@ -228,9 +228,10 @@ class ModalityLabelEncoder(object):
     """
     Label encoder for single modality.
     """
-    def __init__(self, sequential, vocabsize=None):
+    def __init__(self, sequential, vocabsize=None, name='Unknown'):
         self.sequential = sequential
         self.vocabsize = vocabsize
+        self.name = name
         self._reserved = (LabelEncoder.UNK,)
         if sequential:
             self._reserved += (LabelEncoder.EOS, LabelEncoder.PAD)
@@ -265,6 +266,10 @@ class ModalityLabelEncoder(object):
         if self.fitted:
             raise ValueError("Cannot compute vocabulary, already fitted")
 
+        if len(self.freqs) == 0:
+            logging.warning(
+                "Computing vocabulary for empty encoder {}".format(self.name))
+
         self.inverse_table = list(self._reserved)
         if self.sequential:
             self.inverse_table += [
@@ -286,6 +291,21 @@ class ModalityLabelEncoder(object):
             sent.append(self.table.get(LabelEncoder.EOS))
 
         return sent
+
+    def _get_sym(self, sym):
+        if not self.fitted:
+            raise ValueError("Vocabulary hasn't been computed yet")
+
+        if not self.sequential:
+            raise ValueError("No PAD token for non-sequential Label Encoder")
+
+        return self.table[getattr(LabelEncoder, sym)]
+
+    def get_pad(self):
+        return self._get_sym('PAD')
+
+    def get_eos(self):
+        return self._get_sym('EOS')
 
     def jsonify(self):
         if not self.fitted:
@@ -318,12 +338,13 @@ class LabelEncoder(object):
     UNK = '<unk>'
 
     def __init__(self, vocabsize):
-        # TODO: set off modalities if required
-        self.token = ModalityLabelEncoder(sequential=True, vocabsize=vocabsize)
-        self.pos = ModalityLabelEncoder(sequential=True)
+        self.token = ModalityLabelEncoder(
+            sequential=True, vocabsize=vocabsize, name='token')
+        self.pos = ModalityLabelEncoder(sequential=True, name='pos')
         # TODO: lemma-only vocab size?
-        self.lemma = ModalityLabelEncoder(sequential=True, vocabsize=vocabsize)
-        self.morph = ModalityLabelEncoder(sequential=False)
+        self.lemma = ModalityLabelEncoder(
+            sequential=True, vocabsize=vocabsize, name='lemma')
+        self.morph = ModalityLabelEncoder(sequential=False, name='morph')
         self._all_encoders = [self.token, self.lemma, self.pos, self.morph]
 
     @classmethod
@@ -338,9 +359,12 @@ class LabelEncoder(object):
         """
         for sent in sents:
             self.token.add(sent.token)
-            self.lemma.add(sent.lemma)
-            self.pos.add(sent.pos)
-            self.morph.add(sent.morph)
+            if sent.lemma is not None:
+                self.lemma.add(sent.lemma)
+            if sent.pos is not None:
+                self.pos.add(sent.pos)
+            if sent.morph is not None:
+                self.morph.add(sent.morph)
 
         for le in self._all_encoders:
             le.compute_vocab()
@@ -371,10 +395,10 @@ class LabelEncoder(object):
 
     def save(self, path):
         with open(path, 'w+') as f:
-            json.dump({'token': self.token.jsonify(),
-                       'pos': self.pos.jsonify(),
-                       'lemma': self.lemma.jsonify(),
-                       'morph': self.morph.jsonify()}, f)
+            json.dump({self.token.name: self.token.jsonify(),
+                       self.pos.name: self.pos.jsonify(),
+                       self.lemma.name: self.lemma.jsonify(),
+                       self.morph.name: self.morph.jsonify()}, f)
 
     @classmethod
     def load(cls, path):
@@ -430,7 +454,12 @@ class Dataset(object):
         Pad batch into tensor
         """
         maxlen, batch_size = max(map(len, batch)), len(batch)
-        torch.zeros(len())
+        output = torch.zeros(maxlen, batch_size).long() + padding_id
+        for i, inst in enumerate(batch):
+            output[i, 0:len(inst)].copy_(
+                torch.tensor(inst, dtype=torch.int64, device=device))
+
+        return output
 
     def pack_batch(self, batch):
         batch = sorted(batch, key=lambda sent: len(sent.token), reverse=True)
@@ -438,7 +467,7 @@ class Dataset(object):
         lengths = [len(sent.token) for sent in batch]
         token, pos, lemma, morph = self.label_encoder.transform(batch)
 
-        # TODO: transform to tensors
+        token = Dataset.pad_batch(token, self.label_encoder.token.get_pad)
 
         return (token, pos, lemma, morph), lengths
 
