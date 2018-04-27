@@ -6,20 +6,106 @@ import logging
 from collections import namedtuple, Counter
 import random
 
+import torch
+
 from .utils import chunks
 
-
+# All currently supported modalities in expected order
+MODALITIES = 'token', 'lemma', 'pos', 'morph'
+# Wrapper enum-like class to store sentence info
 Sent = namedtuple('Sent', ('token', 'lemma', 'pos', 'morph'))
+
+
+class LineParseException(Exception):
+    pass
 
 
 class BaseReader(object):
     """
     Abstract reader class
+
+    Settings
+    ==========
+    input_dir : str, root directory with data files
+    filenames : list, data files to be processed
+    extension : str, type of csv
+    shuffle : bool, whether to shuffle files after each iteration
+
+    Attributes
+    ===========
+    current_sent : int, counter on number of sents processed in total (over all files)
+    current_fpath : str, name of the file being currently processed
     """
+    def __init__(self, settings):
+        self.input_dir = os.path.abspath(settings.input_dir)
+        self.filenames = glob.glob(self.input_dir + '/*.{}'.format(settings.extension))
+        if len(self.filenames) == 0:
+            raise ValueError("Couldn't find matching files in {}".format(self.input_dir))
+        self.shuffle = settings.shuffle
+
+        # attributes
+        self.current_sent = 0
+        self.current_fpath = None
+
     def reset(self):
+        """
+        Called after a full run over `readsents`
+        """
+        self.current_sent = 0
+
+        if self.shuffle:
+            random.shuffle(self.filenames)
+
+    def readsents(self):
+        """
+        Generator over dataset sentences. Each output will be a Sent object with
+        the attributes "token", "pos", "lemma" and "morph", each of which is a list
+        of strings.
+        """
+        for fpath in self.filenames:
+            self.current_fpath = fpath
+
+            lines = self.parselines(fpath, self.get_modalities(fpath))
+
+            while True:
+                try:
+                    token, lemma, pos, morph = next(lines)
+                    yield Sent(token, lemma, pos, morph)
+                    self.current_sent += 1
+
+                except LineParseException as e:
+                    logging.warning(
+                        "Parse error at [{}:sent={}]\n  => {}"
+                        .format(self.current_fpath,
+                                self.current_sent + 1,
+                                str(e)))
+                    continue
+
+                except StopIteration:
+                    break
+
+        self.reset()
+
+    def parselines(self, fpath, modalities):
+        """
+        Generator over tuples of (token, lemma, pos, morph), where each item is a list
+        of strings with data from the corresponding modality. Some modalities might be
+        missing from a file, in which case the corresponding value is None.
+
+        ParseError can be thrown if an issue is encountered during processing.
+        The issue can be documented by passing an error message as second argument
+        to ParseError
+        """
         raise NotImplementedError
 
-    def readlines(self):
+    def get_modalities(self, fpath):
+        """
+        Reader is responsible for extracting the expected modalities in the file.
+
+        Returns
+        =========
+        Set of modalities in a file
+        """
         raise NotImplementedError
 
 
@@ -35,84 +121,107 @@ class TabReader(BaseReader):
     ...
 
     Settings
-    ==========
-    input_dir : str
-    extension : str, type of csv
+    ===========
     breakline_type : str, one of "LENGTH" or "FULLSTOP".
     breakline_data : str or int, if breakline_type is LENGTH it will be assumed
         to be an integer defining the number of words per sentence, and the
         dataset will be break into equally sized chunks. If breakline_type is
         FULLSTOP it will be assumed to be a POS tag to use as criterion to
         split sentences.
-    shuffle : bool, whether to shuffle files after each iteration.
     """
     def __init__(self, settings):
-        self.indir = os.path.abspath(settings.input_dir)
-        self.filenames = glob.glob(self.indir + '/*.{}'.format(settings.extension))
-        if len(self.filenames) == 0:
-            raise ValueError("Couldn't find matching files in {}".format(self.indir))
+        super(TabReader, self).__init__(settings)
         self.breakline_type = settings.breakline_type
         self.breakline_data = settings.breakline_data
-        self.shuffle = settings.shuffle
 
-        # attributes
-        self.current_line = 0
-        self.current_fpath = None
-
-    def _parse_line(self, line):
-        tok, lemma, pos, morph = line.split()
-        return (tok, lemma, pos, morph)
-
-    def _check_breakline(self, pos):
-        if self.breakline_type == 'FULLSTOP':
-            if pos[-1] == self.breakline_data:
-                return True
-        elif self.breakline_type == 'LENGTH':
-            if len(pos) == self.breakline_data:
-                return True
-
-    def reset(self):
+    class LineParser(object):
         """
-        Must be called after a full run over `readsents`
+        Inner class to handle sentence breaks
         """
-        self.current_line = 0
-        self.current_fpath = None
+        def __init__(self, modalities, breakline_type, breakline_data):
+            if breakline_type == 'FULLSTOP' and 'pos' not in modalities:
+                raise ValueError("Cannot use FULLSTOP info to break lines. "
+                                 "Modality POS is missing.")
 
-        if self.shuffle:
-            random.shuffle(self.filenames)
+            self.breakline_type = breakline_type
+            self.breakline_data = breakline_data
+            self.data = {mod: [] for mod in modalities}
 
-    def readsents(self):
+        def add(self, line, linenum):
+            """
+            Adds line to current sentence.
+            """
+            # TODO: assumes modalities are always in order (token, lemma, pos, morph)
+            mods = line.split()
+            if len(mods) != len(self.data):
+                raise LineParseException(
+                    "Not enough number of modalities. "
+                    "Expected {} but got {} at line {}.".format(
+                        len(self.data), len(mods), linenum))
+
+            for mod, data in zip(MODALITIES, line.split()):
+                # TODO: parse morph into something meaningful
+                self.data[mod].append(data)
+
+        def check_breakline(self):
+            """
+            Check if sentence is finished.
+            """
+            if self.breakline_type == 'FULLSTOP':
+                if self.data['pos'][-1] == self.breakline_data:
+                    return True
+            elif self.breakline_type == 'LENGTH':
+                if len(self.data['token']) == self.breakline_data:
+                    return True
+
+        def get_data(self):
+            """
+            Return sentence as data (tuple of modalities)
+            """
+            return tuple(self.data.get(mod) for mod in MODALITIES)
+
+        def reset(self):
+            """
+            Reset sentence data
+            """
+            self.data = {mod: [] for mod in self.data}
+
+    def parselines(self, fpath, modalities):
         """
-        Generator over dataset sentences. Each output will be a Sent object with
-        the attributes "token", "pos", "lemma" and "morph", each of which is a list
-        of strings.
+        Generator over sentences in a single file
         """
-        for fpath in self.filenames:
-            self.current_fpath = fpath
+        with open(fpath, 'r+') as f:
+            parser = self.LineParser(
+                modalities, self.breakline_type, self.breakline_data)
 
-            with open(fpath, 'r+') as f:
-                token, lemma, pos, morph = [], [], [], []
+            for line_num, line in enumerate(f):
+                line = line.strip()
 
-                for line in f:
-                    self.current_line += 1
+                if not line:    # avoid empty line
+                    continue
 
-                    try:
-                        t, l, p, m = self._parse_line(line.strip())
-                    except Exception:
-                        logging.warning("Parse error at [{}:n{}]".format(
-                            self.current_fpath, self.current_line + 1))
-                        continue
+                parser.add(line, line_num)
 
-                    token.append(t)
-                    pos.append(p)
-                    lemma.append(l)
-                    morph.append(m)
+                if parser.check_breakline():
+                    yield parser.get_data()
+                    parser.reset()
 
-                    if self._check_breakline(pos):
-                        yield Sent(token, lemma, pos, morph)
-                        token, lemma, pos, morph = [], [], [], []
+    def get_modalities(self, fpath):
+        """
+        Guess modalities from file assuming expected order
+        """
+        with open(fpath, 'r+') as f:
 
-        self.reset()
+            # move to first non empty line
+            line = next(f).strip()
+            while not line:
+                line = next(f).strip()
+
+            line = line.split()
+            if len(line) == 0:
+                raise ValueError("Not enough modalities in file [{}]".format(fpath))
+            else:
+                return set(MODALITIES[:len(line)])  # TODO: modalities in expected order
 
 
 class ModalityLabelEncoder(object):
@@ -243,15 +352,22 @@ class LabelEncoder(object):
         Parameters
         ===========
         sents : list of Sent
+
+        Returns
+        ===========
+        tuple of modalities. Each modality is either a list of integer or None.
         """
         token, pos, lemma, morph = [], [], [], []
         for sent in sents:
             token.append(self.token.transform(sent.token))
-            pos.append(self.pos.transform(sent.pos))
-            lemma.append(self.lemma.transform(sent.lemma))
-            morph.append(self.morph.transform(sent.morph))
+            if sent.pos is not None:
+                pos.append(self.pos.transform(sent.pos))
+            if sent.lemma is not None:
+                lemma.append(self.lemma.transform(sent.lemma))
+            if sent.morph is not None:
+                morph.append(self.morph.transform(sent.morph))
 
-        return token, pos, lemma, morph
+        return token, pos or None, lemma or None, morph or None
 
     def save(self, path):
         with open(path, 'w+') as f:
@@ -292,26 +408,33 @@ class Dataset(object):
 
     Parameters
     ===========
-    evaluation : bool, whether the dataset is an evaluation dataset or not
     label_encoder : optional, prefitted LabelEncoder object
     """
-    def __init__(self, settings, evaluation=False, label_encoder=None):
+    def __init__(self, settings, label_encoder=None):
+        if settings.batch_size > settings.buffer_size:
+            raise ValueError("Not enough buffer capacity {} for batch_size of {}"
+                             .format(settings.buffer_size, settings.batch_size))
+
         self.buffer_size = settings.buffer_size
         self.batch_size = settings.batch_size
-        if self.batch_size > self.buffer_size:
-            raise ValueError("Not enough buffer capacity {} for batch_size of {}"
-                             .format(self.buffer_size, self.batch_size))
         self.device = settings.device
         self.shuffle = settings.shuffle
 
         self.reader = TabReader(settings)
-        self.label_encoder = label_encoder
-        if self.label_encoder is None:
-            self.label_encoder = LabelEncoder.from_settings(settings) \
-                                             .fit(self.reader.readsents())
+        self.label_encoder = label_encoder or \
+            LabelEncoder.from_settings(settings).fit(self.reader.readsents())
+
+    @staticmethod
+    def pad_batch(self, batch, padding_id, device):
+        """
+        Pad batch into tensor
+        """
+        maxlen, batch_size = max(map(len, batch)), len(batch)
+        torch.zeros(len())
 
     def pack_batch(self, batch):
         batch = sorted(batch, key=lambda sent: len(sent.token), reverse=True)
+        # assumes sent.token is always given
         lengths = [len(sent.token) for sent in batch]
         token, pos, lemma, morph = self.label_encoder.transform(batch)
 
