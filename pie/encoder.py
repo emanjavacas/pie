@@ -2,7 +2,7 @@
 import torch.nn as nn
 from torch.nn.utils.rnn import pad_packed_sequence as unpack
 
-from pie import torch_utils as tutils
+from pie import torch_utils
 
 
 class RNNEncoder(nn.Module):
@@ -31,11 +31,11 @@ class RNNEncoder(nn.Module):
         else:
             inp = self.embs(inp, lengths, *args)
 
-        hidden = tutils.init_hidden_for(
+        hidden = torch_utils.init_hidden_for(
             inp, self.num_dirs, self.num_layers,
             self.hidden_size // self.num_dirs, self.cell)
 
-        inp, unsort = tutils.pack_sort(inp, lengths)
+        inp, unsort = torch_utils.pack_sort(inp, lengths)
         inp, _ = self.rnn(inp, hidden)
         inp, _ = unpack(inp)
         inp = inp[:, unsort]

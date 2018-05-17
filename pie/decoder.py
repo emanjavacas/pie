@@ -41,10 +41,10 @@ class LinearDecoder(nn.Module):
 
         return linear_out
 
-    def loss(self, enc_outs, targets):
-        logits = self(enc_outs).view(-1, len(self.label_encoder))
-        loss = F.cross_entropy(logits, targets.view(-1), weight=self.nll_weight,
-                               size_average=False)
+    def loss(self, logits, targets):
+        loss = F.cross_entropy(
+            logits.view(-1, len(self.label_encoder)), targets.view(-1),
+            weight=self.nll_weight, size_average=False)
 
         return loss / targets.ne(self.label_encoder.get_pad()).sum().item()
 
@@ -172,22 +172,37 @@ class AttentionalDecoder(nn.Module):
         return self.proj(context)
 
     def loss(self, logits, targets):
-        logits = logits.view(-1, len(self.label_encoder))
-        loss = F.cross_entropy(logits, targets.view(-1), weight=self.nll_weight,
-                               size_average=False)
+        """
+        Compute loss from logits (output of forward)
+
+        Parameters
+        ===========
+        logits : tensor(seq_len x batch x vocab)
+        """
+        loss = F.cross_entropy(
+            logits.view(-1, len(self.label_encoder)), targets.view(-1),
+            weight=self.nll_weight, size_average=False)
+
         return loss / targets.ne(self.label_encoder.get_pad()).sum().item()
 
-    def generate(self, enc_outs, max_seq_len=20, beam_width=5):
+    def generate(self, enc_outs, context=None, max_seq_len=20, beam_width=5):
         """
         Decoding routine for inference with beam search
+
+        Parameters
+        ===========
+        enc_outs : tensor(src_seq_len x batch x hidden_size)
+        context : tensor(batch x hidden_size), optional
         """
         hidden = None
         batch = enc_outs.size(1)
-        beams = [Beam(beam_width, self.label_encoder.char.get_eos(),
+        beams = [Beam(beam_width, eos=self.label_encoder.get_eos(),
                       device=enc_outs.device) for _ in range(batch)]
 
         # expand data along beam width
         enc_outs = enc_outs.repeat(1, beam_width, 1)
+        if context is not None:
+            context = context.repeat(beam_width, 1)
 
         for _ in range(max_seq_len):
             if all(not beam.active for beam in beams):
@@ -195,9 +210,13 @@ class AttentionalDecoder(nn.Module):
 
             inp = torch.cat([beam.get_current_state() for beam in beams])
             emb = self.embs(inp)
+            if context is not None:
+                emb = torch.cat([emb, context], dim=1)
+            emb = emb.unsqueeze(0)
             outs, hidden = self.rnn(emb, hidden)
-            context, _ = self.attn(outs, enc_outs)
-            probs = F.log_softmax(self.proj(outs))
+            outs, _ = self.attn(outs, enc_outs)
+            outs = self.proj(outs).squeeze(0)
+            probs = F.log_softmax(outs, dim=1)
 
             # (batch x beam_width x vocab)
             probs = probs.view(beam_width, batch, -1)
@@ -205,10 +224,10 @@ class AttentionalDecoder(nn.Module):
             enc_outs = enc_outs.view(enc_outs.size(0), beam_width, batch, -1)
 
             for i, beam in enumerate(beams):
-                source_beam = beam.get_source_beam()
                 # advance
                 beam.advance(probs[:, i])
                 # rearrange
+                source_beam = beam.get_source_beam()
                 hidden[:, :, i].copy_(
                     hidden[:, :, i].index_select(1, source_beam))
                 enc_outs[:, :, i].copy_(

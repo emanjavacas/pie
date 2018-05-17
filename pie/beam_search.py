@@ -15,12 +15,15 @@ class Beam(object):
     eos: int or None, integer corresponding to the <eos> symbol in the
         vocabulary. It will be used as terminating criterion for the decoding
     """
-    def __init__(self, width, prev, eos=None, device='cpu'):
+    def __init__(self, width, eos, device='cpu'):
+        # attributes
         self.width = width
         self.eos = eos
+
+        # data
         self.active = True
         self.scores = torch.zeros(width)
-        init_state = torch.zeros(width, dtype=torch.int64, device=device).fill_(prev)
+        init_state = torch.zeros(width, dtype=torch.int64, device=device)
         # output values at each beam
         self.beam_values = [init_state]
         # backpointer to previous beam
@@ -101,7 +104,7 @@ class Beam(object):
 
         hypothesis = []
         for step in range(len(self) - 1, -1, -1):
-            hypothesis.append(self.beam_values[step+1][idx])
+            hypothesis.append(self.beam_values[step+1][idx].item())
             idx = self.get_source_beam(step=step)[idx]
         return hypothesis[::-1]
 
@@ -113,6 +116,6 @@ class Beam(object):
             raise ValueError("Beam has only capacity {}".format(self.width))
 
         scores, beam_ids = torch.sort(self.scores, dim=0, descending=True)
-        best_scores, best_beam_ids = scores[:n].tolist(), beam_ids[:n]
+        best_scores, best_beam_ids = scores[:n].tolist(), beam_ids[:n].tolist()
         best_hyps = [self.get_hypothesis(b) for b in best_beam_ids]
         return best_scores, best_hyps

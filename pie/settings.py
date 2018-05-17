@@ -74,7 +74,7 @@ def settings_from_file(config_path, verbose=True):
     settings.config_path = config_path
 
     if verbose:
-        print("::: Loaded Config :::")
+        print("\n::: Loaded Config :::\n")
         for k, v in settings.items():
             print("\t{} : {}".format(k, v))
 

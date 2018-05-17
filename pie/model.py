@@ -1,10 +1,11 @@
 
 import torch.nn as nn
+import torch.nn.functional as F
 
 from pie.embedding import MixedEmbedding
 from pie.decoder import AttentionalDecoder, LinearDecoder
 from pie.encoder import RNNEncoder
-import pie.torch_utils as tutils
+from pie import torch_utils
 
 
 class SimpleModel(nn.Module):
@@ -38,21 +39,22 @@ class SimpleModel(nn.Module):
 
         # POS
         pos, plen = tasks['pos']
-        pos_inp, pos_targets, plen = pos[:-1], pos[1:], plen - 1
+        pos_inp = F.pad(pos[:-1], (0, 0, 1, 0))  # pad the first step
         pos_logits = self.pos_decoder(pos_inp, plen, enc_outs)
-        pos_loss = self.pos_decoder.loss(pos_logits, pos_targets)
+        pos_loss = self.pos_decoder.loss(pos_logits, pos)
 
         # lemma
         lemma, llen = tasks['lemma']
         if isinstance(self.lemma_decoder, AttentionalDecoder):
-            lemma_inp, lemma_target, llen = lemma[:-1], lemma[1:], llen - 1
-            lemma_context = tutils.pad_flatten_batch(enc_outs, wlen)
+            lemma_inp = F.pad(lemma[:-1], (0, 0, 1, 0))
+            lemma_context = torch_utils.pad_flatten_batch(enc_outs, wlen)
             lemma_enc_outs = self.lemma_encoder(lemma_inp, llen)
             lemma_logits = self.lemma_decoder(
-                lemma_inp, llen, lemma_enc_outs, lemma_context)
-            lemma_loss = self.lemma_decoder.loss(lemma_logits, lemma_target)
+                lemma_inp, llen, lemma_enc_outs, context=lemma_context)
+            lemma_loss = self.lemma_decoder.loss(lemma_logits, lemma)
         else:
-            lemma_loss = self.lemma_decoder.loss(enc_outs, lemma)
+            lemma_logits = self.lemma_decoder(enc_outs)
+            lemma_loss = self.lemma_decoder.loss(lemma_logits, lemma)
 
         return pos_loss, lemma_loss
 
@@ -65,5 +67,10 @@ if __name__ == '__main__':
     data = Dataset(settings)
     model = SimpleModel(data.label_encoder, settings.emb_dim, settings.hidden_size)
     for batch in data.batch_generator():
-        print(model.loss(batch))
-    ((word, wlen), (char, clen)), _ = next(data.batch_generator())
+        model.loss(batch)
+        break
+    ((word, wlen), (char, clen)), tasks = next(data.batch_generator())
+
+    enc_outs = model.encoder(word, wlen, char, clen)
+    scores, hyps = model.pos_decoder.generate(enc_outs)
+    print(scores, hyps)

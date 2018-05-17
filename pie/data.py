@@ -1,6 +1,7 @@
 
 import os
 import glob
+import time
 import json
 import logging
 from collections import Counter, defaultdict
@@ -481,7 +482,15 @@ class Dataset(object):
             label_encoder = MultiLabelEncoder.from_settings(settings)
             for task in tasks:
                 label_encoder.add_task(task, **settings.tasks[task])
+            if settings.verbose:
+                print("\n::: Fitting data... :::\n")
+            start = time.time()
             label_encoder.fit(self.reader.readsents())
+            print("\tDone in {:g} secs".format(time.time() - start))
+        if settings.verbose:
+            print("\n::: Training with tasks :::\n")
+            for task in tasks:
+                print("\t{}".format(task))
         self.label_encoder = label_encoder
 
     def pad_batch(self, batch, padding_id):
