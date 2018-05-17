@@ -32,3 +32,14 @@ def chunks(it, size):
         yield buf
 
 
+def flatten(it):
+    """
+    list(flatten([['abc', 'cde'], ['yte']]))
+    >>> ['a', 'b', 'c', 'c', 'd', 'e', 'y', 't', 'e']
+    """
+    if isinstance(it, str):
+        for i in it:
+            yield i
+    else:
+        for subit in it:
+            yield from flatten(subit)

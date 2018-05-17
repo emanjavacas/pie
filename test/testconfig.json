@@ -4,5 +4,7 @@
   "extension": "tab",
   "buffer_size": 3,
   "breakline_type": "FULLSTOP",
-  "breakline_data": "$."
+  "breakline_ref": "pos",
+  "breakline_data": "$.",
+  "word_vocabsize": 1000000
 }

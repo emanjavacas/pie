@@ -1,6 +1,7 @@
 
 import os
 import json
+from json_minify import json_minify
 
 
 class Settings(dict):
@@ -49,7 +50,7 @@ def settings_from_file(config_path, verbose=True):
 
     try:
         with open(config_path, 'r') as f:
-            p = json.load(f)
+            p = json.loads(json_minify(f.read()))
     except Exception as e:
         raise ValueError(
             "Couldn't read config file: %s. Exception: %s" % (config_path, str(e)))
@@ -58,7 +59,7 @@ def settings_from_file(config_path, verbose=True):
     # add default values for missing settings:
     with open(os.sep.join((os.path.dirname(__file__),
                           'default_settings.json')), 'r') as f:
-        defaults = json.load(f)
+        defaults = json.loads(json_minify(f.read()))
     for k in defaults:
         if k not in settings:
             settings[k] = defaults[k]

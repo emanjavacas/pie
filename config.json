@@ -1,7 +1,9 @@
 {
   "input_dir": "datasets/medieval_latin/dev",
   "extension": "tab",
-  "buffer_size": 3,
+  "buffer_size": 1000,
+  "batch_size": 10,
   "breakline_type": "FULLSTOP",
+  "breakline_ref": "pos",
   "breakline_data": "$."
 }

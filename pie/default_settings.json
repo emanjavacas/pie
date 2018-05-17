@@ -1,9 +1,40 @@
 {
+  // data
   "input_dir": "datasets/medieval_latin/train",
+  // file extension
   "extension": "tab",
+  // BREAKLINE logic to use to detect sentence boundaries in tsv files
+  // either "LENGTH" (break after n tokens) or "FULLSTOP" (break after a fullstop symbol)
+  "breakline_type": "LENGTH",
+  // data to use as reference for breaking lines (either "input" or a task name)
+  "breakline_ref": "input",
+  // needed to decide for a sentence boundary (e.g. an integer for LENGTH)
+  "breakline_data": 15,
+  // max vocabsize for character level input
+  "char_vocabsize": 100,
+  // max vocabsize for word level input
+  "word_vocabsize": 20000,
+  // expected order of tasks for tabreader
+  "tasks_order": ["lemma", "pos", "morph"], // only for TabReader
+  // task-related config
+  "tasks": {
+    "lemma": {
+      "level": "char",
+      "vocabsize": 10000
+    },
+    "pos": {
+      "level": "word",
+      "vocabsize": 1000
+    },
+    "morph": {
+      "level": "word"
+    }
+  },
+  // training
   "buffer_size": 10,
   "batch_size": 2,
-  "breakline_type": "LENGTH",
-  "breakline_data": 5,
-  "shuffle": true
+  "shuffle": true,
+  // model
+  "emb_dim": 150,
+  "hidden_size": 300
 }

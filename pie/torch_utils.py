@@ -1,5 +1,6 @@
 
 import torch
+import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence
 
 
@@ -75,6 +76,9 @@ def get_last_token(t, lengths):
     >>> get_last_token(t, lengths).tolist()
     [[3], [3], [3]]
     """
+    if not isinstance(lengths, torch.Tensor):
+        lengths = torch.tensor(lengths)
+
     seq_len, batch, _ = t.size()
     index = torch.arange(0, batch, dtype=torch.int64, device=t.device) * seq_len
     index = index + (lengths - 1)
@@ -83,3 +87,59 @@ def get_last_token(t, lengths):
     t = t.index_select(0, index)
     t = t.view(batch, -1)
     return t
+
+
+def pad_batch(emb, nwords):
+    """
+    Parameters
+    ===========
+    emb : torch.Tensor(batch * nwords x emb_dim)
+    nwords : list(int), number of words per sentence
+
+    Returns
+    =======
+    torch.Tensor(seq_len x batch x emb_dim) where:
+        - seq_len = max(nwords)
+        - batch = len(nwords)
+    """
+    # (emb_dim x batch * nwords)
+    emb = emb.t()
+
+    if isinstance(nwords, torch.Tensor):
+        nwords = nwords.tolist()
+
+    output = []
+    last = 0
+    maxlen = max(nwords)
+
+    for sentlen in nwords:
+        sentlen = sentlen - 1   # remove <eos>
+        padding = (0, maxlen - sentlen)
+        output.append(F.pad(emb[:, last:last+sentlen], padding))
+        last = last + sentlen
+
+    # (batch x emb_dim x max_nwords)
+    output = torch.stack(output)
+    # (emb_dim x batch x max_nwords) -> (max_nwords x batch x emb_dim)
+    output = output.transpose(0, 1).transpose(0, 2)
+
+    return output
+
+
+def pad_flatten_batch(batch, nwords):
+    """
+    Parameters
+    ===========
+    batch : tensor(seq_len, batch, encoding_size), output of the encoder
+    nwords : tensor(batch), lengths of the sequence (without padding) including
+        <eos> symbols
+
+    Returns
+    ========
+    tensor(nwords, encoding_size)
+    """
+    output = []
+    for sent, sentlen in zip(batch.t(), nwords):
+        output.extend(list(sent[:sentlen-1].chunk(sentlen-1)))  # remove <eos>
+
+    return torch.cat(output, dim=0)
