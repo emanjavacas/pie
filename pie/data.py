@@ -8,12 +8,14 @@ import random
 
 import torch
 
-from .utils import chunks
+from pie import utils
+from pie import consts
 
-# All currently supported modalities in expected order
-MODALITIES = 'token', 'lemma', 'pos', 'morph'
-# Wrapper enum-like class to store sentence info
-Sent = namedtuple('Sent', ('token', 'lemma', 'pos', 'morph'))
+# All currently supported tasks in internally expected order
+TASKS = 'lemma', 'pos', 'morph'
+# Wrapper enum-like classes to store sentence info
+Input = namedtuple('Input', ('token', ))
+Tasks = namedtuple('Tasks', ('lemma', 'pos', 'morph'))
 
 
 class LineParseException(Exception):
@@ -40,7 +42,7 @@ class BaseReader(object):
         self.input_dir = os.path.abspath(settings.input_dir)
         self.filenames = glob.glob(self.input_dir + '/*.{}'.format(settings.extension))
         if len(self.filenames) == 0:
-            raise ValueError("Couldn't find matching files in {}".format(self.input_dir))
+            raise ValueError("Couldn't find files in {}".format(self.input_dir))
         self.shuffle = settings.shuffle
 
         # attributes
@@ -58,19 +60,17 @@ class BaseReader(object):
 
     def readsents(self):
         """
-        Generator over dataset sentences. Each output will be a Sent object with
-        the attributes "token", "pos", "lemma" and "morph", each of which is a list
-        of strings.
+        Generator over dataset sentences. Each output is a tuple of (Input, Tasks)
+        objects with, where each entry is a list of strings.
         """
         for fpath in self.filenames:
             self.current_fpath = fpath
 
-            lines = self.parselines(fpath, self.get_modalities(fpath))
+            lines = self.parselines(fpath, self.get_tasks(fpath))
 
             while True:
                 try:
-                    token, lemma, pos, morph = next(lines)
-                    yield Sent(token, lemma, pos, morph)
+                    yield next(lines)
                     self.current_sent += 1
 
                 except LineParseException as e:
@@ -86,11 +86,11 @@ class BaseReader(object):
 
         self.reset()
 
-    def parselines(self, fpath, modalities):
+    def parselines(self, fpath, tasks):
         """
-        Generator over tuples of (token, lemma, pos, morph), where each item is a list
-        of strings with data from the corresponding modality. Some modalities might be
-        missing from a file, in which case the corresponding value is None.
+        Generator over tuples of (Input, Tasks) holding input and target data
+        as lists of strings. Some tasks might be missing from a file, in which
+        case the corresponding value is None.
 
         ParseError can be thrown if an issue is encountered during processing.
         The issue can be documented by passing an error message as second argument
@@ -98,13 +98,13 @@ class BaseReader(object):
         """
         raise NotImplementedError
 
-    def get_modalities(self, fpath):
+    def get_tasks(self, fpath):
         """
-        Reader is responsible for extracting the expected modalities in the file.
+        Reader is responsible for extracting the expected tasks in the file.
 
         Returns
         =========
-        Set of modalities in a file
+        Set of tasks in a file
         """
         raise NotImplementedError
 
@@ -117,7 +117,7 @@ class TabReader(BaseReader):
     ...
     italiae	italia	NE	gender=FEMININE|case=GENITIVE|number=SINGULAR
     eo	is	PRO	gender=MASCULINE|case=ABLATIVE|number=SINGULAR
-    modo	modus	NN	gender=MASCULINE|case=ABLATIVE|number=SINGULAR
+    tasko	taskus	NN	gender=MASCULINE|case=ABLATIVE|number=SINGULAR
     ...
 
     Settings
@@ -133,66 +133,68 @@ class TabReader(BaseReader):
         super(TabReader, self).__init__(settings)
         self.breakline_type = settings.breakline_type
         self.breakline_data = settings.breakline_data
+        self.tasks = settings.tasks  # TODO: add setting to setting docs
 
     class LineParser(object):
         """
         Inner class to handle sentence breaks
         """
-        def __init__(self, modalities, breakline_type, breakline_data):
-            if breakline_type == 'FULLSTOP' and 'pos' not in modalities:
+        def __init__(self, tasks, breakline_type, breakline_data):
+            if breakline_type == 'FULLSTOP' and 'pos' not in tasks:
                 raise ValueError("Cannot use FULLSTOP info to break lines. "
-                                 "Modality POS is missing.")
+                                 "Task POS is missing.")
 
             self.breakline_type = breakline_type
             self.breakline_data = breakline_data
-            self.data = {mod: [] for mod in modalities}
+            self.inp = []
+            self.tasks = {task: [] for task in tasks}
 
         def add(self, line, linenum):
             """
             Adds line to current sentence.
             """
-            mods = line.split()
-            if len(mods) != len(self.data):
+            inp, *tasks = line.split()
+            if len(tasks) != len(self.tasks):
                 raise LineParseException(
-                    "Not enough number of modalities. "
-                    "Expected {} but got {} at line {}.".format(
-                        len(self.data), len(mods), linenum))
+                    "Not enough number of tasks. Expected {} but got {} at line {}."
+                    .format(len(self.tasks), len(tasks), linenum))
 
-            # TODO: assumes modalities are always in order (token, lemma, pos, morph)
-            for mod, data in zip(MODALITIES, line.split()):
+            self.inp.append(inp)
+            for task, data in zip(self.tasks.keys(), tasks):
                 # TODO: parse morph into something meaningful
-                self.data[mod].append(data)
+                self.tasks[task].append(data)
 
         def check_breakline(self):
             """
             Check if sentence is finished.
             """
             if self.breakline_type == 'FULLSTOP':
-                if self.data['pos'][-1] == self.breakline_data:
+                if self.tasks['pos'][-1] == self.breakline_data:
                     return True
             elif self.breakline_type == 'LENGTH':
-                if len(self.data['token']) == self.breakline_data:
+                if len(self.inp) == self.breakline_data:
                     return True
 
         def get_data(self):
             """
-            Return sentence as data (tuple of modalities)
+            Return data tuple
             """
-            return tuple(self.data.get(mod) for mod in MODALITIES)
+            return (Input(self.inp),
+                    Tasks(*[self.tasks.get(task, None) for task in TASKS]))
 
         def reset(self):
             """
             Reset sentence data
             """
-            self.data = {mod: [] for mod in self.data}
+            self.tasks = {task: [] for task in self.tasks}
+            self.inp = []
 
-    def parselines(self, fpath, modalities):
+    def parselines(self, fpath, tasks):
         """
         Generator over sentences in a single file
         """
         with open(fpath, 'r+') as f:
-            parser = self.LineParser(
-                modalities, self.breakline_type, self.breakline_data)
+            parser = self.LineParser(tasks, self.breakline_type, self.breakline_data)
 
             for line_num, line in enumerate(f):
                 line = line.strip()
@@ -206,9 +208,9 @@ class TabReader(BaseReader):
                     yield parser.get_data()
                     parser.reset()
 
-    def get_modalities(self, fpath):
+    def get_tasks(self, fpath):
         """
-        Guess modalities from file assuming expected order
+        Guess tasks from file assuming expected order
         """
         with open(fpath, 'r+') as f:
 
@@ -217,25 +219,28 @@ class TabReader(BaseReader):
             while not line:
                 line = next(f).strip()
 
-            line = line.split()
-            if len(line) == 0:
-                raise ValueError("Not enough modalities in file [{}]".format(fpath))
-            else:
-                return set(MODALITIES[:len(line)])  # TODO: modalities in expected order
+            _, *tasks = line.split()
+            if len(tasks) == 0:
+                raise ValueError("Not enough input in file [{}]".format(fpath))
+
+            if self.tasks is not None:
+                return self.tasks
+
+            # default to order specified by TASKS
+            return TASKS[:len(tasks)]
 
 
-class ModalityLabelEncoder(object):
+class SingleLabelEncoder(object):
     """
-    Label encoder for single modality.
+    Label encoder for single taskality.
     """
-    def __init__(self, sequential, vocabsize=None, name='Unknown'):
-        self.sequential = sequential
+    def __init__(self, pad=True, eos=True, vocabsize=None, name='Unknown'):
+        self.eos = consts.EOS if eos else None
+        self.pad = consts.PAD if pad else None
         self.vocabsize = vocabsize
         self.name = name
-        self._reserved = (LabelEncoder.UNK,)
-        if sequential:
-            self._reserved += (LabelEncoder.EOS, LabelEncoder.PAD)
-
+        self.reserved = (consts.UNK,)
+        self.reserved += tuple([sym for sym in [self.eos, self.pad] if sym])
         self.freqs = Counter()
         self.table = None
         self.inverse_table = None
@@ -243,14 +248,15 @@ class ModalityLabelEncoder(object):
 
     def __len__(self):
         if not self.fitted:
-            return -1
+            raise ValueError("Cannot get length of unfitted LabelEncoder")
         return len(self.table)
 
     def __eq__(self, other):
-        if type(other) != ModalityLabelEncoder:
+        if type(other) != SingleLabelEncoder:
             return False
 
-        return self.sequential == other.sequential and \
+        return self.pad == other.pad and \
+            self.eos == other.eos and \
             self.vocabsize == other.vocabsize and \
             self.freqs == other.freqs and \
             self.table == other.table and \
@@ -267,17 +273,11 @@ class ModalityLabelEncoder(object):
             raise ValueError("Cannot compute vocabulary, already fitted")
 
         if len(self.freqs) == 0:
-            logging.warning(
-                "Computing vocabulary for empty encoder {}".format(self.name))
+            logging.warning("Computing vocabulary for empty encoder {}"
+                            .format(self.name))
 
-        self.inverse_table = list(self._reserved)
-        if self.sequential:
-            self.inverse_table += [
-                sym for sym, _ in
-                self.freqs.most_common(n=self.vocabsize or len(self.freqs))]
-        else:
-            self.inverse_table += list(self.freqs)
-
+        most_common = self.freqs.most_common(n=self.vocabsize or len(self.freqs))
+        self.inverse_table = list(self.reserved) + [sym for sym, _ in most_common]
         self.table = {sym: idx for idx, sym in enumerate(self.inverse_table)}
         self.fitted = True
 
@@ -285,10 +285,10 @@ class ModalityLabelEncoder(object):
         if not self.fitted:
             raise ValueError("Vocabulary hasn't been computed yet")
 
-        sent = [self.table.get(tok, self.table[LabelEncoder.UNK]) for tok in sent]
+        sent = [self.table.get(tok, self.table[consts.UNK]) for tok in sent]
 
-        if self.sequential:
-            sent.append(self.table.get(LabelEncoder.EOS))
+        if self.eos:
+            sent.append(self.get_eos())
 
         return sent
 
@@ -296,22 +296,20 @@ class ModalityLabelEncoder(object):
         if not self.fitted:
             raise ValueError("Vocabulary hasn't been computed yet")
 
-        if not self.sequential:
-            raise ValueError("No PAD token for non-sequential Label Encoder")
-
-        return self.table[getattr(LabelEncoder, sym)]
+        return self.table[sym]
 
     def get_pad(self):
-        return self._get_sym('PAD')
+        return self._get_sym(consts.PAD)
 
     def get_eos(self):
-        return self._get_sym('EOS')
+        return self._get_sym(consts.EOS)
 
     def jsonify(self):
         if not self.fitted:
             raise ValueError("Attempted to serialize unfitted encoder")
 
-        return {'sequential': self.sequential,
+        return {'eos': self.eos,
+                'pad': self.pad,
                 'vocabsize': self.vocabsize,
                 'freqs': dict(self.freqs),
                 'table': dict(self.table),
@@ -319,7 +317,7 @@ class ModalityLabelEncoder(object):
 
     @classmethod
     def from_json(cls, obj):
-        inst = cls(obj['sequential'], obj['vocabsize'])
+        inst = cls(pad=obj['pad'], eos=obj['eos'], vocabsize=obj['vocabsize'])
         inst.freqs = Counter(obj['freqs'])
         inst.table = dict(obj['table'])
         inst.inverse_table = list(obj['inverse_table'])
@@ -330,41 +328,41 @@ class ModalityLabelEncoder(object):
 
 class LabelEncoder(object):
     """
-    Complex Label encoder for all modalities.
+    Complex Label encoder for all tasks.
     """
-
-    EOS = '<eos>'
-    PAD = '<pad>'
-    UNK = '<unk>'
-
     def __init__(self, vocabsize):
-        self.token = ModalityLabelEncoder(
-            sequential=True, vocabsize=vocabsize, name='token')
-        self.pos = ModalityLabelEncoder(sequential=True, name='pos')
-        # TODO: lemma-only vocab size?
-        self.lemma = ModalityLabelEncoder(
-            sequential=True, vocabsize=vocabsize, name='lemma')
-        self.morph = ModalityLabelEncoder(sequential=False, name='morph')
-        self._all_encoders = [self.token, self.lemma, self.pos, self.morph]
+        # TODO: per task, input settings
+        self.token = SingleLabelEncoder(vocabsize=vocabsize, name='token')
+        self.char = SingleLabelEncoder(name='char')
+        self.pos = SingleLabelEncoder(name='pos')
+        # TODO: lemma char-level
+        self.lemma = SingleLabelEncoder(vocabsize=vocabsize, name='lemma')
+        self.morph = SingleLabelEncoder(name='morph')
+        self._all_encoders = [self.token, self.char, self.lemma, self.pos, self.morph]
 
     @classmethod
     def from_settings(cls, settings):
-        return cls(settings.vocabsize)
+        # TODO: per task, input settings
+        return cls(vocabsize=settings.vocabsize)
 
-    def fit(self, sents):
+    def fit(self, lines):
         """
         Parameters
         ===========
-        sents : list of Sent
+        lines : iterator over tuples of (Input, Tasks)
         """
-        for sent in sents:
-            self.token.add(sent.token)
-            if sent.lemma is not None:
-                self.lemma.add(sent.lemma)
-            if sent.pos is not None:
-                self.pos.add(sent.pos)
-            if sent.morph is not None:
-                self.morph.add(sent.morph)
+        for idx, (inp, tasks) in enumerate(lines):
+            # input
+            self.token.add(inp.token)
+            self.char.add([char for word in inp.token for char in word])
+            # tasks
+            # TODO: lemma char-level vs token-level?
+            if tasks.lemma is not None:
+                self.lemma.add(tasks.lemma)
+            if tasks.pos is not None:
+                self.pos.add(tasks.pos)
+            if tasks.morph is not None:
+                self.morph.add(tasks.morph)
 
         for le in self._all_encoders:
             le.compute_vocab()
@@ -375,30 +373,46 @@ class LabelEncoder(object):
         """
         Parameters
         ===========
-        sents : list of Sent
+        sents : list of Example's
 
         Returns
         ===========
-        tuple of modalities. Each modality is either a list of integer or None.
-        """
-        token, pos, lemma, morph = [], [], [], []
-        for sent in sents:
-            token.append(self.token.transform(sent.token))
-            if sent.pos is not None:
-                pos.append(self.pos.transform(sent.pos))
-            if sent.lemma is not None:
-                lemma.append(self.lemma.transform(sent.lemma))
-            if sent.morph is not None:
-                morph.append(self.morph.transform(sent.morph))
+        tuple of tuples (token, char, lengths), (lemma, pos, morph)
 
-        return token, pos or None, lemma or None, morph or None
+        Each item in a tuple is a list of the following:
+            * Input
+                - token: list of integers
+                - char: list of integers where each list represents a word
+                    at the character level
+                - lengths: integers representing the length of the original
+                    sentence
+
+            * Tasks
+                - lemma: optional, list of integers
+                - pos: optional, list of integers
+                - morph: #TODO
+        """
+        token, char, lengths, lemma, pos, morph = [], [], [], [], [], []
+
+        for inp, tasks in sents:
+            # input data
+            token.append(self.token.transform(inp.token))
+            char.extend([self.char.transform(w) for w in inp.token])
+            lengths.append(len(inp.token))
+            # task data
+            if tasks.pos is not None:
+                pos.append(self.pos.transform(tasks.pos))
+            # TODO: lemma char-level instead of token-level
+            if tasks.lemma is not None:
+                lemma.append(self.lemma.transform(tasks.lemma))
+            if tasks.morph is not None:
+                morph.append(self.morph.transform(tasks.morph))
+
+        return (token, char, lengths), (lemma or None, pos or None, morph or None)
 
     def save(self, path):
         with open(path, 'w+') as f:
-            json.dump({self.token.name: self.token.jsonify(),
-                       self.pos.name: self.pos.jsonify(),
-                       self.lemma.name: self.lemma.jsonify(),
-                       self.morph.name: self.morph.jsonify()}, f)
+            json.dump({le.name: le.jsonify() for le in self._all_encoders}, f)
 
     @classmethod
     def load(cls, path):
@@ -408,11 +422,12 @@ class LabelEncoder(object):
         inst = cls(vocabsize=None)  # dummy instance to overwrite
 
         # set encoders
-        inst.token = ModalityLabelEncoder.from_json(obj['token'])
-        inst.pos = ModalityLabelEncoder.from_json(obj['pos'])
-        inst.lemma = ModalityLabelEncoder.from_json(obj['lemma'])
-        inst.morph = ModalityLabelEncoder.from_json(obj['morph'])
-        inst._all_encoders = [inst.token, inst.lemma, inst.pos, inst.morph]
+        inst.token = SingleLabelEncoder.from_json(obj['token'])
+        inst.char = SingleLabelEncoder.from_json(obj['char'])
+        inst.pos = SingleLabelEncoder.from_json(obj['pos'])
+        inst.lemma = SingleLabelEncoder.from_json(obj['lemma'])
+        inst.morph = SingleLabelEncoder.from_json(obj['morph'])
+        inst._all_encoders = [inst.token, inst.char, inst.lemma, inst.pos, inst.morph]
 
         return inst
 
@@ -434,63 +449,93 @@ class Dataset(object):
     ===========
     label_encoder : optional, prefitted LabelEncoder object
     """
-    def __init__(self, settings, label_encoder=None):
+    def __init__(self, settings, label_encoder=None, verbose=True):
         if settings.batch_size > settings.buffer_size:
             raise ValueError("Not enough buffer capacity {} for batch_size of {}"
                              .format(settings.buffer_size, settings.batch_size))
 
+        # attributes
         self.buffer_size = settings.buffer_size
         self.batch_size = settings.batch_size
         self.device = settings.device
         self.shuffle = settings.shuffle
 
+        # data
         self.reader = TabReader(settings)
-        self.label_encoder = label_encoder or \
-            LabelEncoder.from_settings(settings).fit(self.reader.readsents())
+        # label encoder
+        self.label_encoder = label_encoder
+        if self.label_encoder is None:
+            if verbose:
+                print("Fitting label encoders...")
+            self.label_encoder = LabelEncoder \
+                .from_settings(settings) \
+                .fit(self.reader.readsents())
 
-    @staticmethod
-    def pad_batch(self, batch, padding_id, device):
+    def pad_batch(self, batch, padding_id):
         """
         Pad batch into tensor
         """
-        maxlen, batch_size = max(map(len, batch)), len(batch)
+        lengths = [len(example) for example in batch]
+        maxlen, batch_size = max(lengths), len(batch)
         output = torch.zeros(maxlen, batch_size).long() + padding_id
-        for i, inst in enumerate(batch):
-            output[i, 0:len(inst)].copy_(
-                torch.tensor(inst, dtype=torch.int64, device=device))
+        for i, example in enumerate(batch):
+            output[0:lengths[i], i].copy_(
+                torch.tensor(example, dtype=torch.int64, device=self.device))
 
-        return output
+        return output, lengths
 
     def pack_batch(self, batch):
-        batch = sorted(batch, key=lambda sent: len(sent.token), reverse=True)
-        # assumes sent.token is always given
-        lengths = [len(sent.token) for sent in batch]
-        token, pos, lemma, morph = self.label_encoder.transform(batch)
+        "Transform batch data to tensors"
+        inp, tasks = self.label_encoder.transform(batch)
+        (token, char, lengths), (lemma, pos, morph) = inp, tasks
 
-        token = Dataset.pad_batch(token, self.label_encoder.token.get_pad)
+        token = self.pad_batch(token, self.label_encoder.token.get_pad())
+        char = self.pad_batch(char, self.label_encoder.char.get_pad())
 
-        return (token, pos, lemma, morph), lengths
+        if pos is not None:
+            pos = self.pad_batch(pos, self.label_encoder.pos.get_pad())
+        if lemma is not None:
+            lemma = self.pad_batch(lemma, self.label_encoder.lemma.get_pad())
 
-    def batches(self):
+        return (token, char, lengths), (lemma, pos, morph)
+
+    def prepare_buffer(self, buf):
+        "Transform buffer into batch generator"
+
+        def key(data):
+            inp, tasks = data
+            return len(inp.token)
+
+        buf = sorted(buf, key=key, reverse=True)
+        batches = list(utils.chunks(buf, self.batch_size))
+
+        if self.shuffle:
+            random.shuffle(batches)
+
+        for batch in batches:
+            yield self.pack_batch(batch)
+
+    def batch_generator(self):
         """
-        Generator over dataset batches. Each batch is a tuple of (data, lengths),
-        where data is itself a tuple of (token, pos, lemma, morph) where each is a
-        torch Tensor.
+        Generator over dataset batches. Each batch is a tuple of (input, tasks):
+            * (token, char, lengths)
+                - token : tensor(length, batch_size), padded lengths
+                - char : tensor(length, batch_size * words), padded lengths
+                - lengths : original number of words per sentence (to rearrange
+                    character-level embeddings to sentence orm)
+
+            * (lemma, pos, morph), each is a tensor(length, batch_size)
         """
         buf = []
-        for sent in self.reader.readsents():
+        for data in self.reader.readsents():
 
+            # check if buffer if full and yield
             if len(buf) == self.buffer_size:
-                if self.shuffle:
-                    random.shuffle(buf)
-
-                for batch in chunks(buf, self.batch_size):
-                    yield self.pack_batch(batch)
-
+                yield from self.prepare_buffer(buf)
                 buf = []
 
-            buf.append(sent)
+            # fill buffer
+            buf.append(data)
 
         if len(buf) > 0:
-            for batch in chunks(buf, self.batch_size):
-                yield self.pack_batch(batch)
+            yield from self.prepare_buffer(buf)
