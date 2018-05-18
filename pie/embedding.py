@@ -65,17 +65,19 @@ class RNNEmbedding(RNNEncoder):
     Character-level Embeddings with RNNs.
     """
     def __init__(self, num_embeddings, embedding_dim, padding_idx=None, **kwargs):
-        embs = nn.Embedding(num_embeddings, embedding_dim, padding_idx=padding_idx)
-        super().__init__(embs, hidden_size=embedding_dim, **kwargs)
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
+        super().__init__(embedding_dim, hidden_size=embedding_dim, **kwargs)
+
+        self.embs = nn.Embedding(num_embeddings, embedding_dim, padding_idx=padding_idx)
 
     def forward(self, char, nchars, nwords):
         """
         Parameters
         ===========
-        char : tensor(seq_len x batch)
+        char : tensor((seq_len x) batch)
         """
+        char = self.embs(char)
         # (max_seq_len x batch * nwords x emb_dim)
         emb = super().forward(char, nchars)
         # (batch * nwords x emb_dim)
@@ -84,65 +86,32 @@ class RNNEmbedding(RNNEncoder):
         return torch_utils.pad_batch(emb, nwords)
 
 
-class CombinedEmbedding(nn.Module):
-    def __init__(self, label_encoder, emb_dim, char_emb_type='RNN', **char_kwargs):
+class EmbeddingMixer(nn.Module):
+    def __init__(self, emb_dim):
+        self.embedding_dim = emb_dim
         super().__init__()
-
-        # word embeddings
-        self.wemb = nn.Embedding(len(label_encoder.word), emb_dim,
-                                 padding_idx=label_encoder.word.get_pad())
-
-        # char embeddings
-        if char_emb_type.upper() == 'RNN':
-            char_emb_cls = RNNEmbedding
-        elif char_emb_type.upper() == 'CNN':
-            char_emb_cls = CNNEmbedding
-        else:
-            raise ValueError("Unkonwn embedding class: {}".format(char_emb_type))
-
-        self.cemb = char_emb_cls(
-            len(label_encoder.char), emb_dim,
-            padding_idx=label_encoder.char.get_pad(), **char_kwargs)
-
-        # set embedding dim to the concatenation
-        self.embedding_dim = emb_dim + self.cemb.embedding_dim
-
-    def mix_embeddings(self, wembs, cembs):
-        return torch.cat([wembs, cembs], dim=-1)
-
-    def forward(self, words, nwords, chars, nchars):
-        # (seq_len x batch x wemb_dim)
-        wembs = self.wemb(words)
-
-        # (seq_len x batch x cemb_dim)
-        cembs = self.cemb(chars, nchars, nwords)
-
-        return self.mix_embeddings(wembs, cembs)
-
-
-class MixedEmbedding(CombinedEmbedding):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if isinstance(self.cemb, CNNEmbedding):
-            raise ValueError("CNNEmbedding is not supported for MixedEmbedding")
-
-        # reset embedding_dim
-        self.embedding_dim = self.wemb.embedding_dim
 
         # mix parameter
         self.alpha = nn.Parameter(
             torch.Tensor(self.embedding_dim * 2, 1).uniform_(-0.05, 0.05))
 
-    def mix_embeddings(self, wembs, cembs):
-        # (seq_len x batch x emb_dim * 2)
-        alpha_in = torch.cat([wembs, cembs], dim=2)
-        # (seq_len x batch)
-        alpha = F.sigmoid(torch.einsum('do,mbd->mb', [self.alpha, alpha_in]))
+    def forward(self, wembs, cembs):
+        # ((seq_len x) batch x emb_dim * 2)
+        alpha_in = torch.cat([wembs, cembs], dim=-1)
+        # ((seq_len x) batch)
+        if wembs.dim() == 3:
+            alpha = F.sigmoid(torch.einsum('do,mbd->mb', [self.alpha, alpha_in]))
+        else:
+            alpha = F.sigmoid(torch.einsum('do,bd->b', [self.alpha, alpha_in]))
 
-        wembs = alpha.unsqueeze(2).expand_as(wembs) * wembs
-        cembs = (1 - alpha).unsqueeze(2).expand_as(cembs) * cembs
+        wembs = alpha.unsqueeze(-1).expand_as(wembs) * wembs
+        cembs = (1 - alpha).unsqueeze(-1).expand_as(cembs) * cembs
 
         return wembs + cembs
+
+
+def embedding_concat(wemb, cembs):
+    return torch.cat([wemb, cemb], dim=-1)
 
 
 if __name__ == '__main__':
@@ -155,6 +124,19 @@ if __name__ == '__main__':
     print("lemma", tasks['lemma'][0].size(), tasks['lemma'][1])
     print("char", char.size(), clen)
     print("word", word.size(), wlen)
-    emb = CombinedEmbedding(data.label_encoder, 20, char_emb_type='CNN')
-    output = emb(word, wlen, char, clen)
+
+    emb_dim = 20
+    wemb = nn.Embedding(len(data.label_encoder.word), emb_dim)
+    cemb = RNNEmbedding(len(data.label_encoder.char), emb_dim, bidirectional=True)
+    cnncemb = CNNEmbedding(len(data.label_encoder.char), emb_dim)
+
+    mixer = EmbeddingMixer(20)
+    w, c = wemb(word), cemb(char, clen, wlen)
+    output = mixer(w, c)
+
+    output2 = []
+    for w, c in zip(w, c):
+        output2.append(mixer(w, c))
+    output2 = torch.stack(output2)
+
     print(output.size())

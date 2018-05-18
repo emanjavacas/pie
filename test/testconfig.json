@@ -2,9 +2,10 @@
 {
   "input_dir": "datasets/medieval_latin/dev",
   "extension": "tab",
-  "buffer_size": 3,
+  "buffer_size": 100,
+  "batch_size": 10,
   "breakline_type": "FULLSTOP",
   "breakline_ref": "pos",
   "breakline_data": "$.",
-  "word_vocabsize": 1000000
+  "word_vocabsize": 100000 // needed for testing, otherwise we get UNKs
 }

@@ -21,11 +21,13 @@ class BaseReader(object):
     """
     Abstract reader class
 
-    Settings
+    Parameters
     ==========
-    input_dir : str, root directory with data files
-    filenames : list, data files to be processed
-    extension : str, type of csv
+    input_dir : str (optional), root directory with data files
+    extension : str (optional), format extension
+
+    Settings
+    ========
     shuffle : bool, whether to shuffle files after each iteration
 
     Attributes
@@ -33,11 +35,15 @@ class BaseReader(object):
     current_sent : int, counter on number of sents processed in total (over all files)
     current_fpath : str, name of the file being currently processed
     """
-    def __init__(self, settings):
-        self.input_dir = os.path.abspath(settings.input_dir)
-        self.filenames = glob.glob(self.input_dir + '/*.{}'.format(settings.extension))
+    def __init__(self, settings, input_dir=None, extension=None):
+        input_dir = input_dir or settings.input_dir
+        extension = extension or settings.extension
+        input_dir = os.path.abspath(input_dir)
+        self.filenames = glob.glob(input_dir + '/*.{}'.format(extension))
         if len(self.filenames) == 0:
-            raise ValueError("Couldn't find files in {}".format(self.input_dir))
+            raise ValueError("Couldn't find files in {}".format(input_dir))
+
+        # settings
         self.shuffle = settings.shuffle
 
         # attributes
@@ -131,6 +137,68 @@ class BaseReader(object):
         raise NotImplementedError
 
 
+class LineParser(object):
+    """
+    Inner class to handle sentence breaks
+    """
+    def __init__(self, tasks, breakline_type, breakline_ref, breakline_data):
+        # breakline info
+        self.breakline_type = breakline_type
+        self.breakline_ref = breakline_ref
+        self.breakline_data = breakline_data
+        # data
+        self.inp = []
+        self.tasks = {task: [] for task in tasks}
+
+    def add(self, line, linenum):
+        """
+        Adds line to current sentence.
+        """
+        inp, *tasks = line.split()
+        if len(tasks) != len(self.tasks):
+            raise LineParseException(
+                "Not enough number of tasks. Expected {} but got {} at line {}."
+                .format(len(self.tasks), len(tasks), linenum))
+
+        self.inp.append(inp)
+
+        for task, data in zip(self.tasks.keys(), tasks):
+            try:
+                data = getattr(self, 'process_{}'.format(task.lower()))(data)
+            except AttributeError:
+                pass
+            finally:
+                self.tasks[task].append(data)
+
+    def check_breakline(self):
+        """
+        Check if sentence is finished.
+        """
+        if self.breakline_ref == 'input':
+            ref = self.inp
+        else:
+            ref = self.tasks[self.breakline_ref]
+
+        if self.breakline_type == 'FULLSTOP':
+            if ref[-1] == self.breakline_data:
+                return True
+        elif self.breakline_type == 'LENGTH':
+            if len(ref) == self.breakline_data:
+                return True
+
+    def reset(self):
+        """
+        Reset sentence data
+        """
+        self.tasks, self.inp = {task: [] for task in self.tasks}, []
+
+
+class CustomLineParser(LineParser):
+    # TODO: parse morphology into some data structure
+    def process_morph(self, data):
+        pass
+
+
 class TabReader(BaseReader):
     """
     Reader for files in tab format where each line has annotations for a given word
@@ -151,68 +219,21 @@ class TabReader(BaseReader):
         FULLSTOP it will be assumed to be a POS tag to use as criterion to
         split sentences.
     """
-    def __init__(self, settings):
-        super(TabReader, self).__init__(settings)
+    def __init__(self, settings, line_parser=LineParser, **kwargs):
+        super(TabReader, self).__init__(settings, **kwargs)
+
+        self.line_parser = line_parser
         self.breakline_type = settings.breakline_type
         self.breakline_ref = settings.breakline_ref
         self.breakline_data = settings.breakline_data
         self.tasks_order = settings.tasks_order
-
-    class LineParser(object):
-        """
-        Inner class to handle sentence breaks
-        """
-        def __init__(self, tasks, breakline_type, breakline_ref, breakline_data):
-            # breakline info
-            self.breakline_type = breakline_type
-            self.breakline_ref = breakline_ref
-            self.breakline_data = breakline_data
-            # data
-            self.inp = []
-            self.tasks = {task: [] for task in tasks}
-
-        def add(self, line, linenum):
-            """
-            Adds line to current sentence.
-            """
-            inp, *tasks = line.split()
-            if len(tasks) != len(self.tasks):
-                raise LineParseException(
-                    "Not enough number of tasks. Expected {} but got {} at line {}."
-                    .format(len(self.tasks), len(tasks), linenum))
-
-            self.inp.append(inp)
-            for task, data in zip(self.tasks.keys(), tasks):
-                self.tasks[task].append(data)
-
-        def check_breakline(self):
-            """
-            Check if sentence is finished.
-            """
-            if self.breakline_ref == 'input':
-                ref = self.inp
-            else:
-                ref = self.tasks[self.breakline_ref]
-
-            if self.breakline_type == 'FULLSTOP':
-                if ref[-1] == self.breakline_data:
-                    return True
-            elif self.breakline_type == 'LENGTH':
-                if len(ref) == self.breakline_data:
-                    return True
-
-        def reset(self):
-            """
-            Reset sentence data
-            """
-            self.tasks, self.inp = {task: [] for task in self.tasks}, []
 
     def parselines(self, fpath, tasks):
         """
         Generator over sentences in a single file
         """
         with open(fpath, 'r+') as f:
-            parser = self.LineParser(
+            parser = self.line_parser(
                 tasks, self.breakline_type, self.breakline_ref, self.breakline_data)
 
             for line_num, line in enumerate(f):
@@ -413,21 +434,24 @@ class MultiLabelEncoder(object):
         for inp, tasks in sents:
             # input data
             word.append(self.word.transform(inp))
-            char.extend([self.char.transform(w) for w in inp])
+            for w in inp:
+                char.append(self.char.transform(w))
 
             # task data
             for task, le in self.tasks.items():
                 if le.level == 'word':
                     tasks_dict[task].append(le.transform(tasks[task]))
                 else:
-                    tasks_dict[task].extend([le.transform(w) for w in tasks[task]])
+                    for w in tasks[task]:
+                        tasks_dict[task].append(le.transform(w))
 
         return (word, char), tasks_dict
 
     def save(self, path):
         with open(path, 'w+') as f:
-            obj = {'word': self.word.jsonify(), 'char': self.char.jsonify()}
-            obj['tasks'] = {le.name: le.jsonify() for le in self.tasks.values()}
+            obj = {'word': self.word.jsonify(),
+                   'char': self.char.jsonify(),
+                   'tasks': {le.name: le.jsonify() for le in self.tasks.values()}}
             json.dump(obj, f)
 
     @classmethod
@@ -463,7 +487,7 @@ class Dataset(object):
     ===========
     label_encoder : optional, prefitted LabelEncoder object
     """
-    def __init__(self, settings, label_encoder=None, expected_tasks=None):
+    def __init__(self, settings, reader=None, label_encoder=None, expected_tasks=None):
         if settings.batch_size > settings.buffer_size:
             raise ValueError("Not enough buffer capacity {} for batch_size of {}"
                              .format(settings.buffer_size, settings.batch_size))
@@ -475,7 +499,8 @@ class Dataset(object):
         self.shuffle = settings.shuffle
 
         # data
-        self.reader = TabReader(settings)
+        # TODO: this assumes TabReader
+        self.reader = reader or TabReader(settings)
         tasks = self.reader.check_tasks(expected=expected_tasks)
         # label encoder
         if label_encoder is None:
@@ -488,10 +513,17 @@ class Dataset(object):
             label_encoder.fit(self.reader.readsents())
             print("\tDone in {:g} secs".format(time.time() - start))
         if settings.verbose:
-            print("\n::: Training with tasks :::\n")
+            print("\n::: Available tasks :::\n")
             for task in tasks:
                 print("\t{}".format(task))
+            print()
         self.label_encoder = label_encoder
+
+    def get_nelement(self, batch):
+        """
+        Returns the number of elements in a batch (based on word-level length)
+        """
+        return batch[0][0][1].sum().item()
 
     def pad_batch(self, batch, padding_id):
         """

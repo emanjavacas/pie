@@ -11,7 +11,8 @@ testpath = os.path.join(os.path.dirname(__file__), 'testconfig.json')
 
 class TestLabelEncoderSerialization(unittest.TestCase):
     def setUp(self):
-        self.data = Dataset(settings_from_file(testpath))
+        settings = settings_from_file(testpath)
+        self.data = Dataset(settings)
 
     def test_serialization(self):
         le = self.data.label_encoder
@@ -32,7 +33,8 @@ class TestLabelEncoderSerialization(unittest.TestCase):
 
 class TestWordCharEncoding(unittest.TestCase):
     def setUp(self):
-        self.data = Dataset(settings_from_file(testpath))
+        settings = settings_from_file(testpath)
+        self.data = Dataset(settings)
 
     def test_lengths(self):
         ((word, wlen), (char, clen)), _ = next(self.data.batch_generator())

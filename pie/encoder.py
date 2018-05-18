@@ -6,9 +6,10 @@ from pie import torch_utils
 
 
 class RNNEncoder(nn.Module):
-    # TODO: perhaps add token-level context vectors to input?
-    def __init__(self, embs, hidden_size, num_layers=1, bidirectional=True,
+    def __init__(self, in_size, hidden_size, num_layers=1, bidirectional=True,
                  cell='GRU', dropout=0.0):
+
+        # TODO: types of merging
 
         if bidirectional and hidden_size % 2 != 0:
             raise ValueError("Bidirectional RNN needs even `hidden_size` "
@@ -20,17 +21,11 @@ class RNNEncoder(nn.Module):
         self.cell = cell
         super().__init__()
 
-        self.embs = embs
         self.rnn = nn.GRU(
-            embs.embedding_dim, hidden_size // self.num_dirs,
+            in_size, hidden_size // self.num_dirs,
             num_layers=num_layers, bidirectional=bidirectional, dropout=dropout)
 
-    def forward(self, inp, lengths, *args):
-        if isinstance(self.embs, nn.Embedding):
-            inp = self.embs(inp)
-        else:
-            inp = self.embs(inp, lengths, *args)
-
+    def forward(self, inp, lengths):
         hidden = torch_utils.init_hidden_for(
             inp, self.num_dirs, self.num_layers,
             self.hidden_size // self.num_dirs, self.cell)

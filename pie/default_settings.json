@@ -1,8 +1,11 @@
 {
   // GENERAL
   "verbose": true,
+  "device": "cpu",
   // DATA
   "input_dir": "datasets/medieval_latin/train",
+  // only used during training
+  "dev_dir": null,
   // file extension
   "extension": "tab",
   // breakline logic to use to detect sentence boundaries in tsv files
@@ -33,13 +36,16 @@
     }
   },
   // TRAINING
-  "buffer_size": 10,
-  "batch_size": 2,
+  "buffer_size": 10000,
+  "epochs": 5,
+  "batch_size": 50,
   "shuffle": true,
   "optim": "Adam",
   "lr": 0.001,
-  "dropout": 0.3,
+  "clip_norm": 5.0,
+  "report_freq": 10,
   // MODEL
   "emb_dim": 150,
-  "hidden_size": 300
+  "hidden_size": 300,
+  "dropout": 0.3
 }

@@ -48,6 +48,12 @@ class LinearDecoder(nn.Module):
 
         return loss / targets.ne(self.label_encoder.get_pad()).sum().item()
 
+    def predict(self, enc_outs):
+        probs = F.softmax(self.decoder(enc_outs), dim=-1)
+        prob, output = torch.max(probs, dim=-1)
+
+        return prob.tolist(), output.tolist()
+
 
 class Attention(nn.Module):
     """
@@ -185,7 +191,7 @@ class AttentionalDecoder(nn.Module):
 
         return loss / targets.ne(self.label_encoder.get_pad()).sum().item()
 
-    def generate(self, enc_outs, context=None, max_seq_len=20, beam_width=5):
+    def predict(self, enc_outs, context=None, max_seq_len=20, beam_width=5):
         """
         Decoding routine for inference with beam search
 
