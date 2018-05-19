@@ -4,7 +4,7 @@ import itertools
 
 def window(it):
     """
-    >>> list(window(range(10)))
+    >>> list(window(range(5)))
     [(None, 0, 1), (0, 1, 2), (1, 2, 3), (2, 3, 4), (3, 4, None)]
     """
     it = itertools.chain([None], it, [None])  # pad for completeness
@@ -34,8 +34,8 @@ def chunks(it, size):
 
 def flatten(it):
     """
-    list(flatten([['abc', 'cde'], ['yte']]))
-    >>> ['a', 'b', 'c', 'c', 'd', 'e', 'y', 't', 'e']
+    >>> list(flatten([['abc', 'cde'], ['yte']]))
+    ['a', 'b', 'c', 'c', 'd', 'e', 'y', 't', 'e']
     """
     if isinstance(it, str):
         for i in it:

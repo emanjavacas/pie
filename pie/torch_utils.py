@@ -101,27 +101,27 @@ def pad_batch(emb, nwords):
     torch.Tensor(seq_len x batch x emb_dim) where:
         - seq_len = max(nwords)
         - batch = len(nwords)
+
+    >>> emb = [[0], [1], [2], [3], [4], [5]]
+    >>> nwords = [3, 1, 2]
+    >>> pad_batch(torch.tensor(emb), torch.tensor(nwords)).tolist()
+    [[[0], [3], [4]], [[1], [0], [5]], [[2], [0], [0]]]
     """
-    # (emb_dim x batch * nwords)
-    emb = emb.t()
+    with torch.no_grad():
+        if len(emb) != sum(nwords):
+            raise ValueError("Got {} items but was asked to pad {}"
+                             .format(len(emb), sum(nwords).item()))
 
-    if isinstance(nwords, torch.Tensor):
-        nwords = nwords.tolist()
+        output, last = [], 0
+        maxlen = max(nwords).item()
 
-    output = []
-    last = 0
-    maxlen = max(nwords)
+        for sentlen in nwords.tolist():
+            padding = (0, 0, 0, maxlen - sentlen)
+            output.append(F.pad(emb[last:last+sentlen], padding))
+            last = last + sentlen
 
-    for sentlen in nwords:
-        sentlen = sentlen - 1   # remove <eos>
-        padding = (0, maxlen - sentlen)
-        output.append(F.pad(emb[:, last:last+sentlen], padding))
-        last = last + sentlen
-
-    # (batch x emb_dim x max_nwords)
-    output = torch.stack(output)
-    # (emb_dim x batch x max_nwords) -> (max_nwords x batch x emb_dim)
-    output = output.transpose(0, 1).transpose(0, 2)
+        # (seq_len x batch x emb_dim)
+        output = torch.stack(output, dim=1)
 
     return output
 

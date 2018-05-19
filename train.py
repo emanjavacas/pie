@@ -2,7 +2,7 @@
 import os
 
 from pie.settings import settings_from_file
-from pie.data import Dataset, TabReader
+from pie.data import Dataset
 from pie.model import SimpleModel
 from pie.trainer import Trainer
 
