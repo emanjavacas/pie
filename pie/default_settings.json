@@ -15,6 +15,8 @@
   "breakline_ref": "input",
   // needed to decide for a sentence boundary (e.g. an integer for LENGTH)
   "breakline_data": 15,
+  // safety max to avoid too long sentences blowing up memory
+  "max_sent_len": 35,
   // max vocabsize for character level input
   "char_vocabsize": 100,
   // max vocabsize for word level input

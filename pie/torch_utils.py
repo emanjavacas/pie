@@ -93,14 +93,19 @@ def pad_batch(emb, nwords):
     """
     Parameters
     ===========
-    emb : torch.Tensor(batch * nwords x emb_dim)
-    nwords : list(int), number of words per sentence
+    emb : torch.Tensor(total_words x emb_dim), flattened tensor of word embeddings
+    nwords : torch.Tensor(batch), number of words per sentence
 
     Returns
     =======
-    torch.Tensor(seq_len x batch x emb_dim) where:
-        - seq_len = max(nwords)
+    torch.Tensor(max_seq_len x batch x emb_dim) where:
+        - max_seq_len = max(nwords)
         - batch = len(nwords)
+
+    >>> emb = torch.tensor([[0., 0.], [1., 1.], [2., 2.], [3., 3.], [4., 4.], [5., 5.]])
+    >>> nwords = torch.tensor([3, 4, 2])
+    >>> pad_batch(emb, nwords).tolist()
+    [[[0.0, 0.0], [1.0, 1.0], [0., 0.]], [[2.0, 2.0], [3.0, 3.0], [4.0, 4.0]], [[5.0, 5.0], [0.0, 0.0], [0.0, 0.0]]]
     """
     # (emb_dim x batch * nwords)
     emb = emb.t()

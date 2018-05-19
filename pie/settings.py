@@ -34,7 +34,7 @@ class Settings(dict):
         del self.__dict__[key]
 
 
-def settings_from_file(config_path, verbose=True):
+def settings_from_file(config_path):
     """Loads and parses a parameter file.
 
     Parameters
@@ -73,7 +73,7 @@ def settings_from_file(config_path, verbose=True):
     # store the config path too:
     settings.config_path = config_path
 
-    if verbose:
+    if settings.verbose:
         print("\n::: Loaded Config :::\n")
         for k, v in settings.items():
             print("\t{} : {}".format(k, v))

@@ -14,4 +14,7 @@ if __name__ == '__main__':
     # devset = Dataset(settings, TabReader(settings, input_dir=settings.dev_dir))
     # dev = list(devset.batch_generator())
     dev = None
-    trainer.train_epochs(settings.epochs, dev=dev)
+    try:
+        trainer.train_epochs(settings.epochs, dev=dev)
+    except KeyboardInterrupt:
+        print("Bye!")

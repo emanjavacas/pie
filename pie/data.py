@@ -226,6 +226,7 @@ class TabReader(BaseReader):
         self.breakline_type = settings.breakline_type
         self.breakline_ref = settings.breakline_ref
         self.breakline_data = settings.breakline_data
+        self.max_sent_len = settings.max_sent_len
         self.tasks_order = settings.tasks_order
 
     def parselines(self, fpath, tasks):
@@ -244,7 +245,7 @@ class TabReader(BaseReader):
 
                 parser.add(line, line_num)
 
-                if parser.check_breakline():
+                if parser.check_breakline() or len(parser.inp) >= self.max_sent_len:
                     yield parser.inp, parser.tasks
                     parser.reset()
 
@@ -511,7 +512,8 @@ class Dataset(object):
                 print("\n::: Fitting data... :::\n")
             start = time.time()
             label_encoder.fit(self.reader.readsents())
-            print("\tDone in {:g} secs".format(time.time() - start))
+            if settings.verbose:
+                print("\tDone in {:g} secs".format(time.time() - start))
         if settings.verbose:
             print("\n::: Available tasks :::\n")
             for task in tasks:
@@ -531,7 +533,10 @@ class Dataset(object):
         """
         lengths = [len(example) for example in batch]
         maxlen, batch_size = max(lengths), len(batch)
-        output = torch.zeros(maxlen, batch_size).long() + padding_id
+        output = torch.zeros(
+            maxlen, batch_size, device=self.device, dtype=torch.int64
+        ) + padding_id
+
         for i, example in enumerate(batch):
             output[0:lengths[i], i].copy_(
                 torch.tensor(example, dtype=torch.int64, device=self.device))

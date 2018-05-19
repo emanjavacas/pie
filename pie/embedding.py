@@ -76,6 +76,8 @@ class RNNEmbedding(RNNEncoder):
         Parameters
         ===========
         char : tensor((seq_len x) batch)
+        nchars : tensor(batch)
+        nwords : tensor(output batch)
         """
         char = self.embs(char)
         # (max_seq_len x batch * nwords x emb_dim)

@@ -1,4 +1,5 @@
 
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -56,9 +57,9 @@ class SimpleModel(nn.Module):
         # lemma
         lemma, llen = tasks['lemma']
         if isinstance(self.lemma_decoder, AttentionalDecoder):
-            lemma_inp = F.pad(lemma[:-1], (0, 0, 1, 0))
             lemma_context = torch_utils.pad_flatten_batch(enc_outs, wlen)
             lemma_enc_outs = self.lemma_encoder(self.lemma_emb(char), clen)
+            lemma_inp = F.pad(lemma[:-1], (0, 0, 1, 0))
             lemma_logits = self.lemma_decoder(
                 lemma_inp, llen, lemma_enc_outs, context=lemma_context)
             lemma_loss = self.lemma_decoder.loss(lemma_logits, lemma)
@@ -72,6 +73,24 @@ class SimpleModel(nn.Module):
         self_loss = self.self_decoder.loss(self_logits, word)
 
         return {'pos': pos_loss, 'lemma': lemma_loss, 'self': self_loss}
+
+    def evaluate(self, dataset):
+        with torch.no_grad():
+            for ((word, wlen), (char, clen)), tasks in dataset:
+                wemb, cemb = self.wemb(word), self.cemb(char, clen, wlen)
+                enc_outs = self.encoder(self.mixer(wemb, cemb), wlen)
+
+                # pos
+                pos_hyps, _ = self.pos_decoder.predict(enc_outs)
+
+                # lemma
+                if isinstance(self.lemma_decoder, AttentionalDecoder):
+                    lemma_context = torch_utils.pad_flatten_batch(enc_outs, wlen)
+                    lemma_enc_outs = self.lemma_encoder(self.lemma_emb(char), clen)
+                    lemma_hyps, _ = self.lemma_decoder.predict(
+                        lemma_enc_outs, context=lemma_context)
+                else:
+                    lemma_hyps = self.lemma_decoder.predict(enc_outs)
 
 
 if __name__ == '__main__':
@@ -89,5 +108,5 @@ if __name__ == '__main__':
     wemb, cemb = model.wemb(word), model.cemb(char, clen, wlen)
     emb = model.mixer(wemb, cemb)
     enc_outs = model.encoder(emb, wlen)
-    scores, hyps = model.pos_decoder.generate(enc_outs)
+    scores, hyps = model.pos_decoder.predict(enc_outs)
     print(scores, hyps)
