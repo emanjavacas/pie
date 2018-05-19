@@ -57,7 +57,7 @@ class CNNEmbedding(nn.Module):
 
         # (batch * nwords x C_o * len(kernel_sizes))
         output = torch.cat(conv_outs, dim=1)
-        return torch_utils.pad_batch(output, nwords)
+        return torch_utils.pad_batch(output, nwords - 1)
 
 
 class RNNEmbedding(RNNEncoder):
@@ -85,7 +85,7 @@ class RNNEmbedding(RNNEncoder):
         # (batch * nwords x emb_dim)
         emb = torch_utils.get_last_token(emb, nchars)
 
-        return torch_utils.pad_batch(emb, nwords)
+        return torch_utils.pad_batch(emb, nwords - 1)
 
 
 class EmbeddingMixer(nn.Module):
