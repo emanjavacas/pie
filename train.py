@@ -6,17 +6,20 @@ from pie.data import Dataset, TabReader
 from pie.model import SimpleModel
 from pie.trainer import Trainer
 
+
 if __name__ == '__main__':
     settings = settings_from_file(os.path.abspath('config.json'))
     trainset = Dataset(settings)
-    model = SimpleModel(trainset.label_encoder, settings.emb_dim, settings.hidden_size)
-    trainer = Trainer(trainset, model, settings)
     devset = None
-    if settings.dev_dir is not None:
+    if settings.dev_path is not None:
         devset = Dataset(
-            settings, reader=TabReader(settings, input_dir=settings.dev_dir),
+            settings, reader=TabReader(settings, input_path=settings.dev_path),
             label_encoder=trainset.label_encoder)
+
+    model = SimpleModel(trainset.label_encoder, settings.emb_dim, settings.hidden_size,
+                        settings.num_layers, dropout=settings.dropout)
+    trainer = Trainer(trainset, model, settings)
     try:
-        trainer.train_epochs(settings.epochs, dev=devset)
+        trainer.train_model(settings.epochs, dev=devset)
     except KeyboardInterrupt:
         print("Bye!")

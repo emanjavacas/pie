@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from pie.embedding import RNNEmbedding, EmbeddingMixer, EmbeddingConcat
-from pie.decoder import AttentionalDecoder, LinearDecoder
+from pie.decoder import AttentionalDecoder, LinearDecoder, CRFDecoder
 from pie.encoder import RNNEncoder
 from pie.evaluation import Scorer
 from pie import torch_utils
@@ -24,7 +24,7 @@ class SimpleModel(nn.Module):
         char-level embeddings
     cemb_type : str, one of "RNN", "CNN", layer to use for char-level embeddings
     """
-    def __init__(self, label_encoder, emb_dim, hidden_size, dropout=0.0,
+    def __init__(self, label_encoder, emb_dim, hidden_size, num_layers, dropout=0.0,
                  merge_type='concat', cemb_type='RNN', include_self=True):
         self.label_encoder = label_encoder
         self.include_self = include_self
@@ -51,12 +51,14 @@ class SimpleModel(nn.Module):
             in_dim = self.wemb.embedding_dim + self.cemb.embedding_dim
 
         # Encoder
-        self.encoder = RNNEncoder(in_dim, hidden_size, dropout=dropout)
+        self.encoder = RNNEncoder(
+            in_dim, hidden_size, num_layers=num_layers, dropout=dropout)
 
         # Decoders
         # - POS
         self.pos_decoder = LinearDecoder(
             label_encoder.tasks['pos'], hidden_size, dropout=dropout)
+        # self.pos_decoder = CRFDecoder(label_encoder.tasks['pos'], hidden_size)
 
         # - Lemma
         self.lemma_sequential = label_encoder.tasks['lemma'].level == 'char'
@@ -87,6 +89,8 @@ class SimpleModel(nn.Module):
         pos, plen = tasks['pos']
         pos_logits = self.pos_decoder(enc_outs)
         pos_loss = self.pos_decoder.loss(pos_logits, pos)
+        # pos_feats = self.pos_decoder(enc_outs)
+        # pos_loss = self.pos_decoder.loss(pos_feats, pos, plen)
         output['pos'] = pos_loss
 
         # lemma
@@ -118,6 +122,9 @@ class SimpleModel(nn.Module):
         wemb, cemb = self.wemb(word), self.cemb(char, clen, wlen)
         enc_outs = self.encoder(self.merger(wemb, cemb), wlen)
 
+        # remove <eos> during decoding
+        wlen = wlen-1
+
         # pos
         pos_hyps, _ = self.pos_decoder.predict(enc_outs, wlen)
         pos, _ = tasks['pos']
@@ -129,7 +136,7 @@ class SimpleModel(nn.Module):
         lemma_trues = [self.label_encoder.tasks['lemma'].stringify(l)
                        for l in lemma.t().tolist()]
         if self.lemma_sequential:
-            lemma_context = torch_utils.flatten_padded_batch(enc_outs, wlen-1)
+            lemma_context = torch_utils.flatten_padded_batch(enc_outs, wlen)
             lemma_enc_outs = self.lemma_encoder(self.lemma_emb(char), clen)
             lemma_hyps, _ = self.lemma_decoder.predict_max(
                 lemma_enc_outs, clen, context=lemma_context)
@@ -163,7 +170,8 @@ if __name__ == '__main__':
 
     settings = settings_from_file('./config.json')
     data = Dataset(settings)
-    model = SimpleModel(data.label_encoder, settings.emb_dim, settings.hidden_size)
+    model = SimpleModel(data.label_encoder, settings.emb_dim, settings.hidden_size,
+                        settings.num_layers)
     model.to(settings.device)
 
     for batch in data.batch_generator():

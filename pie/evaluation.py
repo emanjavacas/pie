@@ -20,6 +20,8 @@ class Scorer(object):
         for hyp, target in zip(hyps, targets):
             if isinstance(hyp, (list, tuple)):
                 if len(hyp) != len(target):
+                    print(hyp)
+                    print(target)
                     raise ValueError("Unequal hyp {} and target {} lengths"
                                      .format(len(hyp), len(target)))
 

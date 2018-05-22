@@ -3,6 +3,8 @@ import yaml
 import time
 from collections import defaultdict
 
+import tqdm
+
 import torch
 from torch import optim
 from torch.nn.utils import clip_grad_norm_
@@ -18,8 +20,18 @@ class Trainer(object):
         self.model = model
         self.optim = getattr(optim, settings.optim)(model.parameters(), lr=settings.lr)
         self.clip_norm = settings.clip_norm
-        self.report_freq = settings.report_freq
         self.weights = settings.weights
+
+        self.report_freq = settings.report_freq
+        num_batches = len(dataset) - 1
+        if settings.checks_per_epoch == 1:
+            self.check_freq = num_batches
+        elif settings.checks_per_epoch > 1:
+            self.check_freq = num_batches // settings.checks_per_epoch
+        elif settings.checks_per_epoch > num_batches:
+            self.check_freq = 1
+        else:
+            self.check_freq = 0
 
     def print_report(self):
         """
@@ -52,7 +64,7 @@ class Trainer(object):
         """
         total_losses, total_batches = defaultdict(float), 0
 
-        for batch in dataset.batch_generator():
+        for batch in tqdm.tqdm(dataset.batch_generator(), total=len(dataset)):
             total_batches += 1
             for k, v in self.model.loss(batch).items():
                 total_losses[k] += v.item()
@@ -66,66 +78,81 @@ class Trainer(object):
         """
         Print the report for monitoring
         """
-        speed = items / (time.time() - start)
+        total = len(self.dataset)
         rep = sep.join('{}:{:.3f}'.format(k, v / nbatches) for k, v in loss.items())
-        print("Batch: {} || {} || {:.3f} words/sec".format(batch, rep, speed))
+        speed = items / (time.time() - start)
+        formatter = "Batch [{}/{}] || {} || {:.0f} words/sec"
+        print(formatter.format(batch, total, rep, speed))
 
-    def train_epochs(self, epochs, dev=None):
+    def run_check(self, dev):
+        """
+        Monitor dev loss and eventually early-stop training
+        """
+        with torch.no_grad():
+            self.model.eval()
+            dev_loss = self.evaluate(dev)
+            self.model.train()
+
+        print('   '.join('{}: {:.3f}\n'.format(k, v) for k, v in dev_loss.items()))
+
+    def train_epoch(self, dev):
+        rep_loss, rep_items, rep_batches = defaultdict(float), 0, 0
+        rep_start = time.time()
+
+        for b, batch in enumerate(self.dataset.batch_generator()):
+            # get loss
+            loss = self.model.loss(batch)
+
+            # optimize
+            self.optim.zero_grad()
+            self.weight_loss(loss).backward()
+            if self.clip_norm is not None:
+                clip_grad_norm_(self.model.parameters(), self.clip_norm)
+            self.optim.step()
+
+            # accumulate
+            rep_items += self.dataset.get_nelement(batch)
+            rep_batches += 1
+            for k, v in loss.items():
+                rep_loss[k] += v.item()
+
+            # report
+            if b > 0 and b % self.report_freq == 0:
+                self.report(b, rep_items, rep_start, rep_batches, rep_loss)
+                rep_loss, rep_items, rep_batches = defaultdict(float), 0, 0
+                rep_start = time.time()
+
+            if self.check_freq > 0 and b > 0 and b % self.check_freq == 0:
+                if dev is not None:
+                    print("Evaluating model on dev set...")
+                    self.run_check(dev)
+                    print()
+
+    def train_epochs(self, epochs, dev):
         """
         Train the model for a number of epochs
         """
-        self.print_report()
-
         start = time.time()
-        self.model.train()
-        self.model.to(self.dataset.device)  # put on same device as dataset
 
         for e in range(1, epochs + 1):
-            # reset variables
+            # train epoch
+            epoch_start = time.time()
             print("Starting epoch [{}]".format(e))
-            epoch_start, rep_start = time.time(), time.time()
-            rep_loss, rep_items, rep_batches = defaultdict(float), 0, 0
-
-            for b, batch in enumerate(self.dataset.batch_generator()):
-                # get loss
-                loss = self.model.loss(batch)
-
-                # optimize
-                self.optim.zero_grad()
-                self.weight_loss(loss).backward()
-                if self.clip_norm is not None:
-                    clip_grad_norm_(self.model.parameters(), self.clip_norm)
-                self.optim.step()
-
-                # accumulate
-                rep_items += self.dataset.get_nelement(batch)
-                rep_batches += 1
-                for k, v in loss.items():
-                    rep_loss[k] += v.item()
-
-                # report
-                if b > 0 and b % self.report_freq == 0:
-                    self.report(b, rep_items, rep_start, rep_batches, rep_loss)
-                    rep_loss, rep_items, rep_batches = defaultdict(float), 0, 0
-                    rep_start = time.time()
-
+            self.train_epoch(dev)
             epoch_total = time.time() - epoch_start
             print("Finished epoch [{}] in [{:g}] secs\n".format(e, epoch_total))
 
-            # evaluation
-            if dev is not None:
-                self.model.eval()
-                with torch.no_grad():
-                    # loss
-                    print("Evaluating model on dev set...")
-                    dev_loss = self.evaluate(dev)
-                    rep = ('{}: {:.3f}'.format(k, v) for k, v in dev_loss.items())
-                    print('   '.join(rep))
-                    print()
-                    # scores
-                    print("Computing scores on dev data...")
-                    print(yaml.dump(self.model.evaluate(dev), default_flow_style=False))
-                    print()
-                self.model.train()
-
         print("Finished training in [{:g}]".format(time.time() - start))
+
+        # scores
+        print("Computing scores on dev data...")
+        print(yaml.dump(self.model.evaluate(dev), default_flow_style=False))
+        print()
+
+    def train_model(self, epochs, dev=None):
+        self.print_report()
+
+        self.model.train()
+        self.model.to(self.dataset.device)  # put on same device as dataset
+
+        self.train_epochs(epochs, dev)

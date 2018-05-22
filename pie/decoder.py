@@ -58,7 +58,6 @@ class LinearDecoder(nn.Module):
         probs = F.softmax(self.decoder(enc_outs), dim=-1)
         probs, preds = torch.max(probs.transpose(0, 1), dim=-1)
 
-        lengths = lengths - 1   # remove <eos>
         preds = [self.label_encoder.inverse_transform(pred)[:length]
                  for pred, length in zip(preds.tolist(), lengths.tolist())]
         probs = probs.tolist()
@@ -67,9 +66,15 @@ class LinearDecoder(nn.Module):
 
 
 class CRFDecoder(nn.Module):
+    """
+    CRF decoder layer
+    """
     def __init__(self, label_encoder, hidden_size):
         self.label_encoder = label_encoder
         super().__init__()
+
+        if label_encoder.get_bos() is None:
+            raise ValueError("CRFDecoder requires <bos> token")
 
         BOS = label_encoder.get_bos()
         EOS = label_encoder.get_eos()
@@ -79,89 +84,110 @@ class CRFDecoder(nn.Module):
         self.projection = nn.Linear(hidden_size, vocab)
 
         # matrix of transition scores from j to i
-        self.trans = nn.Parameter(torch.randn(vocab, vocab))
-        self.trans[BOS, :] = -10000. # no transition to <bos>
-        self.trans[:, EOS] = -10000. # no transition from <eos> except to <pad>
-        self.trans[:, PAD] = -10000. # no transition from <pad> except to <pad>
-        self.trans[PAD, :] = -10000.
-        self.trans[PAD, EOS] = 0.
-        self.trans[PAD, PAD] = 0.
+        trans = torch.randn(vocab, vocab)
+        trans[BOS, :] = -10000. # no transition to <bos>
+        trans[:, EOS] = -10000. # no transition from <eos> except to <pad>
+        trans[:, PAD] = -10000. # no transition from <pad> except to <pad>
+        trans[PAD, :] = -10000.
+        trans[PAD, EOS] = 0.
+        trans[PAD, PAD] = 0.
+        self.trans = nn.Parameter(trans)
 
     def init(self):
         inits.init_linear(self.projection)
 
-    def forward(self, enc_outs, lengths):
+    def forward(self, enc_outs):
         # (seq_len x batch x vocab)
         feats = self.projection(enc_outs)
+
+        return feats
+
+    def partition(self, feats, mask):
         seq_len, batch, vocab = feats.size()
 
         # initialize forward variables in log space
-        score = enc_outs.new(batch, vocab).fill_(-10000.)
-        score[:, self.label_encoder.get_bos()] = 0.
+        Z = feats.new(batch, vocab).fill_(-10000.)
+        Z[:, self.label_encoder.get_bos()] = 0.
 
-        # mask on padding
-        mask = torch_utils.make_length_mask(lengths)  # (batch x seq_len)
-        feats = feats * mask.unsqueeze(2).expand_as(feats)
+        # iterate through the sequence
+        for t in range(seq_len): 
+            Z_t = Z.unsqueeze(1).expand(-1, vocab, vocab)
+            emit = feats[t].unsqueeze(-1).expand_as(Z_t)
+            trans = self.trans.unsqueeze(0).expand_as(Z_t)
+            Z_t = torch_utils.log_sum_exp(Z_t + emit + trans)
+            mask_t = mask[t].unsqueeze(-1).expand_as(Z)
+            Z = Z_t * mask_t + Z * (1 - mask_t)
 
-        for t in range(vocab): # iterate through the sequence
-            mask_t = mask[:, t].unsqueeze(-1).expand_as(score)
-            score_t = score.unsqueeze(1).expand(-1, *self.trans.size())
-            emit = y[:, t].unsqueeze(-1).expand_as(score_t)
-            trans = self.trans.unsqueeze(0).expand_as(score_t)
-            score_t = torch_utils.log_sum_exp(score_t + emit + trans)
-            score = score_t * mask_t + score * (1 - mask_t)
+        Z = torch_utils.log_sum_exp(Z)
 
-        score = torch_utils.log_sum_exp(score)
+        return Z
 
-        return score
-
-    def score(self, feats, targets, lengths):
+    def score(self, feats, mask, targets):
         # calculate the score of a given sequence
         seq_len, batch, vocab = feats.size()
         score = feats.new(batch).fill_(0.)
 
         # prepend <bos>
-        bos = targets.new(1, batch).fill_(self.label_encoder.get_bos())
-        targets = torch.cat([bos, targets])
+        targets = torch_utils.prepad(targets, pad=self.label_encoder.get_bos())
+        # chunk in batches
+        targets = [seq.squeeze(1) for seq in targets.chunk(batch, dim=1)]
 
-        # mask
-        mask = torch_utils.make_length_mask(lengths)  # (batch x seq_len)
+        for t in range(seq_len):
+            emit = torch.stack([feats[t, b, targets[b][t + 1]] for b in range(batch)])
+            trans = torch.stack([self.trans[seq[t + 1], seq[t]] for seq in targets])
+            score = score + emit + (trans * mask[t])
 
-        for t in range(seq_len): # iterate through the sequence
-            mask_t = mask[:, t]
-            emit = torch.cat([y[b, t, y0[b, t + 1]] for b in range(BATCH_SIZE)])
-            trans = torch.cat([self.trans[seq[t + 1], seq[t]] for seq in y0]) * mask_t
-            score = score + emit + trans
         return score
 
-    def decode(self, y): # Viterbi decoding
-        # initialize backpointers and viterbi variables in log space
-        bptr = []
-        score = Tensor(self.num_tags).fill_(-10000.)
-        score[SOS_IDX] = 0.
-        score = Var(score)
+    def loss(self, feats, targets, lengths):
+        # mask on padding (batch x seq_len) => (seq_len x batch)
+        mask = torch_utils.make_length_mask(lengths).t().float()
+        feats = feats * mask.unsqueeze(2).expand_as(feats)
 
-        for emit in y: # iterate through the sequence
-            # backpointers and viterbi variables at this timestep
-            bptr_t = []
-            score_t = []
-            for i in range(self.num_tags): # for each next tag
-                z = score + self.trans[i]
-                best_tag = argmax(z) # find the best previous tag
-                bptr_t.append(best_tag)
-                score_t.append(z[best_tag])
-            bptr.append(bptr_t)
-            score = torch.cat(score_t) + emit
-        best_tag = argmax(score)
-        best_score = score[best_tag]
+        Z = self.partition(feats, mask)
+        score = self.score(feats, mask, targets)
 
-        # back-tracking
-        best_path = [best_tag]
-        for bptr_t in reversed(bptr):
-            best_path.append(bptr_t[best_tag])
-        best_path = reversed(best_path[:-1])
+        return torch.mean(Z - score)
 
-        return best_path
+    def predict(self, enc_outs, lengths):
+        feats = self.projection(enc_outs)
+        hyps, scores = [], []
+
+        # iterate over batches
+        for feat, length in zip(feats.chunk(feats.size(1), dim=1), lengths.tolist()):
+            # (seq_len x batch x vocab) => (real_len x vocab)
+            feat = feat.squeeze(1)[:length]
+            bptr = []
+            score = feats.new(len(self.label_encoder)).fill_(-10000.)
+            score[self.label_encoder.get_bos()] = 0.
+
+            for emit in feat[:length]:
+                bptr_t, score_t = [], []
+                
+                # for each next tag
+                for i in range(len(self.label_encoder)):
+                    prob, best = torch.max(score + self.trans[i], dim=0)
+                    bptr_t.append(best.item())
+                    score_t.append(prob)
+                # accumulate
+                bptr.append(bptr_t)
+                score = torch.stack(score_t) + emit
+
+            score, best = torch.max(score, dim=0)
+            score, best = score.item(), best.item()
+
+            # back-tracking
+            hyp = [best]
+            for bptr_t in reversed(bptr):
+                hyp.append(bptr_t[best])
+            hyp = list(reversed(hyp[:-1]))
+
+            scores.append(score)
+            hyps.append(hyp)
+
+        hyps = [self.label_encoder.inverse_transform(hyp) for hyp in hyps]
+
+        return hyps, scores
 
 
 class Attention(nn.Module):

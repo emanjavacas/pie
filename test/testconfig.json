@@ -1,8 +1,7 @@
 
 {
-  "input_dir": "datasets/medieval_latin/dev",
+  "input_path": "datasets/medieval_latin/dev",
   "verbose": false,
-  "extension": "tab",
   "buffer_size": 100,
   "batch_size": 10,
   "breakline_type": "FULLSTOP",

@@ -22,8 +22,8 @@ class BaseReader(object):
 
     Parameters
     ==========
-    input_dir : str (optional), root directory with data files
-    extension : str (optional), format extension
+    input_path : str (optional), either a path to a directory, a path to a file
+        or a unix style pathname pattern expansion for glob
 
     Settings
     ========
@@ -34,13 +34,20 @@ class BaseReader(object):
     current_sent : int, counter on number of sents processed in total (over all files)
     current_fpath : str, name of the file being currently processed
     """
-    def __init__(self, settings, input_dir=None, extension=None):
-        input_dir = input_dir or settings.input_dir
-        extension = extension or settings.extension
-        input_dir = os.path.abspath(input_dir)
-        self.filenames = glob.glob(input_dir + '/*.{}'.format(extension))
+    def __init__(self, settings, input_path=None):
+        input_path = input_path or settings.input_path
+
+        if os.path.isdir(settings.input_path):
+            self.filenames = [os.path.join(input_path, f)
+                              for f in os.listdir(input_path)
+                              if not f.startswith('.')]
+        elif os.path.isfile(settings.input_path):
+            self.filenames = [settings.input_path]
+        else:
+            self.filenames = glob.glob(input_path)
+
         if len(self.filenames) == 0:
-            raise ValueError("Couldn't find files in {}".format(input_dir))
+            raise ValueError("Couldn't find files in {}".format(input_path))
 
         # settings
         self.shuffle = settings.shuffle
@@ -270,17 +277,20 @@ class LabelEncoder(object):
     """
     Label encoder
     """
-    def __init__(self, pad=True, eos=True, vocabsize=None, level='word', name='Unk'):
+    def __init__(self, pad=True, eos=True, bos=False,
+                 vocabsize=None, level='word', name='Unk'):
+
         if level.lower() not in ('word', 'char'):
             raise ValueError("`level` must be 'word' or 'char'")
 
         self.eos = constants.EOS if eos else None
         self.pad = constants.PAD if pad else None
+        self.bos = constants.BOS if bos else None
         self.vocabsize = vocabsize
         self.level = level.lower()
         self.name = name
-        self.reserved = (constants.UNK,)
-        self.reserved += tuple([sym for sym in [self.eos, self.pad] if sym])
+        self.reserved = (constants.UNK,)  # always use <unk>
+        self.reserved += tuple([sym for sym in [self.eos, self.pad, self.bos] if sym])
         self.freqs = Counter()
         self.known_tokens = set()  # for char-level dicts, keep word-level known tokens
         self.table = None
@@ -298,6 +308,7 @@ class LabelEncoder(object):
 
         return self.pad == other.pad and \
             self.eos == other.eos and \
+            self.bos == other.bos and \
             self.vocabsize == other.vocabsize and \
             self.level == other.level and \
             self.freqs == other.freqs and \
@@ -360,13 +371,16 @@ class LabelEncoder(object):
         if not self.fitted:
             raise ValueError("Vocabulary hasn't been computed yet")
 
-        return self.table[sym]
+        return self.table.get(sym)
 
     def get_pad(self):
         return self._get_sym(constants.PAD)
 
     def get_eos(self):
         return self._get_sym(constants.EOS)
+
+    def get_bos(self):
+        return self._get_sym(constants.BOS)
 
     def jsonify(self):
         if not self.fitted:
@@ -401,6 +415,7 @@ class MultiLabelEncoder(object):
     def __init__(self, word_vocabsize=None, char_vocabsize=None):
         self.word = LabelEncoder(vocabsize=word_vocabsize, name='word')
         self.char = LabelEncoder(vocabsize=char_vocabsize, name='char', level='char')
+        self.insts = 0
         self.tasks = {}
 
     def add_task(self, name, **kwargs):
@@ -419,6 +434,8 @@ class MultiLabelEncoder(object):
         lines : iterator over tuples of (Input, Tasks)
         """
         for idx, (inp, tasks) in enumerate(lines):
+            # increment counter
+            self.insts += 1
             # input
             self.word.add(inp)
             self.char.add(inp)
@@ -470,6 +487,7 @@ class MultiLabelEncoder(object):
         with open(path, 'w+') as f:
             obj = {'word': self.word.jsonify(),
                    'char': self.char.jsonify(),
+                   'insts': self.insts,
                    'tasks': {le.name: le.jsonify() for le in self.tasks.values()}}
             json.dump(obj, f)
 
@@ -480,6 +498,7 @@ class MultiLabelEncoder(object):
 
         inst = cls()  # dummy instance to overwrite
 
+        inst.insts = obj['insts']
         inst.word = LabelEncoder.from_json(obj['word'])
         inst.char = LabelEncoder.from_json(obj['char'])
 
@@ -518,7 +537,7 @@ class Dataset(object):
         self.shuffle = settings.shuffle
 
         # data
-        # TODO: this assumes TabReader
+        # TODO: this assumes TabReader. In the future we would need one per file
         self.reader = reader or TabReader(settings)
         tasks = self.reader.check_tasks(expected=expected_tasks)
         # label encoder
@@ -541,6 +560,12 @@ class Dataset(object):
                 print("- {}".format(task))
             print()
         self.label_encoder = label_encoder
+
+        if len(self) <= 0:
+            raise ValueError("Not enough instances [{}] in dataset".format(len(self)))
+
+    def __len__(self):
+        return self.label_encoder.insts // self.batch_size
 
     def get_nelement(self, batch):
         """
