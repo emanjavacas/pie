@@ -1,4 +1,5 @@
 
+import yaml
 import time
 from collections import defaultdict
 
@@ -26,10 +27,12 @@ class Trainer(object):
         """
         nparams = sum(p.nelement() for p in self.model.parameters())
         print("::: Model :::")
-        print("\n\t" + "\n\t".join(str(self.model).split('\n')))
+        print()
+        print(self.model)
         print()
         print("::: Model parameters :::")
-        print("\t{}".format(nparams))
+        print()
+        print(nparams)
         print()
 
     def weight_loss(self, loss):
@@ -49,7 +52,7 @@ class Trainer(object):
         """
         total_losses, total_batches = defaultdict(float), 0
 
-        for batch in dataset:
+        for batch in dataset.batch_generator():
             total_batches += 1
             for k, v in self.model.loss(batch).items():
                 total_losses[k] += v.item()
@@ -57,7 +60,7 @@ class Trainer(object):
         for k, v in total_losses.items():
             total_losses[k] = v / total_batches
 
-        return total_losses
+        return dict(total_losses)
 
     def report(self, batch, items, start, nbatches, loss, sep='   '):
         """
@@ -107,16 +110,22 @@ class Trainer(object):
                     rep_start = time.time()
 
             epoch_total = time.time() - epoch_start
-            print("Finished epoch [{}] in [{:g}] secs".format(e, epoch_total))
+            print("Finished epoch [{}] in [{:g}] secs\n".format(e, epoch_total))
 
             # evaluation
             if dev is not None:
-                print("Evaluating model on dev set")
+                self.model.eval()
                 with torch.no_grad():
-                    self.model.eval()
+                    # loss
+                    print("Evaluating model on dev set...")
                     dev_loss = self.evaluate(dev)
-                    rep = ";".join('{}:{:g}'.format(k, v) for k, v in dev_loss.items())
-                    self.model.train()
-                print("Evaluation loss: {}".format(rep))
+                    rep = ('{}: {:.3f}'.format(k, v) for k, v in dev_loss.items())
+                    print('   '.join(rep))
+                    print()
+                    # scores
+                    print("Computing scores on dev data...")
+                    print(yaml.dump(self.model.evaluate(dev), default_flow_style=False))
+                    print()
+                self.model.train()
 
         print("Finished training in [{:g}]".format(time.time() - start))

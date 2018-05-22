@@ -1,5 +1,6 @@
 
 import os
+import yaml
 import json
 from json_minify import json_minify
 
@@ -75,7 +76,6 @@ def settings_from_file(config_path):
 
     if settings.verbose:
         print("\n::: Loaded Config :::\n")
-        for k, v in settings.items():
-            print("\t{} : {}".format(k, v))
+        print(yaml.dump(dict(settings)))
 
     return settings

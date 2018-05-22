@@ -47,7 +47,6 @@ class TestWordCharEncoding(unittest.TestCase):
 
     def test_word_char(self):
         for ((word, wlen), (char, clen)), _ in self.data.batch_generator():
-
             idx = 0
             total_words = 0
             for sent, nwords in zip(word.t(), wlen):
@@ -55,9 +54,8 @@ class TestWordCharEncoding(unittest.TestCase):
                     # get word
                     word = self.data.label_encoder.word.inverse_table[word]
                     # get chars
-                    chars = char.t()[idx][:clen[idx]-1]  # remove <eos>
-                    chars = ''.join(self.data.label_encoder.char.inverse_table[c.item()]
-                                    for c in chars)
+                    chars = char.t()[idx][:clen[idx]-1].tolist()  # remove <eos>
+                    chars = ''.join(self.data.label_encoder.char.inverse_transform(chars))
                     self.assertEqual(word, chars)
                     idx += 1
                 total_words += nwords - 1
