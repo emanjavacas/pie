@@ -1,9 +1,0 @@
-{
-  "input_dir": "datasets/medieval_latin/train",
-  "extension": "tab",
-  "batch_size": 50,
-  "breakline_type": "FULLSTOP",
-  "breakline_ref": "pos",
-  "breakline_data": "$.",
-  "report_freq": 10
-}

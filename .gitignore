@@ -102,3 +102,6 @@ ENV/
 
 # emacs
 *~
+
+# Project
+config.json
