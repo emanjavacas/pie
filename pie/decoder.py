@@ -114,10 +114,13 @@ class CRFDecoder(nn.Module):
             Z_t = Z.unsqueeze(1).expand(-1, vocab, vocab)
             emit = feats[t].unsqueeze(-1).expand_as(Z_t)
             trans = self.trans.unsqueeze(0).expand_as(Z_t)
+            # (batch x vocab x vocab) => (batch x vocab)
             Z_t = torch_utils.log_sum_exp(Z_t + emit + trans)
+            # (batch x vocab)
             mask_t = mask[t].unsqueeze(-1).expand_as(Z)
             Z = Z_t * mask_t + Z * (1 - mask_t)
 
+        # (batch x vocab) => (batch)
         Z = torch_utils.log_sum_exp(Z)
 
         return Z
@@ -129,12 +132,14 @@ class CRFDecoder(nn.Module):
 
         # prepend <bos>
         targets = torch_utils.prepad(targets, pad=self.label_encoder.get_bos())
-        # chunk in batches
-        targets = [seq.squeeze(1) for seq in targets.chunk(batch, dim=1)]
 
+        # iterate over sequence
+        # TODO: don't iterate over batches
         for t in range(seq_len):
-            emit = torch.stack([feats[t, b, targets[b][t + 1]] for b in range(batch)])
-            trans = torch.stack([self.trans[seq[t + 1], seq[t]] for seq in targets])
+            emit = torch.stack(
+                [feats[t, b, targets[t + 1, b]] for b in range(batch)])
+            trans = torch.stack(
+                [self.trans[targets[t + 1, b], targets[t, b]] for b in range(batch)])
             score = score + emit + (trans * mask[t])
 
         return score
@@ -153,6 +158,7 @@ class CRFDecoder(nn.Module):
         feats = self.projection(enc_outs)
         hyps, scores = [], []
 
+        # TODO: don't iterate over batches
         # iterate over batches
         for feat, length in zip(feats.chunk(feats.size(1), dim=1), lengths.tolist()):
             # (seq_len x batch x vocab) => (real_len x vocab)
@@ -161,9 +167,11 @@ class CRFDecoder(nn.Module):
             score = feats.new(len(self.label_encoder)).fill_(-10000.)
             score[self.label_encoder.get_bos()] = 0.
 
+            # iterate over sequence
             for emit in feat[:length]:
                 bptr_t, score_t = [], []
-                
+
+                # TODO: don't iterate over tags
                 # for each next tag
                 for i in range(len(self.label_encoder)):
                     prob, best = torch.max(score + self.trans[i], dim=0)
