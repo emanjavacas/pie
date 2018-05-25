@@ -19,6 +19,8 @@ class Trainer(object):
         self.dataset = dataset
         self.model = model
         self.optim = getattr(optim, settings.optim)(model.parameters(), lr=settings.lr)
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            self.optim, patience=3, verbose=settings.verbose, factor=0.25)
         self.clip_norm = settings.clip_norm
         self.weights = settings.weights
 
@@ -92,9 +94,17 @@ class Trainer(object):
             self.model.eval()
             dev_loss = self.evaluate(dev)
             self.model.train()
+            # scores
+            dev_scores = self.model.evaluate(dev)
 
-        print()
+        print("Dev losses")
         print('\n'.join('{}: {:.3f}'.format(k, v) for k, v in dev_loss.items()))
+        print()
+        self.scheduler.step(sum(dev_loss[k] for k in ('pos', 'lemma')))
+
+        print("Dev scores")
+        print(yaml.dump(dev_scores, default_flow_style=False))
+        print()
 
     def train_epoch(self, dev):
         rep_loss, rep_items, rep_batches = defaultdict(float), 0, 0
@@ -144,11 +154,6 @@ class Trainer(object):
             print("Finished epoch [{}] in [{:g}] secs\n".format(e, epoch_total))
 
         print("Finished training in [{:g}]".format(time.time() - start))
-
-        # scores
-        print("Computing scores on dev data...")
-        print(yaml.dump(self.model.evaluate(dev), default_flow_style=False))
-        print()
 
     def train_model(self, epochs, dev=None):
         self.print_report()
