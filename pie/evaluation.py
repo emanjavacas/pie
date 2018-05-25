@@ -2,6 +2,20 @@
 from sklearn.metrics import precision_score, recall_score, accuracy_score
 
 
+def format_score(score):
+    return round(float(score), 3)
+
+
+def apr(trues, preds):
+    p = precision_score(trues, preds, average='macro')
+    r = recall_score(trues, preds, average='macro')
+    a = accuracy_score(trues, preds)
+
+    return {'accuracy': format_score(a),
+            'precision': format_score(p),
+            'recall': format_score(r)}
+
+
 class Scorer(object):
     """
     Accumulate predictions over batches and compute evaluation scores
@@ -35,10 +49,7 @@ class Scorer(object):
         """
         Return a dictionary of scores
         """
-        output = {
-            'precision': float(precision_score(self.trues, self.preds, average='macro')),
-            'recall': float(recall_score(self.trues, self.preds, average='macro')),
-            'accuracy': float(accuracy_score(self.trues, self.preds))}
+        output = apr(self.trues, self.preds)
 
         if self.compute_unknown:
             unk_preds, unk_trues = [], []
@@ -49,13 +60,7 @@ class Scorer(object):
 
             support = len(unk_trues)
             if support > 0:
-                output['unknown_support'] = support
-                output['unknown_precision'] = float(precision_score(
-                    unk_trues, unk_preds, average='macro'))
-                output['unknown_recall'] = float(recall_score(
-                    unk_trues, unk_preds, average='macro'))
-                output['unknown_accuracy'] = float(accuracy_score(
-                    unk_trues, unk_preds))
+                output['unknown'] = apr(unk_trues, unk_preds)
 
         return output
 

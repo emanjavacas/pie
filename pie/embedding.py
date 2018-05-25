@@ -78,6 +78,7 @@ class RNNEmbedding(RNNEncoder):
         emb = super().forward(char, nchars)
         # (batch * nwords x emb_dim)
         emb = torch_utils.get_last_token(emb, nchars)
+        # emb = emb.mean(0)
 
         return torch_utils.pad_flat_batch(emb, nwords-1, maxlen=max(nwords).item())
 

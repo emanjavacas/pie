@@ -7,6 +7,8 @@
   "input_path": "datasets/medieval_latin/train",
   // only used during training
   "dev_path": null,
+  // proportion of instances in the dev set (ignore if dev_path is passed)
+  "dev_split": 0.05,
   // breakline logic to use to detect sentence boundaries in tsv files
   // either "LENGTH" (break after n tokens) or "FULLSTOP" (break after a fullstop symbol)
   "breakline_type": "LENGTH",

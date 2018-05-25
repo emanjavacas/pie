@@ -24,4 +24,5 @@ if __name__ == '__main__':
     try:
         trainer.train_model(settings.epochs, dev=devset)
     except KeyboardInterrupt:
+        print(model.evaluate(devset))
         print("Bye!")
