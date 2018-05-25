@@ -64,7 +64,7 @@ class Trainer(object):
         """
         total_losses, total_batches = defaultdict(float), 0
 
-        for batch in tqdm.tqdm(dataset.batch_generator(), total=len(dataset)):
+        for batch in tqdm.tqdm(dataset, total=len(dataset)):
             total_batches += 1
             for k, v in self.model.loss(batch).items():
                 total_losses[k] += v.item()
@@ -112,7 +112,7 @@ class Trainer(object):
             self.optim.step()
 
             # accumulate
-            rep_items += self.dataset.get_nelement(batch)
+            rep_items += type(self.dataset).get_nelement(batch)
             rep_batches += 1
             for k, v in loss.items():
                 rep_loss[k] += v.item()

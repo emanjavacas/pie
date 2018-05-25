@@ -60,3 +60,58 @@ class TestWordCharEncoding(unittest.TestCase):
                     idx += 1
                 total_words += nwords - 1
             self.assertEqual(idx, total_words, "Checked all words")
+
+
+class TestDevSplit(unittest.TestCase):
+    def setUp(self):
+        settings = settings_from_file(testpath)
+        settings['batch_size'] = 1
+        self.data = Dataset(settings)
+
+    def test_split_length(self):
+        total_batches = 0
+        for batch in self.data.batch_generator():
+            total_batches += 1
+
+        dev_batches = 0
+        for batch in self.data.get_dev_split(split=0.1):
+            dev_batches += 1
+
+        self.assertAlmostEqual(dev_batches, total_batches * 0.1, delta=1)
+
+    def test_remaining(self):
+        pre_batches = 0
+        for batch in self.data.batch_generator():
+            pre_batches += 1
+
+        self.assertEqual(pre_batches, self.data.label_encoder.insts)
+        self.assertEqual(pre_batches, len(self.data))
+
+        self.data.get_dev_split(split=0.1)
+
+        post_batches = 0
+        for batch in self.data.batch_generator():
+            post_batches += 1
+
+        self.assertAlmostEqual(pre_batches * 0.9, post_batches, delta=1)
+        self.assertAlmostEqual(pre_batches * 0.9, len(self.data), delta=1)
+
+    def test_batch_level(self):
+        settings = settings_from_file(testpath)
+        settings['batch_size'] = 20
+        data = Dataset(settings)
+
+        pre_batches = 0
+        for batch in data.batch_generator():
+            pre_batches += 1
+
+        self.assertAlmostEqual(pre_batches, len(data), delta=1)
+
+        data.get_dev_split(split=0.1)
+
+        post_batches = 0
+        for batch in data.batch_generator():
+            post_batches += 1
+
+        self.assertAlmostEqual(pre_batches * 0.9, post_batches, delta=1)
+        self.assertAlmostEqual(pre_batches * 0.9, len(data), delta=1)

@@ -28,11 +28,6 @@ class BaseReader(object):
     Settings
     ========
     shuffle : bool, whether to shuffle files after each iteration
-
-    Attributes
-    ===========
-    current_sent : int, counter on number of sents processed in total (over all files)
-    current_fpath : str, name of the file being currently processed
     """
     def __init__(self, settings, input_path=None):
         input_path = input_path or settings.input_path
@@ -52,16 +47,10 @@ class BaseReader(object):
         # settings
         self.shuffle = settings.shuffle
 
-        # attributes
-        self.current_sent = 0
-        self.current_fpath = None
-
     def reset(self):
         """
         Called after a full run over `readsents`
         """
-        self.current_sent = 0
-
         if self.shuffle:
             random.shuffle(self.filenames)
 
@@ -70,22 +59,20 @@ class BaseReader(object):
         Generator over dataset sentences. Each output is a tuple of (Input, Tasks)
         objects with, where each entry is a list of strings.
         """
-        for fpath in self.filenames:
-            self.current_fpath = fpath
+        current_sent = 0
 
+        for fpath in self.filenames:
             lines = self.parselines(fpath, self.get_tasks(fpath))
 
             while True:
                 try:
-                    yield next(lines)
-                    self.current_sent += 1
+                    yield (fpath, current_sent), next(lines)
+                    current_sent += 1
 
                 except LineParseException as e:
                     logging.warning(
                         "Parse error at [{}:sent={}]\n  => {}"
-                        .format(self.current_fpath,
-                                self.current_sent + 1,
-                                str(e)))
+                        .format(fpath, current_sent + 1, str(e)))
                     continue
 
                 except StopIteration:
@@ -537,6 +524,7 @@ class Dataset(object):
         self.shuffle = settings.shuffle
 
         # data
+        self.dev_sents = defaultdict(set)
         # TODO: this assumes TabReader. In the future we would need one per file
         self.reader = reader or TabReader(settings)
         tasks = self.reader.check_tasks(expected=expected_tasks)
@@ -549,7 +537,7 @@ class Dataset(object):
                 print("::: Fitting data... :::")
                 print()
             start = time.time()
-            label_encoder.fit(self.reader.readsents())
+            label_encoder.fit(line for _, line in self.reader.readsents())
             if settings.verbose:
                 print("Done in {:g} secs".format(time.time() - start))
                 print()
@@ -565,34 +553,38 @@ class Dataset(object):
             raise ValueError("Not enough instances [{}] in dataset".format(len(self)))
 
     def __len__(self):
-        return self.label_encoder.insts // self.batch_size
+        dev_sents = sum(len(v) for v in self.dev_sents.values())
+        return (self.label_encoder.insts - dev_sents) // self.batch_size
 
-    def get_nelement(self, batch):
+    @staticmethod
+    def get_nelement(batch):
         """
         Returns the number of elements in a batch (based on word-level length)
         """
         return batch[0][0][1].sum().item()
 
-    def pack_batch(self, batch):
+    def pack_batch(self, batch, device=None):
         """
         Transform batch data to tensors
         """
+        device = device or self.device
+
         (word, char), tasks = self.label_encoder.transform(batch)
 
         word = torch_utils.pad_batch(
-            word, self.label_encoder.word.get_pad(), device=self.device)
+            word, self.label_encoder.word.get_pad(), device=device)
         char = torch_utils.pad_batch(
-            char, self.label_encoder.char.get_pad(), device=self.device)
+            char, self.label_encoder.char.get_pad(), device=device)
 
         output_tasks = {}
         for task, data in tasks.items():
             output_tasks[task] = torch_utils.pad_batch(
                 data, self.label_encoder.tasks[task].get_pad(),
-                device=self.device)
+                device=device)
 
         return (word, char), output_tasks
 
-    def prepare_buffer(self, buf):
+    def prepare_buffer(self, buf, **kwargs):
         "Transform buffer into batch generator"
 
         def key(data):
@@ -606,7 +598,25 @@ class Dataset(object):
             random.shuffle(batches)
 
         for batch in batches:
-            yield self.pack_batch(batch)
+            yield self.pack_batch(batch, **kwargs)
+
+    def get_dev_split(self, split=0.05):
+        "Grab a dev split from the dataset"
+        if len(self.dev_sents) > 0:
+            raise RuntimeError("Dev-split already exists! Cannot create a new one")
+
+        buf = []
+        sents = self.reader.readsents()
+
+        while len(buf) < (self.label_encoder.insts * split):
+            (fpath, line_num), data = next(sents)
+            buf.append(data)
+            self.dev_sents[fpath].add(line_num)
+
+        # get batches on cpu
+        batches = list(self.prepare_buffer(buf, device='cpu'))
+
+        return device_wrapper(batches, device=self.device)
 
     def batch_generator(self):
         """
@@ -617,15 +627,41 @@ class Dataset(object):
             * (tasks) dictionary with tasks
         """
         buf = []
-        for data in self.reader.readsents():
+        for (fpath, line_num), data in self.reader.readsents():
 
-            # check if buffer if full and yield
+            # check if buffer is full and yield
             if len(buf) == self.buffer_size:
                 yield from self.prepare_buffer(buf)
                 buf = []
+
+            # don't use dev sentences
+            if fpath in self.dev_sents and line_num in self.dev_sents[fpath]:
+                continue
 
             # fill buffer
             buf.append(data)
 
         if len(buf) > 0:
             yield from self.prepare_buffer(buf)
+
+
+def wrap_device(it, device):
+    for i in it:
+        if isinstance(i, torch.Tensor):
+            yield i.to(device)
+        elif isinstance(i, dict):
+            yield {k: tuple(wrap_device(v, device)) for k, v in i.items()}
+        else:
+            yield tuple(wrap_device(i, device))
+
+
+class device_wrapper(object):
+    def __init__(self, batches, device):
+        self.batches = batches
+        self.device = device
+
+    def __getitem__(self, idx):
+        return tuple(wrap_device(self.batches[idx], self.device))
+
+    def __len__(self):
+        return len(self.batches)

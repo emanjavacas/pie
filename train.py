@@ -15,6 +15,8 @@ if __name__ == '__main__':
         devset = Dataset(
             settings, reader=TabReader(settings, input_path=settings.dev_path),
             label_encoder=trainset.label_encoder)
+    else:
+        devset = trainset.get_dev_split(split=settings.dev_split)
 
     model = SimpleModel(trainset.label_encoder, settings.emb_dim, settings.hidden_size,
                         settings.num_layers, dropout=settings.dropout)
