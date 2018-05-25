@@ -93,7 +93,8 @@ class Trainer(object):
             dev_loss = self.evaluate(dev)
             self.model.train()
 
-        print('   '.join('{}: {:.3f}\n'.format(k, v) for k, v in dev_loss.items()))
+        print()
+        print('\n'.join('{}: {:.3f}'.format(k, v) for k, v in dev_loss.items()))
 
     def train_epoch(self, dev):
         rep_loss, rep_items, rep_batches = defaultdict(float), 0, 0

@@ -134,19 +134,18 @@ class CRFDecoder(nn.Module):
         targets = torch_utils.prepad(targets, pad=self.label_encoder.get_bos())
 
         # iterate over sequence
-        # TODO: don't iterate over batches
         for t in range(seq_len):
-            emit = torch.stack(
-                [feats[t, b, targets[t + 1, b]] for b in range(batch)])
-            trans = torch.stack(
-                [self.trans[targets[t + 1, b], targets[t, b]] for b in range(batch)])
+            emit = feats[t, :, targets[t+1]].diag()
+            trans = self.trans[targets[t+1], targets[t]]
             score = score + emit + (trans * mask[t])
 
         return score
 
     def loss(self, feats, targets, lengths):
-        # mask on padding (batch x seq_len) => (seq_len x batch)
-        mask = torch_utils.make_length_mask(lengths).t().float()
+        # mask on padding
+        mask = torch_utils.make_length_mask(lengths).float()
+        # (batch x seq_len) => (seq_len x batch)
+        mask = mask.t()
         feats = feats * mask.unsqueeze(2).expand_as(feats)
 
         Z = self.partition(feats, mask)
@@ -156,44 +155,42 @@ class CRFDecoder(nn.Module):
 
     def predict(self, enc_outs, lengths):
         feats = self.projection(enc_outs)
-        hyps, scores = [], []
+        _, batch, vocab = feats.size()
 
-        # TODO: don't iterate over batches
-        # iterate over batches
-        for feat, length in zip(feats.chunk(feats.size(1), dim=1), lengths.tolist()):
-            # (seq_len x batch x vocab) => (real_len x vocab)
-            feat = feat.squeeze(1)[:length]
-            bptr = []
-            score = feats.new(len(self.label_encoder)).fill_(-10000.)
-            score[self.label_encoder.get_bos()] = 0.
+        # mask on padding (batch x seq_len)
+        mask = torch_utils.make_length_mask(lengths + 1).float()  # add <eos>
 
-            # iterate over sequence
-            for emit in feat[:length]:
-                bptr_t, score_t = [], []
+        bptr, hyps = [], []
+        scores = feats.new(batch, vocab).fill_(-10000.)
+        scores[:, self.label_encoder.get_bos()] = 0
+        trans = self.trans.unsqueeze(0).expand(batch, vocab, vocab)
 
-                # TODO: don't iterate over tags
-                # for each next tag
-                for i in range(len(self.label_encoder)):
-                    prob, best = torch.max(score + self.trans[i], dim=0)
-                    bptr_t.append(best.item())
-                    score_t.append(prob)
-                # accumulate
-                bptr.append(bptr_t)
-                score = torch.stack(score_t) + emit
+        for t, emit in enumerate(feats):
+            # (batch x vocab) => (batch x vocab x vocab)
+            z = scores.unsqueeze(1).expand_as(trans) + trans
+            # (batch x vocab)
+            scores_t, bptr_t = torch.max(z, -1)
+            scores_t = scores_t + emit
+            # accumulate
+            bptr.append(bptr_t)
+            # apply mask (batch x vocab)
+            mask_t = mask[:, t].unsqueeze(1).expand_as(scores)
+            scores = scores_t * mask_t + scores * (1 - mask_t)
 
-            score, best = torch.max(score, dim=0)
-            score, best = score.item(), best.item()
+        # (batch)
+        scores, bests = torch.max(scores, dim=1)
+        scores = scores.tolist()
 
-            # back-tracking
+        # back-tracking
+        bptr = torch.stack(bptr).transpose(0, 1)  # (batch x seq_len x vocab)
+        for b, length in enumerate(lengths.tolist()):
+            best = bests[b].item()
             hyp = [best]
-            for bptr_t in reversed(bptr):
+            for bptr_t in reversed(bptr[b, :length].tolist()):
                 hyp.append(bptr_t[best])
-            hyp = list(reversed(hyp[:-1]))
-
-            scores.append(score)
+            hyp = list(reversed(hyp[:-1]))  # remove <bos>
+            hyp = self.label_encoder.inverse_transform(hyp)
             hyps.append(hyp)
-
-        hyps = [self.label_encoder.inverse_transform(hyp) for hyp in hyps]
 
         return hyps, scores
 
