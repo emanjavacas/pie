@@ -15,15 +15,16 @@ class Beam(object):
     eos: int or None, integer corresponding to the <eos> symbol in the
         vocabulary. It will be used as terminating criterion for the decoding
     """
-    def __init__(self, width, eos, device='cpu'):
+    def __init__(self, width, eos, bos=None, device='cpu'):
         # attributes
         self.width = width
         self.eos = eos
+        self.bos = bos or eos
 
         # data
         self.active = True
         self.scores = torch.zeros(width)
-        init_state = torch.zeros(width, dtype=torch.int64, device=device)
+        init_state = torch.zeros(width, dtype=torch.int64, device=device) + self.bos
         # output values at each beam
         self.beam_values = [init_state]
         # backpointer to previous beam

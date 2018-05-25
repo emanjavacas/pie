@@ -9,8 +9,7 @@ import random
 
 import torch
 
-from pie import utils
-from pie import consts
+from pie import utils, torch_utils, constants
 
 
 class LineParseException(Exception):
@@ -23,8 +22,8 @@ class BaseReader(object):
 
     Parameters
     ==========
-    input_dir : str (optional), root directory with data files
-    extension : str (optional), format extension
+    input_path : str (optional), either a path to a directory, a path to a file
+        or a unix style pathname pattern expansion for glob
 
     Settings
     ========
@@ -35,13 +34,20 @@ class BaseReader(object):
     current_sent : int, counter on number of sents processed in total (over all files)
     current_fpath : str, name of the file being currently processed
     """
-    def __init__(self, settings, input_dir=None, extension=None):
-        input_dir = input_dir or settings.input_dir
-        extension = extension or settings.extension
-        input_dir = os.path.abspath(input_dir)
-        self.filenames = glob.glob(input_dir + '/*.{}'.format(extension))
+    def __init__(self, settings, input_path=None):
+        input_path = input_path or settings.input_path
+
+        if os.path.isdir(settings.input_path):
+            self.filenames = [os.path.join(input_path, f)
+                              for f in os.listdir(input_path)
+                              if not f.startswith('.')]
+        elif os.path.isfile(settings.input_path):
+            self.filenames = [settings.input_path]
+        else:
+            self.filenames = glob.glob(input_path)
+
         if len(self.filenames) == 0:
-            raise ValueError("Couldn't find files in {}".format(input_dir))
+            raise ValueError("Couldn't find files in {}".format(input_path))
 
         # settings
         self.shuffle = settings.shuffle
@@ -226,6 +232,7 @@ class TabReader(BaseReader):
         self.breakline_type = settings.breakline_type
         self.breakline_ref = settings.breakline_ref
         self.breakline_data = settings.breakline_data
+        self.max_sent_len = settings.max_sent_len
         self.tasks_order = settings.tasks_order
 
     def parselines(self, fpath, tasks):
@@ -244,7 +251,7 @@ class TabReader(BaseReader):
 
                 parser.add(line, line_num)
 
-                if parser.check_breakline():
+                if parser.check_breakline() or len(parser.inp) >= self.max_sent_len:
                     yield parser.inp, parser.tasks
                     parser.reset()
 
@@ -270,17 +277,22 @@ class LabelEncoder(object):
     """
     Label encoder
     """
-    def __init__(self, pad=True, eos=True, vocabsize=None, level='word', name='Unk'):
+    def __init__(self, pad=True, eos=True, bos=False,
+                 vocabsize=None, level='word', name='Unk'):
+
         if level.lower() not in ('word', 'char'):
             raise ValueError("`level` must be 'word' or 'char'")
-        self.eos = consts.EOS if eos else None
-        self.pad = consts.PAD if pad else None
+
+        self.eos = constants.EOS if eos else None
+        self.pad = constants.PAD if pad else None
+        self.bos = constants.BOS if bos else None
         self.vocabsize = vocabsize
         self.level = level.lower()
         self.name = name
-        self.reserved = (consts.UNK,)
-        self.reserved += tuple([sym for sym in [self.eos, self.pad] if sym])
+        self.reserved = (constants.UNK,)  # always use <unk>
+        self.reserved += tuple([sym for sym in [self.eos, self.pad, self.bos] if sym])
         self.freqs = Counter()
+        self.known_tokens = set()  # for char-level dicts, keep word-level known tokens
         self.table = None
         self.inverse_table = None
         self.fitted = False
@@ -296,6 +308,7 @@ class LabelEncoder(object):
 
         return self.pad == other.pad and \
             self.eos == other.eos and \
+            self.bos == other.bos and \
             self.vocabsize == other.vocabsize and \
             self.level == other.level and \
             self.freqs == other.freqs and \
@@ -311,6 +324,7 @@ class LabelEncoder(object):
             self.freqs.update(sent)
         else:
             self.freqs.update(utils.flatten(sent))
+            self.known_tokens.update(sent)
 
     def compute_vocab(self):
         if self.fitted:
@@ -329,24 +343,44 @@ class LabelEncoder(object):
         if not self.fitted:
             raise ValueError("Vocabulary hasn't been computed yet")
 
-        sent = [self.table.get(tok, self.table[consts.UNK]) for tok in sent]
+        sent = [self.table.get(tok, self.table[constants.UNK]) for tok in sent]
 
         if self.eos:
             sent.append(self.get_eos())
 
         return sent
 
+    def inverse_transform(self, sent):
+        if not self.fitted:
+            raise ValueError("Vocabulary hasn't been computed yet")
+
+        return [self.inverse_table[i] for i in sent]
+
+    def stringify(self, sent):
+        if not self.fitted:
+            raise ValueError("Vocabulary hasn't been computed yet")
+
+        try:
+            sent = sent[:sent.index(self.get_eos())]
+        except ValueError:
+            pass
+
+        return self.inverse_transform(sent)
+
     def _get_sym(self, sym):
         if not self.fitted:
             raise ValueError("Vocabulary hasn't been computed yet")
 
-        return self.table[sym]
+        return self.table.get(sym)
 
     def get_pad(self):
-        return self._get_sym(consts.PAD)
+        return self._get_sym(constants.PAD)
 
     def get_eos(self):
-        return self._get_sym(consts.EOS)
+        return self._get_sym(constants.EOS)
+
+    def get_bos(self):
+        return self._get_sym(constants.BOS)
 
     def jsonify(self):
         if not self.fitted:
@@ -358,7 +392,8 @@ class LabelEncoder(object):
                 'vocabsize': self.vocabsize,
                 'freqs': dict(self.freqs),
                 'table': dict(self.table),
-                'inverse_table': self.inverse_table}
+                'inverse_table': self.inverse_table,
+                'known_tokens': list(self.known_tokens)}
 
     @classmethod
     def from_json(cls, obj):
@@ -367,6 +402,7 @@ class LabelEncoder(object):
         inst.freqs = Counter(obj['freqs'])
         inst.table = dict(obj['table'])
         inst.inverse_table = list(obj['inverse_table'])
+        inst.known_tokens = set(obj['known_tokens'])
         inst.fitted = True
 
         return inst
@@ -378,7 +414,8 @@ class MultiLabelEncoder(object):
     """
     def __init__(self, word_vocabsize=None, char_vocabsize=None):
         self.word = LabelEncoder(vocabsize=word_vocabsize, name='word')
-        self.char = LabelEncoder(vocabsize=char_vocabsize, name='char')
+        self.char = LabelEncoder(vocabsize=char_vocabsize, name='char', level='char')
+        self.insts = 0
         self.tasks = {}
 
     def add_task(self, name, **kwargs):
@@ -397,15 +434,14 @@ class MultiLabelEncoder(object):
         lines : iterator over tuples of (Input, Tasks)
         """
         for idx, (inp, tasks) in enumerate(lines):
+            # increment counter
+            self.insts += 1
             # input
             self.word.add(inp)
-            self.char.add(utils.flatten(inp))
+            self.char.add(inp)
 
             for task, le in self.tasks.items():
-                if le.level == 'char':
-                    le.add(utils.flatten(tasks[task]))
-                else:
-                    le.add(tasks[task])
+                le.add(tasks[task])
 
         self.word.compute_vocab()
         self.char.compute_vocab()
@@ -451,6 +487,7 @@ class MultiLabelEncoder(object):
         with open(path, 'w+') as f:
             obj = {'word': self.word.jsonify(),
                    'char': self.char.jsonify(),
+                   'insts': self.insts,
                    'tasks': {le.name: le.jsonify() for le in self.tasks.values()}}
             json.dump(obj, f)
 
@@ -461,6 +498,7 @@ class MultiLabelEncoder(object):
 
         inst = cls()  # dummy instance to overwrite
 
+        inst.insts = obj['insts']
         inst.word = LabelEncoder.from_json(obj['word'])
         inst.char = LabelEncoder.from_json(obj['char'])
 
@@ -499,7 +537,7 @@ class Dataset(object):
         self.shuffle = settings.shuffle
 
         # data
-        # TODO: this assumes TabReader
+        # TODO: this assumes TabReader. In the future we would need one per file
         self.reader = reader or TabReader(settings)
         tasks = self.reader.check_tasks(expected=expected_tasks)
         # label encoder
@@ -508,16 +546,26 @@ class Dataset(object):
             for task in tasks:
                 label_encoder.add_task(task, **settings.tasks[task])
             if settings.verbose:
-                print("\n::: Fitting data... :::\n")
+                print("::: Fitting data... :::")
+                print()
             start = time.time()
             label_encoder.fit(self.reader.readsents())
-            print("\tDone in {:g} secs".format(time.time() - start))
+            if settings.verbose:
+                print("Done in {:g} secs".format(time.time() - start))
+                print()
         if settings.verbose:
-            print("\n::: Available tasks :::\n")
+            print("::: Available tasks :::")
+            print()
             for task in tasks:
-                print("\t{}".format(task))
+                print("- {}".format(task))
             print()
         self.label_encoder = label_encoder
+
+        if len(self) <= 0:
+            raise ValueError("Not enough instances [{}] in dataset".format(len(self)))
+
+    def __len__(self):
+        return self.label_encoder.insts // self.batch_size
 
     def get_nelement(self, batch):
         """
@@ -525,34 +573,22 @@ class Dataset(object):
         """
         return batch[0][0][1].sum().item()
 
-    def pad_batch(self, batch, padding_id):
-        """
-        Pad batch into tensor
-        """
-        lengths = [len(example) for example in batch]
-        maxlen, batch_size = max(lengths), len(batch)
-        output = torch.zeros(maxlen, batch_size).long() + padding_id
-        for i, example in enumerate(batch):
-            output[0:lengths[i], i].copy_(
-                torch.tensor(example, dtype=torch.int64, device=self.device))
-
-        lengths = torch.tensor(lengths, dtype=torch.int64, device=self.device)
-
-        return output, lengths
-
     def pack_batch(self, batch):
         """
         Transform batch data to tensors
         """
         (word, char), tasks = self.label_encoder.transform(batch)
 
-        word = self.pad_batch(word, self.label_encoder.word.get_pad())
-        char = self.pad_batch(char, self.label_encoder.char.get_pad())
+        word = torch_utils.pad_batch(
+            word, self.label_encoder.word.get_pad(), device=self.device)
+        char = torch_utils.pad_batch(
+            char, self.label_encoder.char.get_pad(), device=self.device)
 
         output_tasks = {}
         for task, data in tasks.items():
-            output_tasks[task] = self.pad_batch(
-                data, self.label_encoder.tasks[task].get_pad())
+            output_tasks[task] = torch_utils.pad_batch(
+                data, self.label_encoder.tasks[task].get_pad(),
+                device=self.device)
 
         return (word, char), output_tasks
 

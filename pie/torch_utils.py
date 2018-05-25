@@ -89,22 +89,26 @@ def get_last_token(t, lengths):
     return t
 
 
-def pad_batch(emb, nwords):
+def pad_flat_batch(emb, nwords, maxlen=None):
     """
+    Transform a 2D flat batch (batch of words in multiple sentences) into a 3D
+    padded batch where words have been allocated to their respective sentence
+    according to user passed sentence lengths `nwords`
+
     Parameters
     ===========
-    emb : torch.Tensor(batch * nwords x emb_dim)
-    nwords : list(int), number of words per sentence
+    emb : torch.Tensor(total_words x emb_dim), flattened tensor of word embeddings
+    nwords : torch.Tensor(batch), number of words per sentence
 
     Returns
     =======
-    torch.Tensor(seq_len x batch x emb_dim) where:
-        - seq_len = max(nwords)
+    torch.Tensor(max_seq_len x batch x emb_dim) where:
+        - max_seq_len = max(nwords)
         - batch = len(nwords)
 
     >>> emb = [[0], [1], [2], [3], [4], [5]]
     >>> nwords = [3, 1, 2]
-    >>> pad_batch(torch.tensor(emb), torch.tensor(nwords)).tolist()
+    >>> pad_flat_batch(torch.tensor(emb), torch.tensor(nwords)).tolist()
     [[[0], [3], [4]], [[1], [0], [5]], [[2], [0], [0]]]
     """
     with torch.no_grad():
@@ -113,7 +117,7 @@ def pad_batch(emb, nwords):
                              .format(len(emb), sum(nwords).item()))
 
         output, last = [], 0
-        maxlen = max(nwords).item()
+        maxlen = maxlen or max(nwords).item()
 
         for sentlen in nwords.tolist():
             padding = (0, 0, 0, maxlen - sentlen)
@@ -126,20 +130,90 @@ def pad_batch(emb, nwords):
     return output
 
 
-def pad_flatten_batch(batch, nwords):
+def flatten_padded_batch(batch, nwords):
     """
+    Inverse of pad_flat_batch
+
     Parameters
     ===========
     batch : tensor(seq_len, batch, encoding_size), output of the encoder
-    nwords : tensor(batch), lengths of the sequence (without padding) including
-        <eos> symbols
+    nwords : tensor(batch), lengths of the sequence (without padding)
 
     Returns
     ========
     tensor(nwords, encoding_size)
-    """
-    output = []
-    for sent, sentlen in zip(batch.t(), nwords):
-        output.extend(list(sent[:sentlen-1].chunk(sentlen-1)))  # remove <eos>
 
-    return torch.cat(output, dim=0)
+    >>> batch = [[[0], [3], [4]], [[1], [0], [5]], [[2], [0], [0]]]
+    >>> nwords = [3, 1, 2]
+    >>> flatten_padded_batch(torch.tensor(batch), torch.tensor(nwords)).tolist()
+    [[0], [1], [2], [3], [4], [5]]
+    """
+    with torch.no_grad():
+        output = []
+        for sent, sentlen in zip(batch.t(), nwords):
+            output.extend(list(sent[:sentlen].chunk(sentlen)))  # remove <eos>
+
+        return torch.cat(output, dim=0)
+
+
+def pad_batch(batch, padding_id, device='cpu'):
+    """
+    Pad batch into tensor
+    """
+    lengths = [len(example) for example in batch]
+    maxlen, batch_size = max(lengths), len(batch)
+    output = torch.zeros(
+        maxlen, batch_size, device=device, dtype=torch.int64
+    ) + padding_id
+
+    for i, example in enumerate(batch):
+        output[0:lengths[i], i].copy_(
+            torch.tensor(example, dtype=torch.int64, device=device))
+
+    lengths = torch.tensor(lengths, dtype=torch.int64, device=device)
+
+    return output, lengths
+
+
+def prepad(batch, pad=0):
+    """
+    >>> batch = torch.tensor([[1, 1], [2, 2], [3, 3], [4, 4]])
+    >>> prepad(batch, pad=-1).tolist()
+    [[-1, -1], [1, 1], [2, 2], [3, 3], [4, 4]]
+    """
+    padding = (0, 0) * (batch.dim() - 1) + (1, 0)
+    return F.pad(batch, padding, value=pad)
+
+
+def make_length_mask(lengths):
+    """
+    Compute binary length mask.
+
+    lengths: torch.Tensor(batch, dtype=int) should be on the desired
+        output device.
+
+    Returns
+    =======
+
+    mask: torch.ByteTensor(batch x seq_len)
+    """
+    maxlen, batch = lengths.detach().max(), len(lengths)
+    return torch.arange(0, maxlen, dtype=torch.int64, device=lengths.device) \
+                .repeat(batch, 1) \
+                .lt(lengths.unsqueeze(1))
+
+
+def log_sum_exp(x):
+    """
+    Numerically stable log_sum_exp
+
+    Parameters
+    ==========
+    x : torch.tensor
+
+    >>> import torch
+    >>> x = torch.randn(10, 5)
+    """
+    max_score, _ = torch.max(x, -1)
+    max_score_broadcast = max_score.unsqueeze(-1).expand_as(x)
+    return max_score + torch.log(torch.sum(torch.exp(x - max_score_broadcast), -1))

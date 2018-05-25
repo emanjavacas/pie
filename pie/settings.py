@@ -1,5 +1,6 @@
 
 import os
+import yaml
 import json
 from json_minify import json_minify
 
@@ -34,7 +35,39 @@ class Settings(dict):
         del self.__dict__[key]
 
 
-def settings_from_file(config_path, verbose=True):
+def flat_merge(s1, s2):
+    """
+    Merge two dictionaries in a flat way (non-recursive)
+
+    >>> flat_merge({"a": {"b": 1}}, {"a": {"c": 2}})
+    {'a': {'b': 1}}
+    """
+    for k in s2:
+        if k not in s1:
+            s1[k] = s2[k]
+
+    return s1
+
+
+def recursive_merge(s1, s2):
+    """
+    Recursively merge two dictionaries
+
+    >>> recursive_merge({"a": {"b": 1}}, {"a": {"c": 2}})
+    {'a': {'b': 1, 'c': 2}}
+    """
+    for k, v in s2.items():
+        if k in s1 and isinstance(v, dict):
+            if not isinstance(s1[k], dict):
+                raise ValueError("Expected dictionary at key [{}]".format(k))
+            s1[k] = recursive_merge(s1[k], v)
+        elif k not in s1:
+            s1[k] = v
+
+    return s1
+
+
+def settings_from_file(config_path):
     """Loads and parses a parameter file.
 
     Parameters
@@ -44,8 +77,7 @@ def settings_from_file(config_path, verbose=True):
 
     Returns
     ===========
-    settings : dict
-        * A dictionary with the parameters
+    settings : dict, A dictionary with the parameters
     """
 
     try:
@@ -55,14 +87,13 @@ def settings_from_file(config_path, verbose=True):
         raise ValueError(
             "Couldn't read config file: %s. Exception: %s" % (config_path, str(e)))
 
-    settings = Settings(p)
     # add default values for missing settings:
     with open(os.sep.join((os.path.dirname(__file__),
                           'default_settings.json')), 'r') as f:
         defaults = json.loads(json_minify(f.read()))
-    for k in defaults:
-        if k not in settings:
-            settings[k] = defaults[k]
+
+    # settings = Settings(flat_merge(p, defaults))
+    settings = Settings(recursive_merge(p, defaults))
 
     # ultimately overwrite settings from environ vars of the form PIE_{var}
     for k in settings:
@@ -73,9 +104,8 @@ def settings_from_file(config_path, verbose=True):
     # store the config path too:
     settings.config_path = config_path
 
-    if verbose:
+    if settings.verbose:
         print("\n::: Loaded Config :::\n")
-        for k, v in settings.items():
-            print("\t{} : {}".format(k, v))
+        print(yaml.dump(dict(settings)))
 
     return settings

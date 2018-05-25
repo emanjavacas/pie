@@ -12,12 +12,6 @@ from pie.encoder import RNNEncoder
 class CNNEmbedding(nn.Module):
     """
     Character-level Embeddings with Convolutions following Kim 2014.
-
-    TODO: Right now CNNEmbedding is not compatible with MixedEmbedding
-          since due to non-matching output dimensionalities, char-level
-          embeddings can't be element-wise combined with word-level embeddings.
-          Solution would emtail to tweak kernel_sizes and out_channels.
-          Alternatively, we could add a projection to target embedding_dim.
     """
     def __init__(self, num_embeddings, embedding_dim, padding_idx=None,
                  kernel_sizes=(5, 4, 3), out_channels=100, dropout=0.0):
@@ -57,7 +51,7 @@ class CNNEmbedding(nn.Module):
 
         # (batch * nwords x C_o * len(kernel_sizes))
         output = torch.cat(conv_outs, dim=1)
-        return torch_utils.pad_batch(output, nwords - 1)
+        return torch_utils.pad_flat_batch(output, nwords-1, maxlen=max(nwords).item())
 
 
 class RNNEmbedding(RNNEncoder):
@@ -76,6 +70,8 @@ class RNNEmbedding(RNNEncoder):
         Parameters
         ===========
         char : tensor((seq_len x) batch)
+        nchars : tensor(batch)
+        nwords : tensor(output batch)
         """
         char = self.embs(char)
         # (max_seq_len x batch * nwords x emb_dim)
@@ -83,7 +79,7 @@ class RNNEmbedding(RNNEncoder):
         # (batch * nwords x emb_dim)
         emb = torch_utils.get_last_token(emb, nchars)
 
-        return torch_utils.pad_batch(emb, nwords - 1)
+        return torch_utils.pad_flat_batch(emb, nwords-1, maxlen=max(nwords).item())
 
 
 class EmbeddingMixer(nn.Module):
@@ -110,8 +106,10 @@ class EmbeddingMixer(nn.Module):
         return wembs + cembs
 
 
-def embedding_concat(wemb, cembs):
-    return torch.cat([wemb, cemb], dim=-1)
+def EmbeddingConcat():
+    def func(wemb, cemb):
+        return torch.cat([wemb, cemb], dim=-1)
+    return func
 
 
 if __name__ == '__main__':

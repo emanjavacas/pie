@@ -2,12 +2,11 @@
   // GENERAL
   "verbose": true,
   "device": "cpu",
+
   // DATA
-  "input_dir": "datasets/medieval_latin/train",
+  "input_path": "datasets/medieval_latin/train",
   // only used during training
-  "dev_dir": null,
-  // file extension
-  "extension": "tab",
+  "dev_path": null,
   // breakline logic to use to detect sentence boundaries in tsv files
   // either "LENGTH" (break after n tokens) or "FULLSTOP" (break after a fullstop symbol)
   "breakline_type": "LENGTH",
@@ -15,6 +14,8 @@
   "breakline_ref": "input",
   // needed to decide for a sentence boundary (e.g. an integer for LENGTH)
   "breakline_data": 15,
+  // safety max to avoid too long sentences blowing up memory
+  "max_sent_len": 35,
   // max vocabsize for character level input
   "char_vocabsize": 100,
   // max vocabsize for word level input
@@ -24,28 +25,32 @@
   // task-related config
   "tasks": {
     "lemma": {
-      "level": "char",
-      "vocabsize": 10000
+      "level": "char"
     },
     "pos": {
-      "level": "word",
-      "vocabsize": 1000
+      "level": "word"
     },
     "morph": {
       "level": "word"
     }
   },
+
   // TRAINING
   "buffer_size": 10000,
+  "dropout": 0,
   "epochs": 5,
   "batch_size": 50,
   "shuffle": true,
   "optim": "Adam",
   "lr": 0.001,
   "clip_norm": 5.0,
+  // print training loss every so many batches
   "report_freq": 10,
+  // check model on dev-set so many times during epoch
+  "checks_per_epoch": 0,
+
   // MODEL
   "emb_dim": 150,
   "hidden_size": 300,
-  "dropout": 0.3
+  "num_layers": 1
 }
