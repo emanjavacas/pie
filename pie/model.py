@@ -84,30 +84,32 @@ class SimpleModel(nn.Module):
         ((word, wlen), (char, clen)), tasks = batch_data
         output = {}
 
-        wemb, cemb = self.wemb(word), self.cemb(char, clen, wlen)
+        wemb, (cemb, cemb_outs) = self.wemb(word), self.cemb(char, clen, wlen)
+        cemb_outs = F.dropout(cemb_outs, p=self.dropout, training=self.training)
+        # cemb_outs: (seq_len x batch x emb_dim)
         wemb = F.dropout(wemb, p=self.dropout, training=self.training)
         cemb = F.dropout(cemb, p=self.dropout, training=self.training)
         enc_outs = self.encoder(self.merger(wemb, cemb), wlen)
 
         # POS
         pos, plen = tasks['pos']
-        # pos_logits = self.pos_decoder(enc_outs)
-        # pos_loss = self.pos_decoder.loss(pos_logits, pos)
-        pos_feats = self.pos_decoder(enc_outs)
-        pos_loss = self.pos_decoder.loss(pos_feats, pos, plen)
+        if self.pos_crf:
+            pos_feats = self.pos_decoder(enc_outs)
+            pos_loss = self.pos_decoder.loss(pos_feats, pos, plen)
+        else:
+            pos_logits = self.pos_decoder(enc_outs)
+            pos_loss = self.pos_decoder.loss(pos_logits, pos)
         output['pos'] = pos_loss
 
         # lemma
         lemma, llen = tasks['lemma']
         if self.lemma_sequential:
             lemma_context = torch_utils.flatten_padded_batch(enc_outs, wlen-1)
-            lemma_enc_outs = self.lemma_encoder(self.lemma_emb(char), clen)
             lemma_logits = self.lemma_decoder(
-                lemma, llen, lemma_enc_outs, clen, context=lemma_context)
-            lemma_loss = self.lemma_decoder.loss(lemma_logits, lemma)
+                lemma, llen, cemb_outs, clen, context=lemma_context)
         else:
             lemma_logits = self.lemma_decoder(enc_outs)
-            lemma_loss = self.lemma_decoder.loss(lemma_logits, lemma)
+        lemma_loss = self.lemma_decoder.loss(lemma_logits, lemma)
         output['lemma'] = lemma_loss
 
         # self (autoregressive language-model like loss)
@@ -123,7 +125,7 @@ class SimpleModel(nn.Module):
         (word, wlen), (char, clen) = inp
 
         # forward
-        wemb, cemb = self.wemb(word), self.cemb(char, clen, wlen)
+        wemb, (cemb, cemb_outs) = self.wemb(word), self.cemb(char, clen, wlen)
         enc_outs = self.encoder(self.merger(wemb, cemb), wlen)
 
         # remove <eos> during decoding
@@ -135,9 +137,8 @@ class SimpleModel(nn.Module):
         # lemma
         if self.lemma_sequential:
             lemma_context = torch_utils.flatten_padded_batch(enc_outs, wlen)
-            lemma_enc_outs = self.lemma_encoder(self.lemma_emb(char), clen)
             lemma_hyps, _ = self.lemma_decoder.predict_max(
-                lemma_enc_outs, clen, context=lemma_context)
+                cemb_outs, clen, context=lemma_context)
             lemma_hyps = [''.join(hyp) for hyp in lemma_hyps]
 
         else:
@@ -189,6 +190,6 @@ if __name__ == '__main__':
         break
     ((word, wlen), (char, clen)), tasks = next(data.batch_generator())
 
-    wemb, cemb = model.wemb(word), model.cemb(char, clen, wlen)
+    wemb, (cemb, _) = model.wemb(word), model.cemb(char, clen, wlen)
     emb = model.merger(wemb, cemb)
     enc_outs = model.encoder(emb, wlen)

@@ -7,6 +7,7 @@ from pie.settings import settings_from_file
 
 
 testpath = os.path.join(os.path.dirname(__file__), 'testconfig.json')
+delta = 5                       # FIXME
 
 
 class TestLabelEncoderSerialization(unittest.TestCase):
@@ -74,10 +75,10 @@ class TestDevSplit(unittest.TestCase):
             total_batches += 1
 
         dev_batches = 0
-        for batch in self.data.get_dev_split(split=0.1):
+        for batch in self.data.get_dev_split(split=0.05):
             dev_batches += 1
 
-        self.assertAlmostEqual(dev_batches, total_batches * 0.1, delta=1)
+        self.assertAlmostEqual(dev_batches, total_batches * 0.05, delta=delta)
 
     def test_remaining(self):
         pre_batches = 0
@@ -87,14 +88,14 @@ class TestDevSplit(unittest.TestCase):
         self.assertEqual(pre_batches, self.data.label_encoder.insts)
         self.assertEqual(pre_batches, len(self.data))
 
-        self.data.get_dev_split(split=0.1)
+        self.data.get_dev_split(split=0.05)
 
         post_batches = 0
         for batch in self.data.batch_generator():
             post_batches += 1
 
-        self.assertAlmostEqual(pre_batches * 0.9, post_batches, delta=1)
-        self.assertAlmostEqual(pre_batches * 0.9, len(self.data), delta=1)
+        self.assertAlmostEqual(pre_batches * 0.95, post_batches, delta=delta)
+        self.assertAlmostEqual(pre_batches * 0.95, len(self.data), delta=delta)
 
     def test_batch_level(self):
         settings = settings_from_file(testpath)
@@ -105,13 +106,13 @@ class TestDevSplit(unittest.TestCase):
         for batch in data.batch_generator():
             pre_batches += 1
 
-        self.assertAlmostEqual(pre_batches, len(data), delta=1)
+        self.assertAlmostEqual(pre_batches, len(data), delta=delta)
 
-        data.get_dev_split(split=0.1)
+        data.get_dev_split(split=0.05)
 
         post_batches = 0
         for batch in data.batch_generator():
             post_batches += 1
 
-        self.assertAlmostEqual(pre_batches * 0.9, post_batches, delta=1)
-        self.assertAlmostEqual(pre_batches * 0.9, len(data), delta=1)
+        self.assertAlmostEqual(pre_batches * 0.95, len(data), delta=delta)
+        self.assertAlmostEqual(pre_batches * 0.95, post_batches, delta=delta)

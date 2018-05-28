@@ -51,7 +51,8 @@ class CNNEmbedding(nn.Module):
 
         # (batch * nwords x C_o * len(kernel_sizes))
         output = torch.cat(conv_outs, dim=1)
-        return torch_utils.pad_flat_batch(output, nwords-1, maxlen=max(nwords).item())
+        output = torch_utils.pad_flat_batch(output, nwords-1, maxlen=max(nwords).item())
+        return output, None
 
 
 class RNNEmbedding(RNNEncoder):
@@ -75,12 +76,12 @@ class RNNEmbedding(RNNEncoder):
         """
         char = self.embs(char)
         # (max_seq_len x batch * nwords x emb_dim)
-        emb = super().forward(char, nchars)
+        emb_outs = super().forward(char, nchars)
         # (batch * nwords x emb_dim)
-        emb = torch_utils.get_last_token(emb, nchars)
-        # emb = emb.mean(0)
+        emb = torch_utils.get_last_token(emb_outs, nchars)
+        emb = torch_utils.pad_flat_batch(emb, nwords-1, maxlen=max(nwords).item())
 
-        return torch_utils.pad_flat_batch(emb, nwords-1, maxlen=max(nwords).item())
+        return emb, emb_outs
 
 
 class EmbeddingMixer(nn.Module):
@@ -130,7 +131,7 @@ if __name__ == '__main__':
     cnncemb = CNNEmbedding(len(data.label_encoder.char), emb_dim)
 
     mixer = EmbeddingMixer(20)
-    w, c = wemb(word), cemb(char, clen, wlen)
+    w, (c, _) = wemb(word), cemb(char, clen, wlen)
     output = mixer(w, c)
 
     output2 = []

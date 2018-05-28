@@ -1,4 +1,5 @@
 
+import logging
 import yaml
 import time
 from collections import defaultdict
@@ -8,6 +9,11 @@ import tqdm
 import torch
 from torch import optim
 from torch.nn.utils import clip_grad_norm_
+
+
+logging.basicConfig(
+    format='%(asctime)s : %(levelname)s : %(message)s',
+    level=logging.INFO)
 
 
 class Trainer(object):
@@ -35,19 +41,19 @@ class Trainer(object):
         else:
             self.check_freq = 0
 
-    def print_report(self):
+    def model_report(self):
         """
-        Print training report
+        Show model report
         """
         nparams = sum(p.nelement() for p in self.model.parameters())
-        print("::: Model :::")
-        print()
-        print(self.model)
-        print()
-        print("::: Model parameters :::")
-        print()
-        print(nparams)
-        print()
+        logging.info("::: Model :::")
+        logging.info('')
+        logging.info('\n' + str(self.model))
+        logging.info('')
+        logging.info("::: Model parameters :::")
+        logging.info('')
+        logging.info(nparams)
+        logging.info('')
 
     def weight_loss(self, loss):
         """
@@ -76,15 +82,15 @@ class Trainer(object):
 
         return dict(total_losses)
 
-    def report(self, batch, items, start, nbatches, loss, sep='   '):
+    def monitor_batch(self, batch, items, start, nbatches, loss, sep='   '):
         """
-        Print the report for monitoring
+        Logging.Info the report for monitoring
         """
         total = len(self.dataset)
         rep = sep.join('{}:{:.3f}'.format(k, v / nbatches) for k, v in loss.items())
         speed = items / (time.time() - start)
         formatter = "Batch [{}/{}] || {} || {:.0f} words/sec"
-        print(formatter.format(batch, total, rep, speed))
+        logging.info(formatter.format(batch, total, rep, speed))
 
     def run_check(self, dev):
         """
@@ -97,14 +103,16 @@ class Trainer(object):
             # scores
             dev_scores = self.model.evaluate(dev)
 
-        print("Dev losses")
-        print('\n'.join('{}: {:.3f}'.format(k, v) for k, v in dev_loss.items()))
-        print()
+        logging.info("Dev losses")
+        logging.info('')
+        logging.info('\n'.join('{}: {:.3f}'.format(k, v) for k, v in dev_loss.items()))
+        logging.info('')
         self.scheduler.step(sum(dev_loss[k] for k in ('pos', 'lemma')))
 
-        print("Dev scores")
-        print(yaml.dump(dev_scores, default_flow_style=False))
-        print()
+        logging.info("Dev scores")
+        logging.info('')
+        logging.info(yaml.dump(dev_scores, default_flow_style=False))
+        logging.info('')
 
     def train_epoch(self, dev):
         rep_loss, rep_items, rep_batches = defaultdict(float), 0, 0
@@ -129,15 +137,15 @@ class Trainer(object):
 
             # report
             if b > 0 and b % self.report_freq == 0:
-                self.report(b, rep_items, rep_start, rep_batches, rep_loss)
+                self.monitor_batch(b, rep_items, rep_start, rep_batches, rep_loss)
                 rep_loss, rep_items, rep_batches = defaultdict(float), 0, 0
                 rep_start = time.time()
 
             if self.check_freq > 0 and b > 0 and b % self.check_freq == 0:
                 if dev is not None:
-                    print("Evaluating model on dev set...")
+                    logging.info("Evaluating model on dev set...")
                     self.run_check(dev)
-                    print()
+                    logging.info('')
 
     def train_epochs(self, epochs, dev):
         """
@@ -148,15 +156,15 @@ class Trainer(object):
         for e in range(1, epochs + 1):
             # train epoch
             epoch_start = time.time()
-            print("Starting epoch [{}]".format(e))
+            logging.info("Starting epoch [{}]".format(e))
             self.train_epoch(dev)
             epoch_total = time.time() - epoch_start
-            print("Finished epoch [{}] in [{:g}] secs\n".format(e, epoch_total))
+            logging.info("Finished epoch [{}] in [{:g}] secs\n".format(e, epoch_total))
 
-        print("Finished training in [{:g}]".format(time.time() - start))
+        logging.info("Finished training in [{:g}]".format(time.time() - start))
 
     def train_model(self, epochs, dev=None):
-        self.print_report()
+        self.model_report()
 
         self.model.train()
         self.model.to(self.dataset.device)  # put on same device as dataset

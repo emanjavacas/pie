@@ -473,7 +473,7 @@ class AttentionalDecoder(nn.Module):
             scores.append(bscores)
             hyps.append(bhyps)
 
-        hyps = [self.label_encoder.stringify(hyp) for hyp in zip(*hyps)]
-        scores = [s/(len(hyp) + TINY) for s, hyp in zip(scores.tolist(), hyps)]
+        hyps = [self.label_encoder.stringify(hyp) for hyp in hyps]
+        scores = [s/(len(hyp) + TINY) for s, hyp in zip(scores, hyps)]
 
         return hyps, scores

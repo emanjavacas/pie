@@ -56,7 +56,7 @@ class EncoderDecoder(nn.Module):
 
     def predict(self, src, src_len):
         enc_outs = self.encoder(self.embs(src), src_len)
-        hyps, scores = self.decoder.predict_max(enc_outs, src_len, max_seq_len=50)
+        hyps, scores = self.decoder.predict_beam(enc_outs, src_len, max_seq_len=50)
         return hyps, scores
 
     def train_epoch(self, dataset, batch_size=20):
@@ -88,8 +88,8 @@ class EncoderDecoder(nn.Module):
                     hyps, scores = self.predict(src, src_len)
                     print()
                     for hyp, score, true in zip(hyps, scores, trg):
-                        target = self.label_encoder.stringify(true)
-                        hyp = ''.join(self.label_encoder.inverse_transform(hyp))
+                        target = ''.join(self.label_encoder.stringify(true))
+                        hyp = ''.join(hyp)
                         print("Score [{:.2f}]: {} ==> {}".format(score, target, hyp))
                     print()
                 self.train()
