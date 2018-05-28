@@ -4,8 +4,11 @@
   "device": "cpu",
 
   // DATA
+  // path or unix-like expression to file(s)/dir with training data
   "input_path": "datasets/medieval_latin/train",
-  // only used during training
+  // path to test set (same format as input_path)
+  "test_path": null,
+  // path to dev set (same format as input_path)
   "dev_path": null,
   // proportion of instances in the dev set (ignore if dev_path is passed)
   "dev_split": 0.05,

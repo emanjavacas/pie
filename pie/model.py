@@ -25,9 +25,10 @@ class SimpleModel(nn.Module):
     cemb_type : str, one of "RNN", "CNN", layer to use for char-level embeddings
     """
     def __init__(self, label_encoder, emb_dim, hidden_size, num_layers, dropout=0.0,
-                 merge_type='concat', cemb_type='RNN', include_self=True):
+                 merge_type='concat', cemb_type='RNN', include_self=True, pos_crf=True):
         self.label_encoder = label_encoder
         self.include_self = include_self
+        self.pos_crf = pos_crf
         self.dropout = dropout
         super().__init__()
 
@@ -58,18 +59,17 @@ class SimpleModel(nn.Module):
 
         # Decoders
         # - POS
-        # self.pos_decoder = LinearDecoder(
-        #     label_encoder.tasks['pos'], hidden_size, dropout=dropout)
-        self.pos_decoder = CRFDecoder(label_encoder.tasks['pos'], hidden_size)
+        if self.pos_crf:
+            self.pos_decoder = CRFDecoder(label_encoder.tasks['pos'], hidden_size)
+        else:
+            self.pos_decoder = LinearDecoder(
+                label_encoder.tasks['pos'], hidden_size, dropout=dropout)
 
-        # - Lemma
+        # - lemma
         self.lemma_sequential = label_encoder.tasks['lemma'].level == 'char'
         if self.lemma_sequential:
-            # TODO: check using char-level input as encoder instead of extra one
-            self.lemma_emb = nn.Embedding(len(label_encoder.char), emb_dim)
-            self.lemma_encoder = RNNEncoder(emb_dim, hidden_size)
             self.lemma_decoder = AttentionalDecoder(
-                label_encoder.tasks['lemma'], emb_dim, hidden_size,
+                label_encoder.tasks['lemma'], emb_dim, emb_dim, #hidden_size,
                 context_dim=hidden_size, dropout=dropout)
         else:
             self.lemma_decoder = LinearDecoder(
@@ -146,7 +146,7 @@ class SimpleModel(nn.Module):
 
         return pos_hyps, lemma_hyps
 
-    def evaluate(self, dataset):
+    def evaluate(self, dataset, total=None):
         """
         Get scores per task
         """
@@ -156,7 +156,7 @@ class SimpleModel(nn.Module):
 
         with torch.no_grad():
 
-            for inp, tasks in tqdm.tqdm(dataset):
+            for inp, tasks in tqdm.tqdm(dataset, total=total):
                 # get trues
                 (pos, _), (lemma, _) = tasks['pos'], tasks['lemma']
                 pos, lemma = pos.t().tolist(), lemma.t().tolist()

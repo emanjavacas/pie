@@ -6,7 +6,7 @@ def format_score(score):
     return round(float(score), 3)
 
 
-def apr(trues, preds):
+def compute_scores(trues, preds):
     p = precision_score(trues, preds, average='macro')
     r = recall_score(trues, preds, average='macro')
     a = accuracy_score(trues, preds)
@@ -34,11 +34,8 @@ class Scorer(object):
         for hyp, target in zip(hyps, targets):
             if isinstance(hyp, (list, tuple)):
                 if len(hyp) != len(target):
-                    print(hyp)
-                    print(target)
                     raise ValueError("Unequal hyp {} and target {} lengths"
                                      .format(len(hyp), len(target)))
-
                 self.preds.extend(hyp)
                 self.trues.extend(target)
             else:
@@ -49,7 +46,7 @@ class Scorer(object):
         """
         Return a dictionary of scores
         """
-        output = apr(self.trues, self.preds)
+        output = compute_scores(self.trues, self.preds)
 
         if self.compute_unknown:
             unk_preds, unk_trues = [], []
@@ -60,7 +57,7 @@ class Scorer(object):
 
             support = len(unk_trues)
             if support > 0:
-                output['unknown'] = apr(unk_trues, unk_preds)
+                output['unknown'] = compute_scores(unk_trues, unk_preds)
 
         return output
 

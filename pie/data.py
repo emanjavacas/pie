@@ -606,10 +606,17 @@ class Dataset(object):
             raise RuntimeError("Dev-split already exists! Cannot create a new one")
 
         buf = []
-        sents = self.reader.readsents()
+        split_size = self.label_encoder.insts * split
+        split_prop = split_size / self.label_encoder.insts
 
-        while len(buf) < (self.label_encoder.insts * split):
-            (fpath, line_num), data = next(sents)
+        for sent in self.reader.readsents():
+            if len(buf) >= split_size:
+                break
+
+            if random.random() > split_prop:
+                continue
+
+            (fpath, line_num), data = sent
             buf.append(data)
             self.dev_sents[fpath].add(line_num)
 
