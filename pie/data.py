@@ -32,12 +32,12 @@ class BaseReader(object):
     def __init__(self, settings, input_path=None):
         input_path = input_path or settings.input_path
 
-        if os.path.isdir(settings.input_path):
+        if os.path.isdir(input_path):
             self.filenames = [os.path.join(input_path, f)
                               for f in os.listdir(input_path)
                               if not f.startswith('.')]
-        elif os.path.isfile(settings.input_path):
-            self.filenames = [settings.input_path]
+        elif os.path.isfile(input_path):
+            self.filenames = [input_path]
         else:
             self.filenames = glob.glob(input_path)
 
