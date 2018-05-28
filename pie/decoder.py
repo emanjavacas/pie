@@ -73,51 +73,34 @@ class CRFDecoder(nn.Module):
         self.label_encoder = label_encoder
         super().__init__()
 
-        if label_encoder.get_bos() is None:
-            raise ValueError("CRFDecoder requires <bos> token")
-
-        BOS = label_encoder.get_bos()
-        EOS = label_encoder.get_eos()
-        PAD = label_encoder.get_pad()
         vocab = len(label_encoder)
-
         self.projection = nn.Linear(hidden_size, vocab)
-
-        # matrix of transition scores from j to i
-        trans = torch.randn(vocab, vocab)
-        trans[BOS, :] = -10000. # no transition to <bos>
-        trans[:, EOS] = -10000. # no transition from <eos> except to <pad>
-        trans[:, PAD] = -10000. # no transition from <pad> except to <pad>
-        trans[PAD, :] = -10000.
-        trans[PAD, EOS] = 0.
-        trans[PAD, PAD] = 0.
-        self.trans = nn.Parameter(trans)
+        self.transition = nn.Parameter(torch.tensor(vocab, vocab))
 
     def init(self):
         inits.init_linear(self.projection)
+        nn.init.xavier_normal(self.transition)
 
     def forward(self, enc_outs):
         # (seq_len x batch x vocab)
-        feats = self.projection(enc_outs)
+        logits = self.projection(enc_outs)
 
-        return feats
+        return F.log_softmax(logits)
 
-    def partition(self, feats, mask):
-        seq_len, batch, vocab = feats.size()
+    def partition(self, logits, mask):
+        seq_len, batch, vocab = logits.size()
 
-        # initialize forward variables in log space
-        Z = feats.new(batch, vocab).fill_(-10000.)
-        Z[:, self.label_encoder.get_bos()] = 0.
+        # (batch x vocab)
+        Z = logits[0]
 
-        # iterate through the sequence
-        for t in range(seq_len): 
-            Z_t = Z.unsqueeze(1).expand(-1, vocab, vocab)
-            emit = feats[t].unsqueeze(-1).expand_as(Z_t)
-            trans = self.trans.unsqueeze(0).expand_as(Z_t)
+        for t in range(1, seq_len):
+            emit_score = logits[t].view(batch, 1, vocab)
+            trans_score = self.transition.view(1, vocab, vocab)
+            # mask and update
+            Z_t = Z.view(batch, vocab, 1)
             # (batch x vocab x vocab) => (batch x vocab)
-            Z_t = torch_utils.log_sum_exp(Z_t + emit + trans)
-            # (batch x vocab)
-            mask_t = mask[t].unsqueeze(-1).expand_as(Z)
+            Z_t = torch_utils.log_sum_exp(Z_t + emit_score + trans_score, 1)
+            mask_t = mask[t].view(batch, 1)
             Z = Z_t * mask_t + Z * (1 - mask_t)
 
         # (batch x vocab) => (batch)
@@ -125,72 +108,78 @@ class CRFDecoder(nn.Module):
 
         return Z
 
-    def score(self, feats, mask, targets):
+    def score(self, logits, mask, targets):
         # calculate the score of a given sequence
-        seq_len, batch, vocab = feats.size()
-        score = feats.new(batch).fill_(0.)
+        seq_len, batch, vocab = logits.size()
+        score = 0.
+        # (batch x vocab x vocab)
+        trans = self.transition.unsqueeze(0).expand(batch, vocab, vocab)
 
-        # prepend <bos>
-        targets = torch_utils.prepad(targets, pad=self.label_encoder.get_bos())
-
-        # iterate over sequence
-        for t in range(seq_len):
-            emit = feats[t, :, targets[t+1]].diag()
-            trans = self.trans[targets[t+1], targets[t]]
-            score = score + emit + (trans * mask[t])
+        # iterate from tag to next tag
+        for t in range(seq_len - 1):
+            curr_tag, next_tag = targets[t], targets[t+1]
+            # from current transition scores (batch, 1, vocab) => (batch, vocab)
+            trans_score = trans.gather(
+                1, curr_tag.view(batch, 1, 1).expand(batch, 1, vocab)
+            ).squeeze(1)
+            # from current to next transition scores (batch, 1) => (batch)
+            trans_score = trans_score.gather(1, next_tag.view(batch, 1)).squeeze(1)
+            # (batch)
+            emit_score = logits.gather(1, next_tag.view(batch, 1)).squeeze(1)
+            score = score + (trans_score * mask[t+1]) + (emit_score * mask[t])
+            
+        # last step
+        last_target_index = mask.sum(0).long() - 1
+        # (batch)
+        last_target = targets.gather(0, last_target_index.expand(seq_len, batch))[0]
+        # (batch x 1) => (batch)
+        last_score = logits[-1].gather(1, last_target.unsqueeze(1)).squeeze(1)
+        # (batch)
+        score = last_score * mask[-1]
 
         return score
 
-    def loss(self, feats, targets, lengths):
+    def loss(self, enc_outs, targets, lengths):
         # mask on padding
         mask = torch_utils.make_length_mask(lengths).float()
         # (batch x seq_len) => (seq_len x batch)
         mask = mask.t()
-        feats = feats * mask.unsqueeze(2).expand_as(feats)
 
-        Z = self.partition(feats, mask)
-        score = self.score(feats, mask, targets)
+        logits = self.projection(enc_outs)
+        # logits = logits * mask.unsqueeze(2).expand_as(logits)
+
+        Z = self.partition(logits, mask)
+        score = self.score(logits, mask, targets)
 
         return torch.mean(Z - score)
 
     def predict(self, enc_outs, lengths):
-        feats = self.projection(enc_outs)
-        _, batch, vocab = feats.size()
+        # (seq_len x batch x vocab)
+        logits = self.projection(enc_outs)
+        seq_len, _, vocab = logits.size()
+        start_tag, end_tag = vocab, vocab + 1
 
         # mask on padding (batch x seq_len)
-        mask = torch_utils.make_length_mask(lengths + 1).float()  # add <eos>
+        mask = torch_utils.make_length_mask(lengths).float()
 
-        bptr, hyps = [], []
-        scores = feats.new(batch, vocab).fill_(-10000.)
-        scores[:, self.label_encoder.get_bos()] = 0
-        trans = self.trans.unsqueeze(0).expand(batch, vocab, vocab)
+        # variables
+        trans = logits.new(vocab + 2, vocab + 2).fill_(-10000.)
+        trans[:vocab, :vocab] = self.transition.data
+        hyps, scores = [], []
+        tag_sequence = logits.new(seq_len + 2, vocab + 2)
 
-        for t, emit in enumerate(feats):
-            # (batch x vocab) => (batch x vocab x vocab)
-            z = scores.unsqueeze(1).expand_as(trans) + trans
-            # (batch x vocab)
-            scores_t, bptr_t = torch.max(z, -1)
-            scores_t = scores_t + emit
-            # accumulate
-            bptr.append(bptr_t)
-            # apply mask (batch x vocab)
-            mask_t = mask[:, t].unsqueeze(1).expand_as(scores)
-            scores = scores_t * mask_t + scores * (1 - mask_t)
+        # go over batches
+        for logits_b, mask_b in zip(logits.t(), mask.t()):
+            seq_len = mask_b.sum()
+            # get this batch logits
+            tag_sequence.fill_(-10000)
+            tag_sequence[0, start_tag] = 0.
+            tag_sequence[1:seq_len+1, :vocab] = logits_b[:seq_len]
+            tag_sequence[seq_len+1, end_tag] = 0.
 
-        # (batch)
-        scores, bests = torch.max(scores, dim=1)
-        scores = scores.tolist()
-
-        # back-tracking
-        bptr = torch.stack(bptr).transpose(0, 1)  # (batch x seq_len x vocab)
-        for b, length in enumerate(lengths.tolist()):
-            best = bests[b].item()
-            hyp = [best]
-            for bptr_t in reversed(bptr[b, :length].tolist()):
-                hyp.append(bptr_t[best])
-            hyp = list(reversed(hyp[:-1]))  # remove <bos>
-            hyp = self.label_encoder.inverse_transform(hyp)
-            hyps.append(hyp)
+            path, score = torch_utils.viterbi_decode(tag_sequence[:seq_len+2], trans)
+            hyps.append(self.label_encoder.inverse_transform(path[1:-1]))
+            scores.append(score)
 
         return hyps, scores
 

@@ -203,7 +203,7 @@ def make_length_mask(lengths):
                 .lt(lengths.unsqueeze(1))
 
 
-def log_sum_exp(x):
+def log_sum_exp(x, dim=-1):
     """
     Numerically stable log_sum_exp
 
@@ -214,6 +214,55 @@ def log_sum_exp(x):
     >>> import torch
     >>> x = torch.randn(10, 5)
     """
-    max_score, _ = torch.max(x, -1)
-    max_score_broadcast = max_score.unsqueeze(-1).expand_as(x)
-    return max_score + torch.log(torch.sum(torch.exp(x - max_score_broadcast), -1))
+    max_score, _ = torch.max(x, dim)
+    max_score_broadcast = max_score.unsqueeze(dim).expand_as(x)
+    return max_score + (x - max_score_broadcast).exp().sum(dim).log()
+
+
+def viterbi_decode(tag_sequence, transition):
+    """
+    Perform Viterbi decoding in log space over a sequence given a transition matrix
+    specifying pairwise (transition) potentials between tags and a matrix of shape
+    (sequence_length, num_tags) specifying unary potentials for possible tags per
+    timestep.
+
+    Parameters
+    ==========
+    tag_sequence: torch.Tensor, required.
+        A tensor of shape (sequence_length, num_tags) representing scores for
+        a set of tags over a given sequence.
+    trans: torch.Tensor, required.
+        A tensor of shape (num_tags, num_tags) representing the binary potentials
+        for transitioning between a given pair of tags.
+
+    Returns
+    =======
+    viterbi_path: The tag indices of the maximum likelihood tag sequence
+    viterbi_score: float, The score of the viterbi path
+    """
+    seq_len, vocab = tag_sequence.size()
+
+    path_scores = []
+    path_indices = []
+
+    path_scores.append(tag_sequence[0, :])
+
+    # Evaluate the scores for all possible paths.
+    for t in range(1, seq_len):
+
+        # Add pairwise potentials to current scores.
+        summed_potentials = path_scores[t - 1].unsqueeze(-1) + trans
+        scores, paths = torch.max(summed_potentials, 0)
+        path_scores.append(tag_sequence[t, :] + scores.squeeze())
+        path_indices.append(paths.squeeze())
+
+    # Construct the most likely sequence backwards.
+    viterbi_score, best_path = torch.max(path_scores[-1], 0)
+    viterbi_path = [int(best_path.numpy())]
+    for backward_t in reversed(path_indices):
+        viterbi_path.append(int(backward_t[viterbi_path[-1]]))
+
+    # Reverse the backward path.
+    viterbi_path.reverse()
+    
+    return viterbi_path, viterbi_score
