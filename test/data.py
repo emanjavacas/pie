@@ -40,10 +40,8 @@ class TestWordCharEncoding(unittest.TestCase):
     def test_lengths(self):
         ((word, wlen), (char, clen)), _ = next(self.data.batch_generator())
 
-        for w, wl in zip(word.t(), wlen):
-            self.assertEqual(w[wl-1].item(), self.data.label_encoder.word.get_eos())
-
         for c, cl in zip(char.t(), clen):
+            self.assertEqual(c[0].item(), self.data.label_encoder.char.get_bos())
             self.assertEqual(c[cl-1].item(), self.data.label_encoder.char.get_eos())
 
     def test_word_char(self):
@@ -51,15 +49,15 @@ class TestWordCharEncoding(unittest.TestCase):
             idx = 0
             total_words = 0
             for sent, nwords in zip(word.t(), wlen):
-                for word in sent[:nwords-1]:
+                for word in sent[:nwords]:
                     # get word
                     word = self.data.label_encoder.word.inverse_table[word]
                     # get chars
-                    chars = char.t()[idx][:clen[idx]-1].tolist()  # remove <eos>
+                    chars = char.t()[idx][1:clen[idx]-1].tolist()  # remove <eos>,<bos>
                     chars = ''.join(self.data.label_encoder.char.inverse_transform(chars))
                     self.assertEqual(word, chars)
                     idx += 1
-                total_words += nwords - 1
+                total_words += nwords
             self.assertEqual(idx, total_words, "Checked all words")
 
 

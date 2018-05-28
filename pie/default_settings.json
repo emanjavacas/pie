@@ -30,7 +30,7 @@
   // task-related config
   "tasks": {
     "lemma": {
-      "level": "char"
+      "level": "char", "bos": true, "eos": true
     },
     "pos": {
       "level": "word"

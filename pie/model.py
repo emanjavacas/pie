@@ -85,7 +85,6 @@ class SimpleModel(nn.Module):
         output = {}
 
         wemb, (cemb, cemb_outs) = self.wemb(word), self.cemb(char, clen, wlen)
-        cemb_outs = F.dropout(cemb_outs, p=self.dropout, training=self.training)
         # cemb_outs: (seq_len x batch x emb_dim)
         wemb = F.dropout(wemb, p=self.dropout, training=self.training)
         cemb = F.dropout(cemb, p=self.dropout, training=self.training)
@@ -93,18 +92,18 @@ class SimpleModel(nn.Module):
 
         # POS
         pos, plen = tasks['pos']
+        pos_logits = self.pos_decoder(enc_outs)
         if self.pos_crf:
-            pos_feats = self.pos_decoder(enc_outs)
-            pos_loss = self.pos_decoder.loss(pos_feats, pos, plen)
+            pos_loss = self.pos_decoder.loss(pos_logits, pos, plen)
         else:
-            pos_logits = self.pos_decoder(enc_outs)
             pos_loss = self.pos_decoder.loss(pos_logits, pos)
         output['pos'] = pos_loss
 
         # lemma
         lemma, llen = tasks['lemma']
         if self.lemma_sequential:
-            lemma_context = torch_utils.flatten_padded_batch(enc_outs, wlen-1)
+            cemb_outs = F.dropout(cemb_outs, p=self.dropout, training=self.training)
+            lemma_context = torch_utils.flatten_padded_batch(enc_outs, wlen)
             lemma_logits = self.lemma_decoder(
                 lemma, llen, cemb_outs, clen, context=lemma_context)
         else:
@@ -128,9 +127,6 @@ class SimpleModel(nn.Module):
         wemb, (cemb, cemb_outs) = self.wemb(word), self.cemb(char, clen, wlen)
         enc_outs = self.encoder(self.merger(wemb, cemb), wlen)
 
-        # remove <eos> during decoding
-        wlen = wlen-1
-
         # pos
         pos_hyps, _ = self.pos_decoder.predict(enc_outs, wlen)
 
@@ -153,24 +149,28 @@ class SimpleModel(nn.Module):
         pos_scorer = Scorer(self.label_encoder.tasks['pos'])
         lemma_scorer = Scorer(
             self.label_encoder.tasks['lemma'], compute_unknown=self.lemma_sequential)
+        pos_le = self.label_encoder.tasks['pos']
+        lemma_le = self.label_encoder.tasks['lemma']
 
         with torch.no_grad():
 
             for inp, tasks in tqdm.tqdm(dataset, total=total):
                 # get trues
-                (pos, _), (lemma, _) = tasks['pos'], tasks['lemma']
+                (pos, plen), (lemma, llen) = tasks['pos'], tasks['lemma']
                 pos, lemma = pos.t().tolist(), lemma.t().tolist()
-                pos = [self.label_encoder.tasks['pos'].stringify(p) for p in pos]
-                lemma = [self.label_encoder.tasks['lemma'].stringify(l) for l in lemma]
+                plen, llen = plen.tolist(), llen.tolist()
+                pos_true = [pos_le.stringify(p, l) for p, l in zip(pos, plen)]
                 if self.lemma_sequential:
-                    lemma = [''.join(l) for l in lemma]
+                    lemma_true = [''.join(lemma_le.stringify(l)) for l in lemma]
+                else:
+                    lemma_true = [lemma_le.stringify(l, ll) for l, ll in zip(lemma, llen)]
 
                 # get preds
                 pos_hyps, lemma_hyps = self.predict(inp)
 
                 # accumulate
-                pos_scorer.register_batch(pos_hyps, pos)
-                lemma_scorer.register_batch(lemma_hyps, lemma)
+                pos_scorer.register_batch(pos_hyps, pos_true)
+                lemma_scorer.register_batch(lemma_hyps, lemma_true)
 
         return {'pos': pos_scorer.get_scores(), 'lemma': lemma_scorer.get_scores()}
 
@@ -193,3 +193,4 @@ if __name__ == '__main__':
     wemb, (cemb, _) = model.wemb(word), model.cemb(char, clen, wlen)
     emb = model.merger(wemb, cemb)
     enc_outs = model.encoder(emb, wlen)
+    model.pos_decoder.predict(enc_outs, wlen)

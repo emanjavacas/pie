@@ -75,7 +75,7 @@ class CRFDecoder(nn.Module):
 
         vocab = len(label_encoder)
         self.projection = nn.Linear(hidden_size, vocab)
-        self.transition = nn.Parameter(torch.tensor(vocab, vocab))
+        self.transition = nn.Parameter(torch.Tensor(vocab, vocab))
 
     def init(self):
         inits.init_linear(self.projection)
@@ -85,7 +85,7 @@ class CRFDecoder(nn.Module):
         # (seq_len x batch x vocab)
         logits = self.projection(enc_outs)
 
-        return F.log_softmax(logits)
+        return F.log_softmax(logits, -1)
 
     def partition(self, logits, mask):
         seq_len, batch, vocab = logits.size()
@@ -125,7 +125,7 @@ class CRFDecoder(nn.Module):
             # from current to next transition scores (batch, 1) => (batch)
             trans_score = trans_score.gather(1, next_tag.view(batch, 1)).squeeze(1)
             # (batch)
-            emit_score = logits.gather(1, next_tag.view(batch, 1)).squeeze(1)
+            emit_score = logits[t].gather(1, next_tag.view(batch, 1)).squeeze(1)
             score = score + (trans_score * mask[t+1]) + (emit_score * mask[t])
             
         # last step
@@ -139,13 +139,11 @@ class CRFDecoder(nn.Module):
 
         return score
 
-    def loss(self, enc_outs, targets, lengths):
+    def loss(self, logits, targets, lengths):
         # mask on padding
         mask = torch_utils.make_length_mask(lengths).float()
         # (batch x seq_len) => (seq_len x batch)
         mask = mask.t()
-
-        logits = self.projection(enc_outs)
         # logits = logits * mask.unsqueeze(2).expand_as(logits)
 
         Z = self.partition(logits, mask)
@@ -168,9 +166,9 @@ class CRFDecoder(nn.Module):
         hyps, scores = [], []
         tag_sequence = logits.new(seq_len + 2, vocab + 2)
 
-        # go over batches
-        for logits_b, mask_b in zip(logits.t(), mask.t()):
-            seq_len = mask_b.sum()
+        # iterate over batches
+        for logits_b, len_b in zip(logits.t(), lengths):
+            seq_len = len_b.item()
             # get this batch logits
             tag_sequence.fill_(-10000)
             tag_sequence[0, start_tag] = 0.
@@ -261,6 +259,9 @@ class AttentionalDecoder(nn.Module):
         self.context_dim = context_dim
         super(AttentionalDecoder, self).__init__()
 
+        if label_encoder.get_eos() is None and label_encoder.get_bos() is None:
+            raise ValueError("AttentionalDecoder needs at least one of <eos> or <bos>")
+
         nll_weight = torch.ones(len(label_encoder))
         nll_weight[label_encoder.get_pad()] = 0.
         self.register_buffer('nll_weight', nll_weight)
@@ -284,8 +285,12 @@ class AttentionalDecoder(nn.Module):
         Decoding routine for training. Returns the logits corresponding to
         the targets for the `loss` method. Takes care of padding.
         """
-        eos = self.label_encoder.get_eos()
-        embs = self.embs(torch_utils.prepad(targets[:-1], pad=eos))
+        targets, lengths = targets[:-1], lengths - 1
+        if self.label_encoder.get_bos() is None:  # needs prepad
+            targets = torch_utils.prepad(targets, pad=self.label_encoder.get_eos())
+            lengths += 1
+            
+        embs = self.embs(targets)
 
         if self.context_dim > 0:
             if context is None:
@@ -294,6 +299,7 @@ class AttentionalDecoder(nn.Module):
             embs = torch.cat(
                 [embs, context.unsqueeze(0).repeat(embs.size(0), 1, 1)],
                 dim=2)
+
         embs, unsort = torch_utils.pack_sort(embs, lengths)
 
         outs, _ = self.rnn(embs)
@@ -313,6 +319,9 @@ class AttentionalDecoder(nn.Module):
         logits : tensor(seq_len x batch x vocab)
         targets : tensor(seq_len x batch)
         """
+        if self.label_encoder.get_bos() is not None:
+            targets = targets[1:]  # remove <bos> from targets
+
         loss = F.cross_entropy(
             logits.view(-1, len(self.label_encoder)), targets.view(-1),
             weight=self.nll_weight, size_average=False)
@@ -351,8 +360,10 @@ class AttentionalDecoder(nn.Module):
             score[mask == 0] = 0
             scores += score
 
-        lengths = lengths - 1   # remove <eos>
-        hyps = [self.label_encoder.inverse_transform(hyp)[:length]
+        # remove <bos>/<eos> if given
+        start = 1 if self.label_encoder.get_bos() else 0
+        lengths = lengths - 1 if self.label_encoder.get_eos() else lengths
+        hyps = [self.label_encoder.inverse_transform(hyp[start:length])
                 for hyp, length in zip(zip(*hyps), lengths.tolist())]
         scores = (scores / lengths.float()).tolist()
 
@@ -412,7 +423,8 @@ class AttentionalDecoder(nn.Module):
         hidden = None
         seq_len, batch, _ = enc_outs.size()
         beams = [Beam(beam_width, eos=self.label_encoder.get_eos(),
-                      device=enc_outs.device) for _ in range(batch)]
+                      bos=self.label_encoder.get_bos(), device=enc_outs.device)
+                 for _ in range(batch)]
 
         # expand data along beam width
         enc_outs = enc_outs.repeat(1, beam_width, 1)

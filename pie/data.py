@@ -264,7 +264,7 @@ class LabelEncoder(object):
     """
     Label encoder
     """
-    def __init__(self, pad=True, eos=True, bos=False,
+    def __init__(self, pad=True, eos=False, bos=False,
                  vocabsize=None, level='word', name='Unk'):
 
         if level.lower() not in ('word', 'char'):
@@ -303,15 +303,15 @@ class LabelEncoder(object):
             self.inverse_table == other.inverse_table and \
             self.fitted == other.fitted
 
-    def add(self, sent):
+    def add(self, seq):
         if self.fitted:
             raise ValueError("Already fitted")
 
         if self.level == 'word':
-            self.freqs.update(sent)
+            self.freqs.update(seq)
         else:
-            self.freqs.update(utils.flatten(sent))
-            self.known_tokens.update(sent)
+            self.freqs.update(utils.flatten(seq))
+            self.known_tokens.update(seq)
 
     def compute_vocab(self):
         if self.fitted:
@@ -326,33 +326,40 @@ class LabelEncoder(object):
         self.table = {sym: idx for idx, sym in enumerate(self.inverse_table)}
         self.fitted = True
 
-    def transform(self, sent):
+    def transform(self, seq):
         if not self.fitted:
             raise ValueError("Vocabulary hasn't been computed yet")
 
-        sent = [self.table.get(tok, self.table[constants.UNK]) for tok in sent]
+        output = []
+        if self.bos:
+            output.append(self.get_bos())
+
+        output += [self.table.get(tok, self.table[constants.UNK]) for tok in seq]
 
         if self.eos:
-            sent.append(self.get_eos())
+            output.append(self.get_eos())
 
-        return sent
+        return output
 
-    def inverse_transform(self, sent):
+    def inverse_transform(self, seq):
         if not self.fitted:
             raise ValueError("Vocabulary hasn't been computed yet")
 
-        return [self.inverse_table[i] for i in sent]
+        return [self.inverse_table[i] for i in seq]
 
-    def stringify(self, sent):
+    def stringify(self, seq, length=None):
         if not self.fitted:
             raise ValueError("Vocabulary hasn't been computed yet")
 
-        try:
-            sent = sent[:sent.index(self.get_eos())]
-        except ValueError:
-            pass
+        if length is None:
+            eos = self.get_eos()
+            if eos is None:
+                raise ValueError("Don't know how to compute input length")
+            length = seq.index(eos)
 
-        return self.inverse_transform(sent)
+        seq = self.inverse_transform(seq[:length])
+
+        return seq
 
     def _get_sym(self, sym):
         if not self.fitted:
@@ -374,6 +381,7 @@ class LabelEncoder(object):
             raise ValueError("Attempted to serialize unfitted encoder")
 
         return {'eos': self.eos,
+                'bos': self.bos,
                 'pad': self.pad,
                 'level': self.level,
                 'vocabsize': self.vocabsize,
@@ -384,7 +392,7 @@ class LabelEncoder(object):
 
     @classmethod
     def from_json(cls, obj):
-        inst = cls(pad=obj['pad'], eos=obj['eos'],
+        inst = cls(pad=obj['pad'], eos=obj['eos'], bos=obj['bos'],
                    level=obj['level'], vocabsize=obj['vocabsize'])
         inst.freqs = Counter(obj['freqs'])
         inst.table = dict(obj['table'])
@@ -401,7 +409,8 @@ class MultiLabelEncoder(object):
     """
     def __init__(self, word_vocabsize=None, char_vocabsize=None):
         self.word = LabelEncoder(vocabsize=word_vocabsize, name='word')
-        self.char = LabelEncoder(vocabsize=char_vocabsize, name='char', level='char')
+        self.char = LabelEncoder(vocabsize=char_vocabsize, name='char', level='char',
+                                 eos=True, bos=True)
         self.insts = 0
         self.tasks = {}
 

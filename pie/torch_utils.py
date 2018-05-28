@@ -251,13 +251,13 @@ def viterbi_decode(tag_sequence, transition):
     for t in range(1, seq_len):
 
         # Add pairwise potentials to current scores.
-        summed_potentials = path_scores[t - 1].unsqueeze(-1) + trans
+        summed_potentials = path_scores[t - 1].unsqueeze(-1) + transition
         scores, paths = torch.max(summed_potentials, 0)
         path_scores.append(tag_sequence[t, :] + scores.squeeze())
         path_indices.append(paths.squeeze())
 
     # Construct the most likely sequence backwards.
-    viterbi_score, best_path = torch.max(path_scores[-1], 0)
+    viterbi_score, best_path = torch.max(path_scores[-1].cpu(), 0)
     viterbi_path = [int(best_path.numpy())]
     for backward_t in reversed(path_indices):
         viterbi_path.append(int(backward_t[viterbi_path[-1]]))

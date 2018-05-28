@@ -51,7 +51,7 @@ class CNNEmbedding(nn.Module):
 
         # (batch * nwords x C_o * len(kernel_sizes))
         output = torch.cat(conv_outs, dim=1)
-        output = torch_utils.pad_flat_batch(output, nwords-1, maxlen=max(nwords).item())
+        output = torch_utils.pad_flat_batch(output, nwords, maxlen=max(nwords).item())
         return output, None
 
 
@@ -79,7 +79,7 @@ class RNNEmbedding(RNNEncoder):
         emb_outs = super().forward(char, nchars)
         # (batch * nwords x emb_dim)
         emb = torch_utils.get_last_token(emb_outs, nchars)
-        emb = torch_utils.pad_flat_batch(emb, nwords-1, maxlen=max(nwords).item())
+        emb = torch_utils.pad_flat_batch(emb, nwords, maxlen=max(nwords).item())
 
         return emb, emb_outs
 
