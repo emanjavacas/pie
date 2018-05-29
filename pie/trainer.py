@@ -13,9 +13,7 @@ from torch.nn.utils import clip_grad_norm_
 from pie.data import Dataset
 
 
-logging.basicConfig(
-    format='%(asctime)s : %(levelname)s : %(message)s',
-    level=logging.INFO)
+logging.basicConfig(format='%(asctime)s : %(message)s', level=logging.INFO)
 
 
 class Trainer(object):
@@ -95,27 +93,30 @@ class Trainer(object):
         total = self.dataset.num_batches()
         rep = sep.join('{}:{:.3f}'.format(k, v / nbatches) for k, v in loss.items())
         speed = items / (time.time() - start)
-        formatter = "Batch [{}/{}] || {} || {:.0f} words/sec"
+        formatter = "Batch [{}/{}] || {} || {:.0f} w/s"
         logging.info(formatter.format(batch, total, rep, speed))
 
     def run_check(self, dev):
         """
         Monitor dev loss and eventually early-stop training
         """
+        print("Evaluating model on dev set...")
+
+        self.model.eval()
+
         with torch.no_grad():
-            self.model.eval()
             dev_loss = self.evaluate(dev)
-            self.model.train()
-            # scores
+            print("::: Dev losses :::\n")
+            print('\n'.join('{}: {:.3f}'.format(k, v) for k, v in dev_loss.items()))
+
             dev_scores = self.model.evaluate(dev)
+            print("\n::: Dev scores :::\n")
+            print(yaml.dump(dev_scores, default_flow_style=False))
+            print()
 
-        self.scheduler.step(sum(dev_loss[k] for k in ('pos', 'lemma')))
+        self.model.train()
 
-        print("::: Dev losses :::\n")
-        print('\n'.join('{}: {:.3f}'.format(k, v) for k, v in dev_loss.items()))
-        print("\n::: Dev scores :::\n")
-        print(yaml.dump(dev_scores, default_flow_style=False))
-        print()
+        self.scheduler.step(sum(dev_loss[k] for k in ('pos', 'lemma')))  # FIXME
 
     def train_epoch(self, dev):
         rep_loss, rep_items, rep_batches = collections.defaultdict(float), 0, 0
@@ -146,9 +147,7 @@ class Trainer(object):
 
             if self.check_freq > 0 and b > 0 and b % self.check_freq == 0:
                 if dev is not None:
-                    logging.info("Evaluating model on dev set...")
                     self.run_check(dev)
-                    logging.info('')
 
     def train_epochs(self, epochs, dev):
         """
@@ -162,7 +161,7 @@ class Trainer(object):
             logging.info("Starting epoch [{}]".format(e))
             self.train_epoch(dev)
             epoch_total = time.time() - epoch_start
-            logging.info("Finished epoch [{}] in [{:g}] secs\n".format(e, epoch_total))
+            logging.info("Finished epoch [{}] in [{:g}] secs".format(e, epoch_total))
 
         logging.info("Finished training in [{:g}]".format(time.time() - start))
 

@@ -1,6 +1,8 @@
 
 import os
 
+import yaml
+
 from pie.settings import settings_from_file
 from pie.data import Dataset, TabReader
 from pie.model import SimpleModel
@@ -54,8 +56,14 @@ if __name__ == '__main__':
         trainer.train_model(settings.epochs, dev=devset)
 
     except KeyboardInterrupt:
+        print("Stopping training")
+
+    finally:
         if testset is not None:
-            print(model.evaluate(testset.batch_generator()))
+            model.eval()
+            test_loss = model.evaluate(testset.batch_generator())
+            print("\n::: Test scores :::\n")
+            print(yaml.dump(test_loss, default_flow_style=False))
             print()
 
-        print("Bye!")
+    print("Bye!")
