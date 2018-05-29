@@ -76,12 +76,20 @@ class CRFDecoder(nn.Module):
         vocab = len(label_encoder)
         self.projection = nn.Linear(hidden_size, vocab)
         self.transition = nn.Parameter(torch.Tensor(vocab, vocab))
+        self.start_transition = nn.Parameter(torch.Tensor(vocab))
+        self.end_transition = nn.Parameter(torch.Tensor(vocab))
+
+        self.init()
 
     def init(self):
         inits.init_linear(self.projection)
-        nn.init.xavier_normal(self.transition)
+        # transitions
+        nn.init.xavier_normal_(self.transition)
+        nn.init.normal_(self.start_transition)
+        nn.init.normal_(self.end_transition)
 
     def forward(self, enc_outs):
+        "get logits of the input features"
         # (seq_len x batch x vocab)
         logits = self.projection(enc_outs)
 
@@ -91,7 +99,7 @@ class CRFDecoder(nn.Module):
         seq_len, batch, vocab = logits.size()
 
         # (batch x vocab)
-        Z = logits[0]
+        Z = self.start_transition.view(1, vocab) + logits[0]
 
         for t in range(1, seq_len):
             emit_score = logits[t].view(batch, 1, vocab)
@@ -100,9 +108,11 @@ class CRFDecoder(nn.Module):
             Z_t = Z.view(batch, vocab, 1)
             # (batch x vocab x vocab) => (batch x vocab)
             Z_t = torch_utils.log_sum_exp(Z_t + emit_score + trans_score, 1)
+            # mask & update
             mask_t = mask[t].view(batch, 1)
             Z = Z_t * mask_t + Z * (1 - mask_t)
 
+        Z = Z + self.end_transition.view(1, vocab)
         # (batch x vocab) => (batch)
         Z = torch_utils.log_sum_exp(Z)
 
@@ -111,7 +121,8 @@ class CRFDecoder(nn.Module):
     def score(self, logits, mask, targets):
         # calculate the score of a given sequence
         seq_len, batch, vocab = logits.size()
-        score = 0.
+        # transition from start tag to first tag
+        score = self.start_transition.index_select(0, targets[0])
         # (batch x vocab x vocab)
         trans = self.transition.unsqueeze(0).expand(batch, vocab, vocab)
 
@@ -125,17 +136,19 @@ class CRFDecoder(nn.Module):
             # from current to next transition scores (batch, 1) => (batch)
             trans_score = trans_score.gather(1, next_tag.view(batch, 1)).squeeze(1)
             # (batch)
-            emit_score = logits[t].gather(1, next_tag.view(batch, 1)).squeeze(1)
+            emit_score = logits[t].gather(1, curr_tag.view(batch, 1)).squeeze(1)
             score = score + (trans_score * mask[t+1]) + (emit_score * mask[t])
             
         # last step
         last_target_index = mask.sum(0).long() - 1
         # (batch)
         last_target = targets.gather(0, last_target_index.expand(seq_len, batch))[0]
-        # (batch x 1) => (batch)
-        last_score = logits[-1].gather(1, last_target.unsqueeze(1)).squeeze(1)
         # (batch)
-        score = last_score * mask[-1]
+        last_trans_score = self.end_transition.index_select(0, last_target)
+        # (batch x 1) => (batch)
+        last_emit_score = logits[-1].gather(1, last_target.unsqueeze(1)).squeeze(1)
+        # (batch)
+        score = score + last_trans_score + last_emit_score * mask[-1]
 
         return score
 
@@ -346,14 +359,18 @@ class AttentionalDecoder(nn.Module):
         hyps, scores = [], 0
 
         for i in range(max(lengths.tolist())):
+            # prepare input
             emb = self.embs(inp)
             if context is not None:
                 emb = torch.cat([emb, context], dim=1)
+            # run rnn
             emb = emb.unsqueeze(0)
             outs, hidden = self.rnn(emb, hidden)
             outs, _ = self.attn(outs, enc_outs, lengths)
             outs = self.proj(outs).squeeze(0)
+            # get logits
             probs = F.log_softmax(outs, dim=1)
+            # sample and accumulate
             score, inp = probs.max(1)
             hyps.append(inp.tolist())
             mask = mask * (i != lengths).long()
@@ -378,26 +395,28 @@ class AttentionalDecoder(nn.Module):
         enc_outs : tensor(src_seq_len x batch x hidden_size)
         context : tensor(batch x hidden_size), optional
         """
-        hidden = None
-        batch = enc_outs.size(1)
-        device = enc_outs.device
+        hidden, batch, device = None, enc_outs.size(1), enc_outs.device
         mask = torch.ones(batch, dtype=torch.int64, device=device)
         inp = torch.zeros(batch, dtype=torch.int64, device=device)
-        inp += self.label_encoder.get_eos()
+        inp += self.label_encoder.get_bos()
         hyps, scores = [], 0
 
         for _ in range(max_seq_len):
             if mask.sum().item() == 0:
                 break
 
+            # prepare input
             emb = self.embs(inp)
             if context is not None:
                 emb = torch.cat([emb, context], dim=1)
+            # run rnn
             emb = emb.unsqueeze(0)
             outs, hidden = self.rnn(emb, hidden)
             outs, _ = self.attn(outs, enc_outs, lengths)
             outs = self.proj(outs).squeeze(0)
+            # get logits
             probs = F.log_softmax(outs, dim=1)
+            # sample and accumulate
             score, inp = probs.max(1)
             hyps.append(inp.tolist())
             mask = mask * (inp != self.label_encoder.get_eos()).long()
@@ -435,17 +454,19 @@ class AttentionalDecoder(nn.Module):
         for _ in range(max_seq_len):
             if all(not beam.active for beam in beams):
                 break
-
+            # prepare input
             inp = [beam.get_current_state() for beam in beams]
             inp = torch.stack(inp).t().contiguous().view(-1)
             emb = self.embs(inp)
             if context is not None:
                 emb = torch.cat([emb, context], dim=1)
+            # run rnn
             emb = emb.unsqueeze(0)
             outs, hidden = self.rnn(emb, hidden)
             outs, _ = self.attn(outs, enc_outs, lengths)
             outs = self.proj(outs)
             outs = outs.squeeze(0)
+            # get logits
             probs = F.log_softmax(outs, dim=1)
 
             # (beam_width x batch x vocab)
