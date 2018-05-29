@@ -1,0 +1,6 @@
+numpy==1.14.3
+torch==0.4.0
+scikit_learn==0.19.1
+tqdm==4.23.3
+JSON_minify==0.3.0
+PyYAML==3.12
