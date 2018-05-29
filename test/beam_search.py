@@ -19,7 +19,7 @@ def random_string():
                    for _ in range(random.randint(5, 25)))
 
 def random_dataset(nitems=10000):
-    label_encoder = LabelEncoder(level='char')
+    label_encoder = LabelEncoder(level='char', eos=True, bos=True)
 
     dataset = []
     for _ in range(nitems):

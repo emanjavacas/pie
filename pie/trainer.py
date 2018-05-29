@@ -2,13 +2,15 @@
 import logging
 import yaml
 import time
-from collections import defaultdict
+import collections
 
 import tqdm
 
 import torch
 from torch import optim
 from torch.nn.utils import clip_grad_norm_
+
+from pie.data import Dataset
 
 
 logging.basicConfig(
@@ -31,7 +33,7 @@ class Trainer(object):
         self.weights = settings.weights
 
         self.report_freq = settings.report_freq
-        num_batches = len(dataset) - 1
+        num_batches = dataset.num_batches() - 1
         if settings.checks_per_epoch == 1:
             self.check_freq = num_batches
         elif settings.checks_per_epoch > 1:
@@ -46,14 +48,10 @@ class Trainer(object):
         Show model report
         """
         nparams = sum(p.nelement() for p in self.model.parameters())
-        logging.info("::: Model :::")
-        logging.info('')
-        logging.info('\n' + str(self.model))
-        logging.info('')
-        logging.info("::: Model parameters :::")
-        logging.info('')
-        logging.info(nparams)
-        logging.info('')
+        print("::: Model :::\n")
+        print(self.model)
+        print("\n::: Model parameters :::\n")
+        print(nparams)
 
     def weight_loss(self, loss):
         """
@@ -70,9 +68,17 @@ class Trainer(object):
         """
         Evaluate objective on held-out data
         """
-        total_losses, total_batches = defaultdict(float), 0
+        total_losses, total_batches = collections.defaultdict(float), 0
 
-        for batch in tqdm.tqdm(dataset, total=len(dataset)):
+        # get total number of batches
+        if isinstance(dataset, Dataset):
+            total = dataset.num_batches()
+        elif isinstance(dataset, collections.Sized):
+            total = len(dataset)
+        else:
+            total = None
+
+        for batch in tqdm.tqdm(dataset, total=total):
             total_batches += 1
             for k, v in self.model.loss(batch).items():
                 total_losses[k] += v.item()
@@ -84,9 +90,9 @@ class Trainer(object):
 
     def monitor_batch(self, batch, items, start, nbatches, loss, sep='   '):
         """
-        Logging.Info the report for monitoring
+        Print the report for monitoring
         """
-        total = len(self.dataset)
+        total = self.dataset.num_batches()
         rep = sep.join('{}:{:.3f}'.format(k, v / nbatches) for k, v in loss.items())
         speed = items / (time.time() - start)
         formatter = "Batch [{}/{}] || {} || {:.0f} words/sec"
@@ -103,19 +109,16 @@ class Trainer(object):
             # scores
             dev_scores = self.model.evaluate(dev)
 
-        logging.info("Dev losses")
-        logging.info('')
-        logging.info('\n'.join('{}: {:.3f}'.format(k, v) for k, v in dev_loss.items()))
-        logging.info('')
         self.scheduler.step(sum(dev_loss[k] for k in ('pos', 'lemma')))
 
-        logging.info("Dev scores")
-        logging.info('')
-        logging.info(yaml.dump(dev_scores, default_flow_style=False))
-        logging.info('')
+        print("::: Dev losses :::\n")
+        print('\n'.join('{}: {:.3f}'.format(k, v) for k, v in dev_loss.items()))
+        print("\n::: Dev scores :::\n")
+        print(yaml.dump(dev_scores, default_flow_style=False))
+        print()
 
     def train_epoch(self, dev):
-        rep_loss, rep_items, rep_batches = defaultdict(float), 0, 0
+        rep_loss, rep_items, rep_batches = collections.defaultdict(float), 0, 0
         rep_start = time.time()
 
         for b, batch in enumerate(self.dataset.batch_generator()):
@@ -138,7 +141,7 @@ class Trainer(object):
             # report
             if b > 0 and b % self.report_freq == 0:
                 self.monitor_batch(b, rep_items, rep_start, rep_batches, rep_loss)
-                rep_loss, rep_items, rep_batches = defaultdict(float), 0, 0
+                rep_loss, rep_items, rep_batches = collections.defaultdict(float), 0, 0
                 rep_start = time.time()
 
             if self.check_freq > 0 and b > 0 and b % self.check_freq == 0:

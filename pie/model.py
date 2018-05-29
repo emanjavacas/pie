@@ -158,12 +158,12 @@ class SimpleModel(nn.Module):
                 # get trues
                 (pos, plen), (lemma, llen) = tasks['pos'], tasks['lemma']
                 pos, lemma = pos.t().tolist(), lemma.t().tolist()
-                plen, llen = plen.tolist(), llen.tolist()
-                pos_true = [pos_le.stringify(p, l) for p, l in zip(pos, plen)]
+                pos_true = [pos_le.stringify(p, l.item()) for p, l in zip(pos, plen)]
                 if self.lemma_sequential:
                     lemma_true = [''.join(lemma_le.stringify(l)) for l in lemma]
                 else:
-                    lemma_true = [lemma_le.stringify(l, ll) for l, ll in zip(lemma, llen)]
+                    lemma_true = [lemma_le.stringify(l, ll.item())
+                                  for l, ll in zip(lemma, llen)]
 
                 # get preds
                 pos_hyps, lemma_hyps = self.predict(inp)
@@ -190,7 +190,10 @@ if __name__ == '__main__':
         break
     ((word, wlen), (char, clen)), tasks = next(data.batch_generator())
 
-    wemb, (cemb, _) = model.wemb(word), model.cemb(char, clen, wlen)
+    wemb, (cemb, cemb_outs) = model.wemb(word), model.cemb(char, clen, wlen)
     emb = model.merger(wemb, cemb)
     enc_outs = model.encoder(emb, wlen)
     model.pos_decoder.predict(enc_outs, wlen)
+    lemma_hyps, _ = model.lemma_decoder.predict_max(
+        cemb_outs, clen, context=torch_utils.flatten_padded_batch(enc_outs, wlen))
+    print(lemma_hyps)

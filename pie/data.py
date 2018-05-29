@@ -351,13 +351,24 @@ class LabelEncoder(object):
         if not self.fitted:
             raise ValueError("Vocabulary hasn't been computed yet")
 
+        # compute length based on <eos>
         if length is None:
             eos = self.get_eos()
             if eos is None:
                 raise ValueError("Don't know how to compute input length")
-            length = seq.index(eos)
+            try:
+                length = seq.index(eos)
+            except ValueError:  # eos not found in input
+                length = -1
 
-        seq = self.inverse_transform(seq[:length])
+        seq = seq[:length]
+
+        # eventually remove <bos> if required
+        if self.get_bos() is not None:
+            if len(seq) > 0 and seq[0] == self.get_bos():
+                seq = seq[1:]
+
+        seq = self.inverse_transform(seq)
 
         return seq
 
@@ -558,12 +569,10 @@ class Dataset(object):
             print()
         self.label_encoder = label_encoder
 
-        if len(self) <= 0:
-            raise ValueError("Not enough instances [{}] in dataset".format(len(self)))
-
-    def __len__(self):
-        dev_sents = sum(len(v) for v in self.dev_sents.values())
-        return (self.label_encoder.insts - dev_sents) // self.batch_size
+    def num_batches(self):
+        dev_batches = sum(len(v) for v in self.dev_sents.values()) // self.batch_size
+        train_batches = self.label_encoder.insts // self.batch_size
+        return train_batches - dev_batches
 
     @staticmethod
     def get_nelement(batch):
