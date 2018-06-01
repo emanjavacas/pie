@@ -1,6 +1,7 @@
 
 {
-  "input_path": "datasets/medieval_latin/dev",
+  "input_path": "datasets/medieval_latin/dev/",
+  "header": false,
   "verbose": false,
   "buffer_size": 100,
   "batch_size": 10,

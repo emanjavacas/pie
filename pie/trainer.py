@@ -46,10 +46,14 @@ class Trainer(object):
         Show model report
         """
         nparams = sum(p.nelement() for p in self.model.parameters())
-        print("::: Model :::\n")
+        print("::: Model :::")
+        print()
         print(self.model)
-        print("\n::: Model parameters :::\n")
+        print()
+        print("::: Model parameters :::")
+        print()
         print(nparams)
+        print()
 
     def weight_loss(self, loss):
         """
@@ -100,17 +104,22 @@ class Trainer(object):
         """
         Monitor dev loss and eventually early-stop training
         """
+        print()
         print("Evaluating model on dev set...")
+        print()
 
         self.model.eval()
 
         with torch.no_grad():
             dev_loss = self.evaluate(dev)
-            print("::: Dev losses :::\n")
-            print('\n'.join('{}: {:.3f}'.format(k, v) for k, v in dev_loss.items()))
-
             dev_scores = self.model.evaluate(dev)
-            print("\n::: Dev scores :::\n")
+
+            print("::: Dev losses :::")
+            print()
+            print('\n'.join('{}: {:.3f}'.format(k, v) for k, v in dev_loss.items()))
+            print()
+            print("::: Dev scores :::")
+            print()
             print(yaml.dump(dev_scores, default_flow_style=False))
             print()
 
