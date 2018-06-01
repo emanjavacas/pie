@@ -25,20 +25,20 @@
   "char_vocabsize": 100,
   // max vocabsize for word level input
   "word_vocabsize": 20000,
+  // header
+  "header": true,
   // expected order of tasks for tabreader
-  "tasks_order": ["lemma", "pos", "morph"], // only for TabReader
+  "tasks_order": ["lemma", "pos"], // only for TabReader
   // task-related config
-  "tasks": {
-    "lemma": {
-      "level": "char", "bos": true, "eos": true
-    },
-    "pos": {
-      "level": "word"
-    },
-    "morph": {
-      "level": "word"
-    }
-  },
+  "tasks": [
+    // each task's name refers to the corresponding data field
+    // this behaviour can be changed in case the name differs from the data field
+    // by using a "target" key that refers to the target data field
+    // e.g. {"name": "lemma-char", "target": "lemma", "level": "char"}
+    // e.g. {"name": "lemma-word", "target": "lemma"}
+    {"name": "lemma", "settings": {"level": "char", "bos": true, "eos": true}},
+    {"name": "pos"}
+  ],
 
   // TRAINING
   "buffer_size": 10000,

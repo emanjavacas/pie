@@ -4,7 +4,7 @@ import os
 import yaml
 
 from pie.settings import settings_from_file
-from pie.data import Dataset, TabReader
+from pie.data import Dataset
 from pie.model import SimpleModel
 from pie.trainer import Trainer
 
@@ -30,8 +30,7 @@ if __name__ == '__main__':
     devset = None
     if settings.dev_path is not None:
         devset = Dataset(
-            settings, reader=TabReader(settings, input_path=settings.dev_path),
-            label_encoder=trainset.label_encoder
+            settings, input_path=settings.dev_path, label_encoder=trainset.label_encoder
         ).batch_generator()
     elif settings.dev_split > 0:
         devset = trainset.get_dev_split(split=settings.dev_split)
@@ -41,7 +40,7 @@ if __name__ == '__main__':
     testset = None
     if settings.test_path is not None:
         testset = Dataset(
-            settings, reader=TabReader(settings, input_path=settings.test_path),
+            settings, input_path=settings.test_path,
             label_encoder=trainset.label_encoder)
 
     # model
