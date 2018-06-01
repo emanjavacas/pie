@@ -1,4 +1,6 @@
 
+from collections import OrderedDict
+
 import tqdm
 
 import torch
@@ -75,6 +77,17 @@ class SimpleModel(nn.Module):
             self.lemma_decoder = LinearDecoder(
                 label_encoder.tasks['lemma'], hidden_size, dropout=dropout)
 
+        linear_tasks = []
+        for task in label_encoder.tasks:
+            if task in ('pos', 'lemma'):
+                continue
+            linear_tasks.append((task, LinearDecoder(
+                label_encoder.tasks[task], hidden_size, dropout=dropout)))
+        if len(linear_tasks) > 0:
+            self.linear_tasks = nn.Sequential(OrderedDict(linear_tasks))
+        else:
+            self.linear_tasks = None
+
         # - Self
         if self.include_self:
             self.self_decoder = LinearDecoder(
@@ -111,6 +124,13 @@ class SimpleModel(nn.Module):
         lemma_loss = self.lemma_decoder.loss(lemma_logits, lemma)
         output['lemma'] = lemma_loss
 
+        # linear tasks
+        if self.linear_tasks is not None:
+            for task, decoder in self.linear_tasks._modules.items():
+                logits = decoder(enc_outs)
+                tinp, tlen = tasks[task]
+                output[task] = decoder.loss(logits, tinp)
+
         # self (autoregressive language-model like loss)
         if self.include_self:
             self_logits = self.self_decoder(torch_utils.prepad(enc_outs[:-1]))
@@ -120,6 +140,7 @@ class SimpleModel(nn.Module):
         return output
 
     def predict(self, inp):
+        preds = {}
         # unpack
         (word, wlen), (char, clen) = inp
 
@@ -129,6 +150,7 @@ class SimpleModel(nn.Module):
 
         # pos
         pos_hyps, _ = self.pos_decoder.predict(enc_outs, wlen)
+        preds['pos'] = pos_hyps
 
         # lemma
         if self.lemma_sequential:
@@ -139,40 +161,44 @@ class SimpleModel(nn.Module):
 
         else:
             lemma_hyps, _ = self.lemma_decoder.predict(enc_outs, wlen)
+        preds['lemma'] = lemma_hyps
 
-        return pos_hyps, lemma_hyps
+        if self.linear_tasks is not None:
+            for task, decoder in self.linear_tasks._modules.items():
+                hyps, _ = decoder.predict(enc_outs, wlen)
+                preds[task] = hyps
+
+        return preds
 
     def evaluate(self, dataset, total=None):
         """
         Get scores per task
         """
-        pos_scorer = Scorer(self.label_encoder.tasks['pos'])
-        lemma_scorer = Scorer(
-            self.label_encoder.tasks['lemma'], compute_unknown=self.lemma_sequential)
-        pos_le = self.label_encoder.tasks['pos']
-        lemma_le = self.label_encoder.tasks['lemma']
+        scorers = {}
+        for task, le in self.label_encoder.tasks.items():
+            scorers[task] = Scorer(le, compute_unknown=le.level=='char')
 
         with torch.no_grad():
 
             for inp, tasks in tqdm.tqdm(dataset, total=total):
-                # get trues
-                (pos, plen), (lemma, llen) = tasks['pos'], tasks['lemma']
-                pos, lemma = pos.t().tolist(), lemma.t().tolist()
-                pos_true = [pos_le.stringify(p, l.item()) for p, l in zip(pos, plen)]
-                if self.lemma_sequential:
-                    lemma_true = [''.join(lemma_le.stringify(l)) for l in lemma]
-                else:
-                    lemma_true = [lemma_le.stringify(l, ll.item())
-                                  for l, ll in zip(lemma, llen)]
-
                 # get preds
-                pos_hyps, lemma_hyps = self.predict(inp)
+                preds = self.predict(inp)
+
+                # get trues
+                trues = {}
+                for task, le in self.label_encoder.tasks.items():
+                    tinp, tlen = tasks[task]
+                    tinp, tlen = tinp.t().tolist(), tlen.tolist()
+                    if le.level == 'char':
+                        trues[task] = [''.join(le.stringify(t)) for t in tinp]
+                    else:
+                        trues[task] = [le.stringify(t, l) for t, l in zip(tinp, tlen)]
 
                 # accumulate
-                pos_scorer.register_batch(pos_hyps, pos_true)
-                lemma_scorer.register_batch(lemma_hyps, lemma_true)
+                for task, scorer in scorers.items():
+                    scorer.register_batch(preds[task], trues[task])
 
-        return {'pos': pos_scorer.get_scores(), 'lemma': lemma_scorer.get_scores()}
+        return {task: scorer.get_scores() for task, scorer in scorers.items()}
 
 
 if __name__ == '__main__':
@@ -197,3 +223,5 @@ if __name__ == '__main__':
     lemma_hyps, _ = model.lemma_decoder.predict_max(
         cemb_outs, clen, context=torch_utils.flatten_padded_batch(enc_outs, wlen))
     print(lemma_hyps)
+
+    model.evaluate(data.get_dev_split())
