@@ -1,6 +1,61 @@
 {
-    "input_dir": "medieval_latin/train",
-    "extension": "tab",
-    "buffer_size": 10,
-    "sentence_length": 5
+  // GENERAL
+  "verbose": true,
+  "device": "cpu",
+
+  // DATA
+  // path or unix-like expression to file(s)/dir with training data
+  "input_path": "datasets/capitula_classic/train0.tsv",
+  // path to test set (same format as input_path)
+  "test_path": null,
+  // path to dev set (same format as input_path)
+  "dev_path": null,
+  // proportion of instances in the dev set (ignore if dev_path is passed)
+  "dev_split": 0.05,
+  // breakline logic to use to detect sentence boundaries in tsv files
+  // either "LENGTH" (break after n tokens) or "FULLSTOP" (break after a fullstop symbol)
+  "breakline_type": "LENGTH",
+  // data to use as reference for breaking lines (either "input" or a task name)
+  "breakline_ref": "input",
+  // needed to decide for a sentence boundary (e.g. an integer for LENGTH)
+  "breakline_data": 15,
+  // safety max to avoid too long sentences blowing up memory
+  "max_sent_len": 35,
+  // max vocabsize for character level input
+  "char_vocabsize": 100,
+  // max vocabsize for word level input
+  "word_vocabsize": 20000,
+  // header
+  "header": true,
+  // expected order of tasks for tabreader
+  "tasks_order": ["lemma", "pos"], // only for TabReader
+  // task-related config
+  "tasks": [
+    // each task's name refers to the corresponding data field
+    // this behaviour can be changed in case the name differs from the data field
+    // by using a "target" key that refers to the target data field
+    // e.g. {"name": "lemma-char", "target": "lemma", "level": "char"}
+    // e.g. {"name": "lemma-word", "target": "lemma"}
+    {"name": "lemma", "settings": {"level": "char", "bos": true, "eos": true}},
+    {"name": "pos"}
+  ],
+
+  // TRAINING
+  "buffer_size": 10000,
+  "dropout": 0,
+  "epochs": 5,
+  "batch_size": 50,
+  "shuffle": true,
+  "optim": "Adam",
+  "lr": 0.001,
+  "clip_norm": 5.0,
+  // print training loss every so many batches
+  "report_freq": 10,
+  // check model on dev-set so many times during epoch
+  "checks_per_epoch": 0,
+
+  // MODEL
+  "emb_dim": 150,
+  "hidden_size": 300,
+  "num_layers": 1
 }

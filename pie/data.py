@@ -1,48 +1,474 @@
-import os
-from copy import deepcopy
-import glob
-import random
-random.seed(12345)
 
-empty = {'tokens': [], 'pos': [], 'lemma': []}
+import time
+import json
+import logging
+from collections import Counter, defaultdict
+import random
+
+import torch
+
+from pie import utils, torch_utils, constants
+from pie.reader import Reader
+
+
+class LabelEncoder(object):
+    """
+    Label encoder
+    """
+    def __init__(self, pad=True, eos=False, bos=False,
+                 vocabsize=None, level='word', target=None, name=None):
+
+        if level.lower() not in ('word', 'char'):
+            raise ValueError("`level` must be 'word' or 'char'")
+
+        self.eos = constants.EOS if eos else None
+        self.pad = constants.PAD if pad else None
+        self.bos = constants.BOS if bos else None
+        self.vocabsize = vocabsize
+        self.level = level.lower()
+        self.target = target
+        self.name = name
+        self.reserved = (constants.UNK,)  # always use <unk>
+        self.reserved += tuple([sym for sym in [self.eos, self.pad, self.bos] if sym])
+        self.freqs = Counter()
+        self.known_tokens = set()  # for char-level dicts, keep word-level known tokens
+        self.table = None
+        self.inverse_table = None
+        self.fitted = False
+
+    def __len__(self):
+        if not self.fitted:
+            raise ValueError("Cannot get length of unfitted LabelEncoder")
+        return len(self.table)
+
+    def __eq__(self, other):
+        if type(other) != LabelEncoder:
+            return False
+
+        return self.pad == other.pad and \
+            self.eos == other.eos and \
+            self.bos == other.bos and \
+            self.vocabsize == other.vocabsize and \
+            self.level == other.level and \
+            self.target == other.target and \
+            self.freqs == other.freqs and \
+            self.table == other.table and \
+            self.inverse_table == other.inverse_table and \
+            self.fitted == other.fitted
+
+    def add(self, seq):
+        if self.fitted:
+            raise ValueError("Already fitted")
+
+        if self.level == 'word':
+            self.freqs.update(seq)
+        else:
+            self.freqs.update(utils.flatten(seq))
+            self.known_tokens.update(seq)
+
+    def compute_vocab(self):
+        if self.fitted:
+            raise ValueError("Cannot compute vocabulary, already fitted")
+
+        if len(self.freqs) == 0:
+            logging.warning("Computing vocabulary for empty encoder {}"
+                            .format(self.name))
+
+        most_common = self.freqs.most_common(n=self.vocabsize or len(self.freqs))
+        self.inverse_table = list(self.reserved) + [sym for sym, _ in most_common]
+        self.table = {sym: idx for idx, sym in enumerate(self.inverse_table)}
+        self.fitted = True
+
+    def transform(self, seq):
+        if not self.fitted:
+            raise ValueError("Vocabulary hasn't been computed yet")
+
+        output = []
+        if self.bos:
+            output.append(self.get_bos())
+
+        output += [self.table.get(tok, self.table[constants.UNK]) for tok in seq]
+
+        if self.eos:
+            output.append(self.get_eos())
+
+        return output
+
+    def inverse_transform(self, seq):
+        if not self.fitted:
+            raise ValueError("Vocabulary hasn't been computed yet")
+
+        return [self.inverse_table[i] for i in seq]
+
+    def stringify(self, seq, length=None):
+        if not self.fitted:
+            raise ValueError("Vocabulary hasn't been computed yet")
+
+        # compute length based on <eos>
+        if length is None:
+            eos = self.get_eos()
+            if eos is None:
+                raise ValueError("Don't know how to compute input length")
+            try:
+                length = seq.index(eos)
+            except ValueError:  # eos not found in input
+                length = -1
+
+        seq = seq[:length]
+
+        # eventually remove <bos> if required
+        if self.get_bos() is not None:
+            if len(seq) > 0 and seq[0] == self.get_bos():
+                seq = seq[1:]
+
+        seq = self.inverse_transform(seq)
+
+        return seq
+
+    def _get_sym(self, sym):
+        if not self.fitted:
+            raise ValueError("Vocabulary hasn't been computed yet")
+
+        return self.table.get(sym)
+
+    def get_pad(self):
+        return self._get_sym(constants.PAD)
+
+    def get_eos(self):
+        return self._get_sym(constants.EOS)
+
+    def get_bos(self):
+        return self._get_sym(constants.BOS)
+
+    def jsonify(self):
+        if not self.fitted:
+            raise ValueError("Attempted to serialize unfitted encoder")
+
+        return {'eos': self.eos,
+                'bos': self.bos,
+                'pad': self.pad,
+                'level': self.level,
+                'target': self.target,
+                'vocabsize': self.vocabsize,
+                'freqs': dict(self.freqs),
+                'table': dict(self.table),
+                'inverse_table': self.inverse_table,
+                'known_tokens': list(self.known_tokens)}
+
+    @classmethod
+    def from_json(cls, obj):
+        inst = cls(pad=obj['pad'], eos=obj['eos'], bos=obj['bos'],
+                   level=obj['level'], target=obj['target'],
+                   vocabsize=obj['vocabsize'])
+        inst.freqs = Counter(obj['freqs'])
+        inst.table = dict(obj['table'])
+        inst.inverse_table = list(obj['inverse_table'])
+        inst.known_tokens = set(obj['known_tokens'])
+        inst.fitted = True
+
+        return inst
+
+
+class MultiLabelEncoder(object):
+    """
+    Complex Label encoder for all tasks.
+    """
+    def __init__(self, word_vocabsize=None, char_vocabsize=None):
+        self.word = LabelEncoder(vocabsize=word_vocabsize, name='word')
+        self.char = LabelEncoder(vocabsize=char_vocabsize, name='char', level='char',
+                                 eos=True, bos=True)
+        self.insts = 0
+        self.tasks = {}
+
+    def add_task(self, name, **kwargs):
+        self.tasks[name] = LabelEncoder(name=name, **kwargs)
+        return self
+
+    @classmethod
+    def from_settings(cls, settings):
+        return cls(word_vocabsize=settings.word_vocabsize,
+                   char_vocabsize=settings.char_vocabsize)
+
+    def fit(self, lines):
+        """
+        Parameters
+        ===========
+        lines : iterator over tuples of (Input, Tasks)
+        """
+        for idx, (inp, tasks) in enumerate(lines):
+            # increment counter
+            self.insts += 1
+            # input
+            self.word.add(inp)
+            self.char.add(inp)
+
+            for le in self.tasks.values():
+                le.add(tasks[le.target])
+
+        self.word.compute_vocab()
+        self.char.compute_vocab()
+        for le in self.tasks.values():
+            le.compute_vocab()
+
+        return self
+
+    def transform(self, sents):
+        """
+        Parameters
+        ===========
+        sents : list of Example's
+
+        Returns
+        ===========
+        tuple of (word, char), task_dict
+
+            - word: list of integers
+            - char: list of integers where each list represents a word at the
+                character level
+            - task_dict: Dict to corresponding integer output for each task
+        """
+        word, char, tasks_dict = [], [], defaultdict(list)
+
+        for inp, tasks in sents:
+            # input data
+            word.append(self.word.transform(inp))
+            for w in inp:
+                char.append(self.char.transform(w))
+
+            # task data
+            for le in self.tasks.values():
+                if le.level == 'word':
+                    tasks_dict[le.name].append(le.transform(tasks[le.target]))
+                else:
+                    for w in tasks[le.target]:
+                        tasks_dict[le.name].append(le.transform(w))
+
+        return (word, char), tasks_dict
+
+    def save(self, path):
+        with open(path, 'w+') as f:
+            obj = {'word': self.word.jsonify(),
+                   'char': self.char.jsonify(),
+                   'insts': self.insts,
+                   'tasks': {le.name: le.jsonify() for le in self.tasks.values()}}
+            json.dump(obj, f)
+
+    @classmethod
+    def load(cls, path):
+        with open(path, 'r+') as f:
+            obj = json.load(f)
+
+        inst = cls()  # dummy instance to overwrite
+
+        inst.insts = obj['insts']
+        inst.word = LabelEncoder.from_json(obj['word'])
+        inst.char = LabelEncoder.from_json(obj['char'])
+
+        for task, le in obj['tasks'].items():
+            inst.tasks[task] = LabelEncoder.from_json(le)
+
+        return inst
+
 
 class Dataset(object):
-    def __init__(self, settings):
-        super(Dataset, self).__init__()
+    """
+    Dataset class to encode files into integers and compute batches.
 
-        self.indir = os.path.abspath(settings.input_dir)
-        self.filenames = glob.glob(self.indir + f'/*.{settings.extension}')
-        self.buffer_size = settings.buffer_size # nb of sentences per buffer
-        self.sentence_length = settings.sentence_length
+    Settings
+    ===========
+    buffer_size : int, maximum number of sentences in memory at any given time.
+       The larger the buffer size the more memory instensive the dataset will
+       be but also the more effective the shuffling over instances.
+    batch_size : int, number of sentences per batch
+    device : str, target device to put the processed batches on
+    shuffle : bool, whether to shuffle items in the buffer
 
-    def buffers(self, max_files=None):
-        random.shuffle(self.filenames)
-        buff = []
+    Parameters
+    ===========
+    input_path : str (optional), either a path to a directory, a path to a file
+        or a unix style pathname pattern expansion for glob. If given, the
+        input_path in settings will be overwritten by the new value
+    label_encoder : optional, prefitted LabelEncoder object
+    """
+    def __init__(self, settings,
+                 input_path=None, label_encoder=None, expected_tasks=None):
 
-        for filename in self.filenames[:max_files]:
-            sent = deepcopy(empty)
-            for line in open(filename, 'r'):
-                try:
-                    tok, lem, pos = line.strip().split()
-                except ValueError:
+        if settings.batch_size > settings.buffer_size:
+            raise ValueError("Not enough buffer capacity {} for batch_size of {}"
+                             .format(settings.buffer_size, settings.batch_size))
+
+        # attributes
+        self.buffer_size = settings.buffer_size
+        self.batch_size = settings.batch_size
+        self.device = settings.device
+        self.shuffle = settings.shuffle
+
+        # data
+        self.dev_sents = defaultdict(set)
+        self.reader = Reader(settings, input_path=input_path)
+
+        # get available tasks
+        tasks = self.reader.check_tasks(expected=expected_tasks)
+        if settings.verbose:
+            print("::: Available tasks :::")
+            print()
+            for task in tasks:
+                print("- {}".format(task))
+            print()
+
+        # label encoder
+        if label_encoder is None:
+            # create label encoder from settings
+            label_encoder = MultiLabelEncoder.from_settings(settings)
+            for task in settings.tasks:
+                task_settings = task.get("settings", {})
+                task_target = task_settings.get('target', task['name'])
+                task_settings['target'] = task_target
+                if task_target not in tasks:
+                    logging.warning("Ignoring task [{}]: no available data"
+                                    .format(task_target))
                     continue
+                label_encoder.add_task(task['name'], **task_settings)
 
-                sent['tokens'].append(tok)
-                sent['pos'].append(pos)
-                sent['lemma'].append(lem)
+            # fit
+            start = time.time()
+            if settings.verbose:
+                print("::: Fitting data... :::")
+                print()
+            label_encoder.fit(line for _, line in self.reader.readsents())
+            if settings.verbose:
+                print("Done in {:g} secs".format(time.time() - start))
+                print()
 
-                if len(sent['tokens']) >= self.sentence_length:
-                    buff.append({k : tuple(v) for k, v in sent.items()})
-                    sent = deepcopy(empty)
+            # report tasks statistics
+            if settings.verbose:
+                print("::: Target tasks :::")
+                print()
+                for task, le in label_encoder.tasks.items():
+                    print("- {:<15} target={:<6} level={:<6} vocab={:<6}"
+                          .format(task, len(le), le.level, le.target))
+                print()
 
-                if len(buff) == self.buffer_size:
-                    yield tuple(buff)
-                    buff = []
-            
-            if buff:
-                yield buff
+        self.label_encoder = label_encoder
+
+    def num_batches(self):
+        dev_batches = sum(len(v) for v in self.dev_sents.values()) // self.batch_size
+        train_batches = self.label_encoder.insts // self.batch_size
+        return train_batches - dev_batches
+
+    @staticmethod
+    def get_nelement(batch):
+        """
+        Returns the number of elements in a batch (based on word-level length)
+        """
+        return batch[0][0][1].sum().item()
+
+    def pack_batch(self, batch, device=None):
+        """
+        Transform batch data to tensors
+        """
+        device = device or self.device
+
+        (word, char), tasks = self.label_encoder.transform(batch)
+
+        word = torch_utils.pad_batch(
+            word, self.label_encoder.word.get_pad(), device=device)
+        char = torch_utils.pad_batch(
+            char, self.label_encoder.char.get_pad(), device=device)
+
+        output_tasks = {}
+        for task, data in tasks.items():
+            output_tasks[task] = torch_utils.pad_batch(
+                data, self.label_encoder.tasks[task].get_pad(),
+                device=device)
+
+        return (word, char), output_tasks
+
+    def prepare_buffer(self, buf, **kwargs):
+        "Transform buffer into batch generator"
+
+        def key(data):
+            inp, tasks = data
+            return len(inp)
+
+        buf = sorted(buf, key=key, reverse=True)
+        batches = list(utils.chunks(buf, self.batch_size))
+
+        if self.shuffle:
+            random.shuffle(batches)
+
+        for batch in batches:
+            yield self.pack_batch(batch, **kwargs)
+
+    def get_dev_split(self, split=0.05):
+        "Grab a dev split from the dataset"
+        if len(self.dev_sents) > 0:
+            raise RuntimeError("Dev-split already exists! Cannot create a new one")
+
+        buf = []
+        split_size = self.label_encoder.insts * split
+        split_prop = split_size / self.label_encoder.insts
+
+        for sent in self.reader.readsents():
+            if len(buf) >= split_size:
+                break
+
+            if random.random() > split_prop:
+                continue
+
+            (fpath, line_num), data = sent
+            buf.append(data)
+            self.dev_sents[fpath].add(line_num)
+
+        # get batches on cpu
+        batches = list(self.prepare_buffer(buf, device='cpu'))
+
+        return device_wrapper(batches, device=self.device)
+
+    def batch_generator(self):
+        """
+        Generator over dataset batches. Each batch is a tuple of (input, tasks):
+            * (word, char)
+                - word : tensor(length, batch_size), padded lengths
+                - char : tensor(length, batch_size * words), padded lengths
+            * (tasks) dictionary with tasks
+        """
+        buf = []
+        for (fpath, line_num), data in self.reader.readsents():
+
+            # check if buffer is full and yield
+            if len(buf) == self.buffer_size:
+                yield from self.prepare_buffer(buf)
+                buf = []
+
+            # don't use dev sentences
+            if fpath in self.dev_sents and line_num in self.dev_sents[fpath]:
+                continue
+
+            # fill buffer
+            buf.append(data)
+
+        if len(buf) > 0:
+            yield from self.prepare_buffer(buf)
 
 
+def wrap_device(it, device):
+    for i in it:
+        if isinstance(i, torch.Tensor):
+            yield i.to(device)
+        elif isinstance(i, dict):
+            yield {k: tuple(wrap_device(v, device)) for k, v in i.items()}
+        else:
+            yield tuple(wrap_device(i, device))
 
 
+class device_wrapper(object):
+    def __init__(self, batches, device):
+        self.batches = batches
+        self.device = device
 
+    def __getitem__(self, idx):
+        return tuple(wrap_device(self.batches[idx], self.device))
+
+    def __len__(self):
+        return len(self.batches)
