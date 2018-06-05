@@ -22,7 +22,12 @@ if torch.cuda.is_available():
 
 
 if __name__ == '__main__':
-    settings = settings_from_file(os.path.abspath('config.json'))
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('config_path', nargs='?', default='config.json')
+    args = parser.parse_args()
+
+    settings = settings_from_file(args.config_path)
 
     # datasets
     trainset = Dataset(settings)
@@ -45,8 +50,8 @@ if __name__ == '__main__':
 
     # model
     model = SimpleModel(trainset.label_encoder, settings.emb_dim, settings.hidden_size,
-                        settings.num_layers, dropout=settings.dropout, include_self=False,
-                        pos_crf=True)
+                        settings.num_layers, dropout=settings.dropout,
+                        include_self=settings.include_self, pos_crf=True)
 
     # training
     trainer = Trainer(trainset, model, settings)

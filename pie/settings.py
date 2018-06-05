@@ -88,8 +88,8 @@ def settings_from_file(config_path):
             "Couldn't read config file: %s. Exception: %s" % (config_path, str(e)))
 
     # add default values for missing settings:
-    with open(os.sep.join((os.path.dirname(__file__),
-                          'default_settings.json')), 'r') as f:
+    defaults_path = os.sep.join((os.path.dirname(__file__), 'default_settings.json'))
+    with open(defaults_path, 'r') as f:
         defaults = json.loads(json_minify(f.read()))
 
     # settings = Settings(flat_merge(p, defaults))
@@ -99,6 +99,7 @@ def settings_from_file(config_path):
     for k in settings:
         env_k = 'PIE_{}'.format(k.upper())
         if env_k in os.environ:
+            # transform to target type and overwrite settings
             settings[k] = type(settings[k])(os.environ[env_k])
 
     # store the config path too:

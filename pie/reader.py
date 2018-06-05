@@ -1,5 +1,6 @@
 
 import os
+import glob
 import logging
 import random
 
@@ -106,7 +107,7 @@ class Reader(object):
             filenames = glob.glob(input_path)
 
         if len(filenames) == 0:
-            raise ValueError("Couldn't find files in {}".format(input_path))
+            raise ValueError("Couldn't find files in: \"{}\"".format(input_path))
 
         self.readers = [self.get_reader(fpath)(settings, fpath) for fpath in filenames]
 
@@ -128,7 +129,7 @@ class Reader(object):
             return CONLLReader
 
         else:
-            raise ValueError("Unknown file format {}".format(fpath))
+            raise ValueError("Unknown file format: {}".format(fpath))
 
     def reset(self):
         """

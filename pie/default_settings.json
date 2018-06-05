@@ -4,10 +4,11 @@
   "device": "cpu",
 
   // DATA
-  // path or unix-like expression to file(s)/dir with training data
-  "input_path": "datasets/capitula_classic/train0.tsv",
+  // path or unix-like expression to file(s)/dir with training data:
+  // e.g. "datasets/capitula_classic/train0.tsv""
+  "input_path": "",
   // path to test set (same format as input_path)
-  "test_path": null,
+  "test_path": "",
   // path to dev set (same format as input_path)
   "dev_path": null,
   // proportion of instances in the dev set (ignore if dev_path is passed)
@@ -39,6 +40,8 @@
     {"name": "lemma", "settings": {"level": "char", "bos": true, "eos": true}},
     {"name": "pos"}
   ],
+  // whether to include autoregressive loss
+  "include_self": false,
 
   // TRAINING
   "buffer_size": 10000,
