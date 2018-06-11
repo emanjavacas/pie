@@ -55,6 +55,11 @@ class LabelEncoder(object):
             self.inverse_table == other.inverse_table and \
             self.fitted == other.fitted
 
+    def __repr__(self):
+        return (
+            '<LabelEncoder name="{}" target="{}" level="{}" vocab="{}" fitted="{}">'
+        ).format(self.name, self.target, self.level, len(self), self.fitted)
+
     def add(self, seq):
         if self.fitted:
             raise ValueError("Already fitted")
@@ -143,7 +148,8 @@ class LabelEncoder(object):
         if not self.fitted:
             raise ValueError("Attempted to serialize unfitted encoder")
 
-        return {'eos': self.eos,
+        return {'name': self.name,
+                'eos': self.eos,
                 'bos': self.bos,
                 'pad': self.pad,
                 'level': self.level,
@@ -158,7 +164,7 @@ class LabelEncoder(object):
     def from_json(cls, obj):
         inst = cls(pad=obj['pad'], eos=obj['eos'], bos=obj['bos'],
                    level=obj['level'], target=obj['target'],
-                   vocabsize=obj['vocabsize'])
+                   vocabsize=obj['vocabsize'], name=obj['name'])
         inst.freqs = Counter(obj['freqs'])
         inst.table = dict(obj['table'])
         inst.inverse_table = list(obj['inverse_table'])
@@ -177,6 +183,24 @@ class MultiLabelEncoder(object):
         self.char = LabelEncoder(vocabsize=char_vocabsize, name='char', level='char',
                                  eos=True, bos=True)
         self.tasks = {}
+
+    def __repr__(self):
+        return (
+            '<MultiLabelEncoder>\n\t' +
+            '\n\t'.join(map(str, [self.word, self.char] + list(self.tasks.values()))) +
+            '\n</MultiLabelEncoder>')
+
+    def __eq__(self, other):
+        if not (self.word == other.word and self.char == other.char):
+            return False
+
+        for task in self.tasks:
+            if task not in other.tasks:
+                return False
+            if self.tasks[task] != other.tasks[task]:
+                return False
+
+        return True
 
     def add_task(self, name, **kwargs):
         self.tasks[name] = LabelEncoder(name=name, **kwargs)
@@ -270,13 +294,8 @@ class MultiLabelEncoder(object):
         with open(path, 'w+') as f:
             json.dump(self.jsonify(), f)
 
-    @classmethod
-    def load(cls, path):
-        with open(path, 'r+') as f:
-            obj = json.load(f)
-
-        inst = cls()  # dummy instance to overwrite
-
+    @staticmethod
+    def _init(inst, obj):
         inst.word = LabelEncoder.from_json(obj['word'])
         inst.char = LabelEncoder.from_json(obj['char'])
 
@@ -284,6 +303,19 @@ class MultiLabelEncoder(object):
             inst.tasks[task] = LabelEncoder.from_json(le)
 
         return inst
+
+    @classmethod
+    def load_from_string(cls, string):
+        inst, obj = cls(), json.loads(string)
+        return cls._init(inst, obj)
+
+    @classmethod
+    def load_from_file(cls, path):
+        with open(path, 'r+') as f:
+            obj = json.load(f)
+
+        inst = cls()  # dummy instance to overwrite
+        return cls._init(inst, obj)
 
 
 class Dataset(object):

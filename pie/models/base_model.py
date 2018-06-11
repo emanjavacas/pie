@@ -1,5 +1,6 @@
 
 import os
+import shutil
 import uuid
 import json
 import tarfile
@@ -10,6 +11,7 @@ import torch
 import torch.nn as nn
 
 from pie import utils
+from pie.data import MultiLabelEncoder
 
 from .evaluation import Scorer
 
@@ -17,10 +19,12 @@ from .evaluation import Scorer
 def add_gzip_to_tar(string, subpath, tar):
     fid = str(uuid.uuid1())
     tmppath = '/tmp/{}'.format(fid)
+
     with gzip.GzipFile(tmppath, 'w') as f:
         f.write(string.encode())
-        tar.add(tmppath, arcname=subpath)
-        os.remove(tmppath)
+
+    tar.add(tmppath, arcname=subpath)
+    os.remove(tmppath)
 
 
 def get_gzip_from_tar(tar, fpath):
@@ -59,7 +63,7 @@ class BaseModel(nn.Module):
         """
         scorers = {}
         for task, le in self.label_encoder.tasks.items():
-            scorers[task] = Scorer(le, compute_unknown=le.level=='char')
+            scorers[task] = Scorer(le, compute_unknown=le.level == 'char')
 
         with torch.no_grad():
             for inp, tasks in tqdm.tqdm(dataset, total=total):
@@ -101,7 +105,7 @@ class BaseModel(nn.Module):
 
             # serialize weights
             tmppath = '/tmp/{}.'.format(str(uuid.uuid1()))
-            torch.save(self.state_dict(), tmppath) 
+            torch.save(self.state_dict(), tmppath)
             tar.add(tmppath, arcname='state_dict.pt')
             os.remove(tmppath)
 
@@ -113,7 +117,8 @@ class BaseModel(nn.Module):
         import pie
 
         with tarfile.open(utils.ensure_ext(fpath, 'tar'), 'r') as tar:
-            le = json.loads(get_gzip_from_tar(tar, 'label_encoder.zip'))
+            le = MultiLabelEncoder.load_from_string(
+                get_gzip_from_tar(tar, 'label_encoder.zip'))
             params = json.loads(get_gzip_from_tar(tar, 'parameters.zip'))
             model_type = getattr(pie.models, get_gzip_from_tar(tar, 'class.zip'))
             model = model_type(le, *params['args'], **params['kwargs'])
@@ -121,7 +126,7 @@ class BaseModel(nn.Module):
             # load state_dict
             tmppath = '/tmp/{}'.format(str(uuid.uuid1()))
             tar.extract('state_dict.pt', path=tmppath)
-            model.load_state_dict(torch.load(tmppath))
-            os.remove(tmppath)
+            model.load_state_dict(torch.load(os.path.join(tmppath, 'state_dict.pt')))
+            shutil.rmtree(tmppath)
 
         return model

@@ -21,7 +21,7 @@ class TestLabelEncoderSerialization(unittest.TestCase):
     def test_serialization(self):
         le = self.data.label_encoder
         le.save('/tmp/encoder.json')
-        le2 = MultiLabelEncoder.load('/tmp/encoder.json')
+        le2 = MultiLabelEncoder.load_from_file('/tmp/encoder.json')
 
         self.assertEqual(len(le.tasks), len(le2.tasks),
                          "Unequal number of Modality encoders")
