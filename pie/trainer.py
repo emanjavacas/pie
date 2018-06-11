@@ -10,9 +10,6 @@ import torch
 from torch import optim
 from torch.nn.utils import clip_grad_norm_
 
-from pie.data import Dataset
-
-
 logging.basicConfig(format='%(asctime)s : %(message)s', level=logging.INFO)
 
 
@@ -20,7 +17,7 @@ class Trainer(object):
     """
     Trainer
     """
-    def __init__(self, dataset, model, settings):
+    def __init__(self, dataset, num_instances, model, settings):
 
         self.dataset = dataset
         self.model = model
@@ -31,29 +28,15 @@ class Trainer(object):
         self.weights = settings.weights
 
         self.report_freq = settings.report_freq
-        num_batches = dataset.num_batches() - 1
+        self.num_batches = num_instances / dataset.batch_size
         if settings.checks_per_epoch == 1:
-            self.check_freq = num_batches
+            self.check_freq = self.num_batches
         elif settings.checks_per_epoch > 1:
-            self.check_freq = num_batches // settings.checks_per_epoch
-        elif settings.checks_per_epoch > num_batches:
+            self.check_freq = self.num_batches // settings.checks_per_epoch
+        elif settings.checks_per_epoch > self.num_batches:
             self.check_freq = 1
         else:
             self.check_freq = 0
-
-    def model_report(self):
-        """
-        Show model report
-        """
-        nparams = sum(p.nelement() for p in self.model.parameters())
-        print("::: Model :::")
-        print()
-        print(self.model)
-        print()
-        print("::: Model parameters :::")
-        print()
-        print(nparams)
-        print()
 
     def weight_loss(self, loss):
         """
@@ -66,19 +49,17 @@ class Trainer(object):
 
         return loss
 
-    def evaluate(self, dataset):
+    def evaluate(self, dataset, num_batches=None):
         """
         Evaluate objective on held-out data
         """
         total_losses, total_batches = collections.defaultdict(float), 0
 
         # get total number of batches
-        if isinstance(dataset, Dataset):
-            total = dataset.num_batches()
-        elif isinstance(dataset, collections.Sized):
+        if isinstance(dataset, collections.Sized):
             total = len(dataset)
-        else:
-            total = None
+        elif ninsts is not None:
+            total = num_batches
 
         for batch in tqdm.tqdm(dataset, total=total):
             total_batches += 1
@@ -90,15 +71,14 @@ class Trainer(object):
 
         return dict(total_losses)
 
-    def monitor_batch(self, batch, items, start, nbatches, loss, sep='   '):
+    def monitor_batch(self, batch, items, start, nbatches, loss, sep=' '*3):
         """
         Print the report for monitoring
         """
-        total = self.dataset.num_batches()
         rep = sep.join('{}:{:.3f}'.format(k, v / nbatches) for k, v in loss.items())
         speed = items / (time.time() - start)
         formatter = "Batch [{}/{}] || {} || {:.0f} w/s"
-        logging.info(formatter.format(batch, total, rep, speed))
+        logging.info(formatter.format(batch, self.num_batches, rep, speed))
 
     def run_check(self, dev):
         """
@@ -158,7 +138,7 @@ class Trainer(object):
                 if dev is not None:
                     self.run_check(dev)
 
-    def train_epochs(self, epochs, dev):
+    def train_epochs(self, epochs, dev=None):
         """
         Train the model for a number of epochs
         """
@@ -173,11 +153,3 @@ class Trainer(object):
             logging.info("Finished epoch [{}] in [{:g}] secs".format(e, epoch_total))
 
         logging.info("Finished training in [{:g}]".format(time.time() - start))
-
-    def train_model(self, epochs, dev=None):
-        self.model_report()
-
-        self.model.train()
-        self.model.to(self.dataset.device)  # put on same device as dataset
-
-        self.train_epochs(epochs, dev)

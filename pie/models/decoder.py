@@ -5,9 +5,10 @@ import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_packed_sequence as unpack
 
 from pie import inits
-from pie.beam_search import Beam
 from pie import torch_utils
 from pie.constants import TINY
+
+from .beam_search import Beam
 
 
 class LinearDecoder(nn.Module):

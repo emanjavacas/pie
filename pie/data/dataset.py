@@ -8,7 +8,6 @@ import random
 import torch
 
 from pie import utils, torch_utils, constants
-from pie.reader import Reader
 
 
 class LabelEncoder(object):
@@ -177,7 +176,6 @@ class MultiLabelEncoder(object):
         self.word = LabelEncoder(vocabsize=word_vocabsize, name='word')
         self.char = LabelEncoder(vocabsize=char_vocabsize, name='char', level='char',
                                  eos=True, bos=True)
-        self.insts = 0
         self.tasks = {}
 
     def add_task(self, name, **kwargs):
@@ -185,9 +183,22 @@ class MultiLabelEncoder(object):
         return self
 
     @classmethod
-    def from_settings(cls, settings):
-        return cls(word_vocabsize=settings.word_vocabsize,
-                   char_vocabsize=settings.char_vocabsize)
+    def from_settings(cls, settings, tasks=None):
+        le = cls(word_vocabsize=settings.word_vocabsize,
+                 char_vocabsize=settings.char_vocabsize)
+
+        for task in settings.tasks:
+            task_settings = task.get("settings", {})
+            task_target = task_settings.get('target', task['name'])
+            if tasks is not None and task_target not in tasks:
+                logging.warning("Ignoring task [{}]: no available data"
+                                .format(task_target))
+                continue
+
+            task_settings['target'] = task_target
+            le.add_task(task['name'], **task_settings)
+
+        return le
 
     def fit(self, lines):
         """
@@ -195,9 +206,8 @@ class MultiLabelEncoder(object):
         ===========
         lines : iterator over tuples of (Input, Tasks)
         """
+        ninsts = 0
         for idx, (inp, tasks) in enumerate(lines):
-            # increment counter
-            self.insts += 1
             # input
             self.word.add(inp)
             self.char.add(inp)
@@ -205,12 +215,18 @@ class MultiLabelEncoder(object):
             for le in self.tasks.values():
                 le.add(tasks[le.target])
 
+            # increment counter
+            ninsts += 1
+
         self.word.compute_vocab()
         self.char.compute_vocab()
         for le in self.tasks.values():
             le.compute_vocab()
 
-        return self
+        return ninsts
+
+    def fit_reader(self, reader):
+        return self.fit(line for (_, line) in reader.readsents())
 
     def transform(self, sents):
         """
@@ -245,13 +261,14 @@ class MultiLabelEncoder(object):
 
         return (word, char), tasks_dict
 
+    def jsonify(self):
+        return {'word': self.word.jsonify(),
+                'char': self.char.jsonify(),
+                'tasks': {le.name: le.jsonify() for le in self.tasks.values()}}
+
     def save(self, path):
         with open(path, 'w+') as f:
-            obj = {'word': self.word.jsonify(),
-                   'char': self.char.jsonify(),
-                   'insts': self.insts,
-                   'tasks': {le.name: le.jsonify() for le in self.tasks.values()}}
-            json.dump(obj, f)
+            json.dump(self.jsonify(), f)
 
     @classmethod
     def load(cls, path):
@@ -260,7 +277,6 @@ class MultiLabelEncoder(object):
 
         inst = cls()  # dummy instance to overwrite
 
-        inst.insts = obj['insts']
         inst.word = LabelEncoder.from_json(obj['word'])
         inst.char = LabelEncoder.from_json(obj['char'])
 
@@ -290,8 +306,7 @@ class Dataset(object):
         input_path in settings will be overwritten by the new value
     label_encoder : optional, prefitted LabelEncoder object
     """
-    def __init__(self, settings,
-                 input_path=None, label_encoder=None, expected_tasks=None):
+    def __init__(self, settings, reader, label_encoder):
 
         if settings.batch_size > settings.buffer_size:
             raise ValueError("Not enough buffer capacity {} for batch_size of {}"
@@ -305,56 +320,8 @@ class Dataset(object):
 
         # data
         self.dev_sents = defaultdict(set)
-        self.reader = Reader(settings, input_path=input_path)
-
-        # get available tasks
-        tasks = self.reader.check_tasks(expected=expected_tasks)
-        if settings.verbose:
-            print("::: Available tasks :::")
-            print()
-            for task in tasks:
-                print("- {}".format(task))
-            print()
-
-        # label encoder
-        if label_encoder is None:
-            # create label encoder from settings
-            label_encoder = MultiLabelEncoder.from_settings(settings)
-            for task in settings.tasks:
-                task_settings = task.get("settings", {})
-                task_target = task_settings.get('target', task['name'])
-                task_settings['target'] = task_target
-                if task_target not in tasks:
-                    logging.warning("Ignoring task [{}]: no available data"
-                                    .format(task_target))
-                    continue
-                label_encoder.add_task(task['name'], **task_settings)
-
-            # fit
-            start = time.time()
-            if settings.verbose:
-                print("::: Fitting data... :::")
-                print()
-            label_encoder.fit(line for _, line in self.reader.readsents())
-            if settings.verbose:
-                print("Done in {:g} secs".format(time.time() - start))
-                print()
-
-            # report tasks statistics
-            if settings.verbose:
-                print("::: Target tasks :::")
-                print()
-                for task, le in label_encoder.tasks.items():
-                    print("- {:<15} target={:<6} level={:<6} vocab={:<6}"
-                          .format(task, len(le), le.level, le.target))
-                print()
-
+        self.reader = reader
         self.label_encoder = label_encoder
-
-    def num_batches(self):
-        dev_batches = sum(len(v) for v in self.dev_sents.values()) // self.batch_size
-        train_batches = self.label_encoder.insts // self.batch_size
-        return train_batches - dev_batches
 
     @staticmethod
     def get_nelement(batch):
@@ -400,14 +367,14 @@ class Dataset(object):
         for batch in batches:
             yield self.pack_batch(batch, **kwargs)
 
-    def get_dev_split(self, split=0.05):
+    def get_dev_split(self, ninsts, split=0.05):
         "Grab a dev split from the dataset"
         if len(self.dev_sents) > 0:
-            raise RuntimeError("Dev-split already exists! Cannot create a new one")
+            raise RuntimeError("A dev-split has already been created!")
 
         buf = []
-        split_size = self.label_encoder.insts * split
-        split_prop = split_size / self.label_encoder.insts
+        split_size = ninsts * split
+        split_prop = split_size / ninsts
 
         for sent in self.reader.readsents():
             if len(buf) >= split_size:

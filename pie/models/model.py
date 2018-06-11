@@ -3,18 +3,18 @@ from collections import OrderedDict
 
 import tqdm
 
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from pie.embedding import RNNEmbedding, EmbeddingMixer, EmbeddingConcat
-from pie.decoder import AttentionalDecoder, LinearDecoder, CRFDecoder
-from pie.encoder import RNNEncoder
-from pie.evaluation import Scorer
 from pie import torch_utils
 
+from .embedding import RNNEmbedding, EmbeddingMixer, EmbeddingConcat
+from .decoder import AttentionalDecoder, LinearDecoder, CRFDecoder
+from .encoder import RNNEncoder
+from .base_model import BaseModel
 
-class SimpleModel(nn.Module):
+
+class SimpleModel(BaseModel):
     """
     Parameters
     ==========
@@ -28,11 +28,17 @@ class SimpleModel(nn.Module):
     """
     def __init__(self, label_encoder, emb_dim, hidden_size, num_layers, dropout=0.0,
                  merge_type='concat', cemb_type='RNN', include_self=True, pos_crf=True):
-        self.label_encoder = label_encoder
+        # args
+        self.emb_dim = emb_dim
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        # kwargs
+        self.dropout = dropout
+        self.merge_type = merge_type
+        self.cemb_type = cemb_type
         self.include_self = include_self
         self.pos_crf = pos_crf
-        self.dropout = dropout
-        super().__init__()
+        super().__init__(label_encoder)
 
         # Embeddings
         self.wemb = nn.Embedding(len(label_encoder.word), emb_dim,
@@ -92,6 +98,15 @@ class SimpleModel(nn.Module):
         if self.include_self:
             self.self_decoder = LinearDecoder(
                 label_encoder.word, hidden_size, dropout=dropout)
+
+    def get_args_and_kwargs(self):
+        return {'args': (self.emb_dim, self.hidden_size, self.num_layers),
+                'kwargs': {'dropout': self.dropout,
+                           'merge_type': self.merge_type,
+                           'cemb_type': self.cemb_type,
+                           'include_self': self.include_self,
+                           'pos_crf': self.pos_crf}}
+        
 
     def loss(self, batch_data):
         ((word, wlen), (char, clen)), tasks = batch_data
@@ -169,36 +184,6 @@ class SimpleModel(nn.Module):
                 preds[task] = hyps
 
         return preds
-
-    def evaluate(self, dataset, total=None):
-        """
-        Get scores per task
-        """
-        scorers = {}
-        for task, le in self.label_encoder.tasks.items():
-            scorers[task] = Scorer(le, compute_unknown=le.level=='char')
-
-        with torch.no_grad():
-
-            for inp, tasks in tqdm.tqdm(dataset, total=total):
-                # get preds
-                preds = self.predict(inp)
-
-                # get trues
-                trues = {}
-                for task, le in self.label_encoder.tasks.items():
-                    tinp, tlen = tasks[task]
-                    tinp, tlen = tinp.t().tolist(), tlen.tolist()
-                    if le.level == 'char':
-                        trues[task] = [''.join(le.stringify(t)) for t in tinp]
-                    else:
-                        trues[task] = [le.stringify(t, l) for t, l in zip(tinp, tlen)]
-
-                # accumulate
-                for task, scorer in scorers.items():
-                    scorer.register_batch(preds[task], trues[task])
-
-        return {task: scorer.get_scores() for task, scorer in scorers.items()}
 
 
 if __name__ == '__main__':

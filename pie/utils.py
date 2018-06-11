@@ -1,5 +1,6 @@
 
 import itertools
+import re
 
 
 def window(it):
@@ -43,3 +44,9 @@ def flatten(it):
     else:
         for subit in it:
             yield from flatten(subit)
+
+
+def ensure_ext(path, ext):
+    if path.endswith(ext):
+        return path
+    return path + ".{}".format(re.sub("^\.", "", ext))

@@ -105,3 +105,8 @@ ENV/
 
 # Project
 config.json
+datasets/
+experiments/
+*sh
+*tar
+*txt

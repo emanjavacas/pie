@@ -2,7 +2,7 @@
 import os
 import unittest
 
-from pie.data import Dataset, MultiLabelEncoder
+from pie.data import Dataset, Reader, MultiLabelEncoder
 from pie.settings import settings_from_file
 
 
@@ -13,7 +13,10 @@ delta = 5                       # FIXME
 class TestLabelEncoderSerialization(unittest.TestCase):
     def setUp(self):
         settings = settings_from_file(testpath)
-        self.data = Dataset(settings)
+        reader = Reader(settings, settings.input_path)
+        label_encoder = MultiLabelEncoder.from_settings(settings)
+        label_encoder.fit(line for _, line in reader.readsents())
+        self.data = Dataset(settings, reader, label_encoder)
 
     def test_serialization(self):
         le = self.data.label_encoder
@@ -35,7 +38,10 @@ class TestLabelEncoderSerialization(unittest.TestCase):
 class TestWordCharEncoding(unittest.TestCase):
     def setUp(self):
         settings = settings_from_file(testpath)
-        self.data = Dataset(settings)
+        reader = Reader(settings, settings.input_path)
+        label_encoder = MultiLabelEncoder.from_settings(settings)
+        label_encoder.fit(line for _, line in reader.readsents())
+        self.data = Dataset(settings, reader, label_encoder)
 
     def test_lengths(self):
         ((word, wlen), (char, clen)), _ = next(self.data.batch_generator())
@@ -65,7 +71,12 @@ class TestDevSplit(unittest.TestCase):
     def setUp(self):
         settings = settings_from_file(testpath)
         settings['batch_size'] = 1
-        self.data = Dataset(settings)
+        reader = Reader(settings, settings.input_path)
+        label_encoder = MultiLabelEncoder.from_settings(settings)
+        insts = label_encoder.fit(line for _, line in reader.readsents())
+        self.insts = insts
+        self.num_batches = insts // settings.batch_size
+        self.data = Dataset(settings, reader, label_encoder)
 
     def test_split_length(self):
         total_batches = 0
@@ -73,7 +84,7 @@ class TestDevSplit(unittest.TestCase):
             total_batches += 1
 
         dev_batches = 0
-        for batch in self.data.get_dev_split(split=0.05):
+        for batch in self.data.get_dev_split(self.insts, split=0.05):
             dev_batches += 1
 
         self.assertAlmostEqual(dev_batches, total_batches * 0.05, delta=delta)
@@ -83,35 +94,37 @@ class TestDevSplit(unittest.TestCase):
         for batch in self.data.batch_generator():
             pre_batches += 1
 
-        self.assertEqual(pre_batches, self.data.label_encoder.insts)
-        self.assertEqual(pre_batches, self.data.num_batches())
+        self.assertEqual(pre_batches, self.insts)  # batch size is 1
+        self.assertEqual(pre_batches, self.num_batches)
 
-        self.data.get_dev_split(split=0.05)
+        devset = self.data.get_dev_split(self.insts, split=0.05)
 
         post_batches = 0
         for batch in self.data.batch_generator():
             post_batches += 1
 
         # FIXME
+        self.assertAlmostEqual(len(devset) + post_batches, pre_batches, delta=delta*5)
         self.assertAlmostEqual(pre_batches * 0.95, post_batches, delta=delta*5)
-        self.assertAlmostEqual(post_batches, self.data.num_batches(), delta=delta*5)
 
     def test_batch_level(self):
         settings = settings_from_file(testpath)
         settings['batch_size'] = 20
-        data = Dataset(settings)
+        reader = Reader(settings, settings.input_path)
+        label_encoder = MultiLabelEncoder.from_settings(settings)
+        label_encoder.fit(line for _, line in reader.readsents())
+        data = Dataset(settings, reader, label_encoder)
 
         pre_batches = 0
         for batch in data.batch_generator():
             pre_batches += 1
 
-        self.assertAlmostEqual(pre_batches, data.num_batches(), delta=delta)
+        self.assertAlmostEqual(pre_batches, self.insts // 20, delta=delta)
 
-        data.get_dev_split(split=0.05)
+        devset = data.get_dev_split(self.insts, split=0.05)
 
         post_batches = 0
         for batch in data.batch_generator():
             post_batches += 1
 
-        self.assertAlmostEqual(pre_batches * 0.95, data.num_batches(), delta=delta)
         self.assertAlmostEqual(pre_batches * 0.95, post_batches, delta=delta)

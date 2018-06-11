@@ -6,7 +6,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from pie import torch_utils
-from pie.encoder import RNNEncoder
+
+from .encoder import RNNEncoder
 
 
 class CNNEmbedding(nn.Module):

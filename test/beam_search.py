@@ -8,8 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
-from pie.encoder import RNNEncoder
-from pie.decoder import AttentionalDecoder
+from pie.models import RNNEncoder, AttentionalDecoder
 from pie.data import LabelEncoder
 from pie import torch_utils
 
