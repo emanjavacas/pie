@@ -24,10 +24,12 @@
   "max_sent_len": 35,
   // maximum number of sentences to process
   "max_sents": 1000000,
-  // max vocabsize for character level input
-  "char_vocabsize": 100,
-  // max vocabsize for word level input
-  "word_vocabsize": 20000,
+  // maximum vocabulary size
+  "char_max_size": 100,
+  "word_max_size": 20000,
+  // min freq per item to be incorporated in the vocabulary (only used if *_max_size is 0)
+  "char_min_freq": 1,
+  "word_min_freq": 1,
   // whether to include autoregressive loss
   "include_self": false,
   // header
