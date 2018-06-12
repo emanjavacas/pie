@@ -1,9 +1,9 @@
 {
-  // GENERAL
+  // * General
   "verbose": true,
   "device": "cpu",
 
-  // DATA
+  // * Data
   // path or unix-like expression to file(s)/dir with training data:
   // e.g. "datasets/capitula_classic/train0.tsv""
   "input_path": "",
@@ -11,7 +11,7 @@
   "test_path": "",
   // path to dev set (same format as input_path)
   "dev_path": null,
-  // proportion of instances in the dev set (ignore if dev_path is passed)
+  // proportion of instances in the dev set (ignored if dev_path is passed)
   "dev_split": 0.05,
   // breakline logic to use to detect sentence boundaries in tsv files
   // either "LENGTH" (break after n tokens) or "FULLSTOP" (break after a fullstop symbol)
@@ -20,7 +20,7 @@
   "breakline_ref": "input",
   // needed to decide for a sentence boundary (e.g. an integer for LENGTH)
   "breakline_data": 15,
-  // safety max to avoid too long sentences blowing up memory
+  // safety max length to avoid too long sentences blowing up memory
   "max_sent_len": 35,
   // maximum number of sentences to process
   "max_sents": 1000000,
@@ -28,6 +28,8 @@
   "char_vocabsize": 100,
   // max vocabsize for word level input
   "word_vocabsize": 20000,
+  // whether to include autoregressive loss
+  "include_self": false,
   // header
   "header": true,
   // expected order of tasks for tabreader
@@ -39,13 +41,39 @@
     // by using a "target" key that refers to the target data field
     // e.g. {"name": "lemma-char", "target": "lemma", "level": "char"}
     // e.g. {"name": "lemma-word", "target": "lemma"}
-    {"name": "lemma", "settings": {"level": "char", "bos": true, "eos": true}},
-    {"name": "pos"}
+    {
+      // name (by default should match the target task)
+      "name": "lemma",
+      "settings": {
+	"level": "char", "bos": true, "eos": true
+      },
+      // schedule: additional schedule params can be passed to control the extent
+      // of learning of each task. There are 2 types of tasks: targets and slaves
+      // depending on the value of "target" (if true then task is target else slave)
+      // For targets, "patience", "threshold" control early stopping (how many steps
+      // without improvement over the threshold we need before stopping learning).
+      // For slaves, they control how we decay the loss weight of that task and the
+      // extra parameters are: "factor" (by how much) and "min_weight" (minimum weight)
+      // given to the loss
+      "schedule": {
+	"target": true, "patience": 2, "threshold": 0.001
+      },
+      // while processing the files if the field is missing use this instead
+      // e.g. "copy": copy over the token form; "UNK": use "UNK"
+      "default": "copy"
+    },
+    {
+      "name": "pos", "default": "UNK"
+    }
   ],
-  // whether to include autoregressive loss
-  "include_self": false,
 
-  // TRAINING
+  // general task schedule params (can be overwritten in the "settings" entry of each)
+  "patience": 1000000, // default to very large value
+  "factor": 1, // decrease the loss weight by this amount (0, 1)
+  "threshold": 0, // minimum decrease in loss to be considered an improvement
+  "min_weight": 0, // minimum value a task weight can be decreased to
+
+  // * Training
   "buffer_size": 10000,
   "dropout": 0,
   "epochs": 5,
@@ -59,7 +87,7 @@
   // check model on dev-set so many times during epoch
   "checks_per_epoch": 0,
 
-  // MODEL
+  // * Model
   "emb_dim": 150,
   "hidden_size": 300,
   "num_layers": 1
