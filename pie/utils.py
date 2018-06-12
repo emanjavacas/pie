@@ -1,4 +1,5 @@
 
+import os
 import itertools
 import re
 
@@ -46,7 +47,21 @@ def flatten(it):
             yield from flatten(subit)
 
 
-def ensure_ext(path, ext):
-    if path.endswith(ext):
-        return path
-    return path + ".{}".format(re.sub("^\.", "", ext))
+def ensure_ext(path, ext, infix=None):
+    """
+    Compute target path with eventual infix and extension
+
+    >>> ensure_ext("model.pt", "pt", infix="0.87")
+    'model-0.87.pt'
+    >>> ensure_ext("model.test", "pt", infix="0.87")
+    'model-0.87.test.pt'
+    """
+    path, oldext = os.path.splitext(path)
+    if oldext.startswith("."):
+        oldext = oldext[1:]
+    if infix is not None:
+        path = "-".join([path, infix])
+    if oldext != ext:
+        path = '.'.join([path, oldext])
+
+    return '.'.join([path, ext])

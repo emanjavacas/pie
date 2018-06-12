@@ -86,11 +86,13 @@ class BaseModel(nn.Module):
 
         return {task: scorer.get_scores() for task, scorer in scorers.items()}
 
-    def save(self, fpath):
+    def save(self, fpath, infix=None):
         """
         Serialize model to path
         """
-        with tarfile.open(utils.ensure_ext(fpath, 'tar'), 'w') as tar:
+        fpath = utils.ensure_ext(fpath, 'tar', infix)
+
+        with tarfile.open(fpath, 'w') as tar:
             # serialize label_encoder
             string, path = json.dumps(self.label_encoder.jsonify()), 'label_encoder.zip'
             add_gzip_to_tar(string, path, tar)
@@ -108,6 +110,8 @@ class BaseModel(nn.Module):
             torch.save(self.state_dict(), tmppath)
             tar.add(tmppath, arcname='state_dict.pt')
             os.remove(tmppath)
+
+        return fpath
 
     @staticmethod
     def load(fpath):
