@@ -1,5 +1,4 @@
 
-import time
 import json
 import logging
 from collections import Counter, defaultdict
@@ -38,6 +37,7 @@ class LabelEncoder(object):
     def __len__(self):
         if not self.fitted:
             raise ValueError("Cannot get length of unfitted LabelEncoder")
+
         return len(self.table)
 
     def __eq__(self, other):
@@ -56,9 +56,14 @@ class LabelEncoder(object):
             self.fitted == other.fitted
 
     def __repr__(self):
+        try:
+            length = len(self)
+        except Exception:
+            length = 0
+
         return (
             '<LabelEncoder name="{}" target="{}" level="{}" vocab="{}" fitted="{}">'
-        ).format(self.name, self.target, self.level, len(self), self.fitted)
+        ).format(self.name, self.target, self.level, length, self.fitted)
 
     def add(self, seq):
         if self.fitted:

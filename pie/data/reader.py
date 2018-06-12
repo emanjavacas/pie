@@ -1,7 +1,6 @@
 
 import os
 import glob
-import logging
 import random
 
 from .tabreader import TabReader
@@ -20,6 +19,8 @@ class Reader(object):
     Settings
     ========
     shuffle : bool, whether to shuffle files after each iteration
+    max_sents : int, maximum number of sentences to read (note that depending
+        on shuffle the result might be non-determinitic)
     """
     def __init__(self, settings, input_path):
         input_path = input_path or settings.input_path
