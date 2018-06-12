@@ -43,18 +43,23 @@ if __name__ == '__main__':
     # fit
     start = time.time()
     if settings.verbose:
-        print("::: Fitting data... :::")
+        print("::: Fitting data :::")
         print()
     ninsts = label_encoder.fit_reader(reader)
     if settings.verbose:
-        print("Done in {:g} secs".format(time.time() - start))
-        print("Found {} total instances in training set".format(ninsts))
+        print("Found {} total instances in training set in {:g} secs".format(
+            ninsts, time.time() - start))
+        print()
+        print("::: Vocabulary :::")
+        print()
+        print("- {:<15} vocab={:<6}".format("word", len(label_encoder.word)))
+        print("- {:<15} vocab={:<6}".format("char", len(label_encoder.char)))
         print()
         print("::: Target tasks :::")
         print()
         for task, le in label_encoder.tasks.items():
             print("- {:<15} target={:<6} level={:<6} vocab={:<6}"
-                  .format(task, len(le), le.level, le.target))
+                  .format(task, le.target, le.level, len(le)))
         print()
 
     trainset = Dataset(settings, reader, label_encoder)
@@ -98,9 +103,12 @@ if __name__ == '__main__':
         print("Stopping training")
     finally:
         if testset is not None:
+            print("Evaluating model on test set")
             model.eval()
             test_loss = model.evaluate(testset.batch_generator())
-            print("\n::: Test scores :::\n")
+            print()
+            print("::: Test scores :::")
+            print()
             print(yaml.dump(test_loss, default_flow_style=False))
             print()
     print("Bye!")
