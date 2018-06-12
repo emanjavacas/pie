@@ -13,19 +13,81 @@ from torch.nn.utils import clip_grad_norm_
 logging.basicConfig(format='%(asctime)s : %(message)s', level=logging.INFO)
 
 
+class EarlyStopException(Exception):
+    def __init__(self, task, loss):
+        self.task = task
+        self.loss = loss
+
+
+class TaskScheduler(object):
+    """
+    Track losses
+    """
+    def __init__(self, tasks, patience, factor, threshold, min_weight):
+
+        for task, values in tasks.items():
+            tasks[task] = {'steps': 0, 'best': float('inf'), 'weight': 1, **values}
+        self.tasks = tasks
+
+        self.patience = patience
+        self.factor = factor
+        self.threshold = threshold
+        self.min_weight = min_weight
+
+    def is_best(self, task, loss):
+        threshold = self.tasks[task].get('threshold', self.threshold)
+        return loss < (self.tasks[task]['best'] - threshold)
+
+    def step(self, losses):
+        for task, loss in losses.items():
+            if task not in self.tasks:
+                # ignore
+                continue
+
+            if self.is_best(task, loss) <= self.tasks[task]['best']:
+                self.tasks[task]['best'] = loss
+                self.tasks[task]['steps'] = 0
+            else:
+                self.tasks[task]['steps'] += 1
+
+            patience = self.tasks[task].get('patience', self.patience)
+            if self.tasks[task]['steps'] > patience:
+                # maybe stop entire training
+                if self.tasks[task].get('target', False):
+                    raise EarlyStopException(task, self.tasks[task]['best'])
+
+                # update loss weight
+                else:
+                    factor = self.tasks[task].get('factor', self.factor)
+                    new_weight = self.tasks[task]['weight'] * factor
+                    min_weight = self.tasks[task].get('min_weight', self.min_weight)
+                    self.tasks[task]['weight'] = max(new_weight, min_weight)
+
+    def get_weights(self):
+        return {task: self.tasks[task]['weight'] for task in self.tasks}
+
+
 class Trainer(object):
     """
     Trainer
+
+    Settings
+    ========
+    optim
+    lr
+    clip_norm
+    weights
+    report_freq
+    checks_per_epoch
     """
-    def __init__(self, dataset, num_instances, model, settings):
+    def __init__(self, settings, model, dataset, num_instances):
 
         self.dataset = dataset
         self.model = model
         self.optim = getattr(optim, settings.optim)(model.parameters(), lr=settings.lr)
-        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            self.optim, patience=3, verbose=settings.verbose, factor=0.25)
+        self.lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            self.optim, patience=2, verbose=settings.verbose, factor=0.25)
         self.clip_norm = settings.clip_norm
-        self.weights = settings.weights
 
         self.report_freq = settings.report_freq
         self.num_batches = num_instances / dataset.batch_size
@@ -38,16 +100,17 @@ class Trainer(object):
         else:
             self.check_freq = 0
 
+        self.task_scheduler = TaskScheduler(
+            {task['name']: task.get('schedule', {}) for task in settings.tasks},
+            settings.patience, settings.factor, settings.threshold, settings.min_weight)
+
     def weight_loss(self, loss):
         """
         Apply weights to losses and return a single loss number
         """
-        if self.weights is not None:
-            loss = sum(self.weights[k] * loss[k] for k in loss)
-        else:
-            loss = sum(loss.values())
+        weights = self.task_scheduler.get_weights()
 
-        return loss
+        return sum(weights[k] * loss[k] for k in loss)
 
     def evaluate(self, dataset, num_batches=None):
         """
@@ -58,7 +121,7 @@ class Trainer(object):
         # get total number of batches
         if isinstance(dataset, collections.Sized):
             total = len(dataset)
-        elif ninsts is not None:
+        elif num_batches is not None:
             total = num_batches
 
         for batch in tqdm.tqdm(dataset, total=total):
@@ -91,8 +154,7 @@ class Trainer(object):
         self.model.eval()
 
         with torch.no_grad():
-            dev_loss = self.evaluate(dev)
-            dev_scores = self.model.evaluate(dev)
+            dev_loss, dev_scores = self.evaluate(dev), self.model.evaluate(dev)
 
             print("::: Dev losses :::")
             print()
@@ -104,8 +166,8 @@ class Trainer(object):
             print()
 
         self.model.train()
-
-        self.scheduler.step(sum(dev_loss[k] for k in ('pos', 'lemma')))  # FIXME
+        self.lr_scheduler.step(self.weight_loss(dev_loss))
+        self.task_scheduler.step(dev_loss)
 
     def train_epoch(self, dev):
         rep_loss, rep_items, rep_batches = collections.defaultdict(float), 0, 0
@@ -144,12 +206,17 @@ class Trainer(object):
         """
         start = time.time()
 
-        for e in range(1, epochs + 1):
-            # train epoch
-            epoch_start = time.time()
-            logging.info("Starting epoch [{}]".format(e))
-            self.train_epoch(dev)
-            epoch_total = time.time() - epoch_start
-            logging.info("Finished epoch [{}] in [{:g}] secs".format(e, epoch_total))
+        try:
+            for e in range(1, epochs + 1):
+                # train epoch
+                epoch_start = time.time()
+                logging.info("Starting epoch [{}]".format(e))
+                self.train_epoch(dev)
+                epoch_total = time.time() - epoch_start
+                logging.info("Finished epoch [{}] in [{:g}] secs".format(e, epoch_total))
+
+        except EarlyStopException as e:
+            logging.info("Early stopping training: "
+                         "task [{}] with best loss {:.3f}".format(e.task, e.best))
 
         logging.info("Finished training in [{:g}]".format(time.time() - start))

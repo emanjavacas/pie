@@ -14,7 +14,7 @@ class LabelEncoder(object):
     Label encoder
     """
     def __init__(self, pad=True, eos=False, bos=False,
-                 vocabsize=None, level='word', target=None, name=None):
+                 vocabsize=None, level='word', target=None, name=None, **kwargs):
 
         if level.lower() not in ('word', 'char'):
             raise ValueError("`level` must be 'word' or 'char'")

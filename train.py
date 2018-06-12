@@ -91,7 +91,7 @@ if __name__ == '__main__':
 
     # training
     print("Starting training")
-    trainer = Trainer(trainset, ninsts, model, settings)
+    trainer = Trainer(settings, model, trainset, ninsts)
     try:
         trainer.train_epochs(settings.epochs, dev=devset)
     except KeyboardInterrupt:
