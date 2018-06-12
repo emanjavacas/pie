@@ -90,15 +90,20 @@ class Trainer(object):
         self.clip_norm = settings.clip_norm
 
         self.report_freq = settings.report_freq
-        self.num_batches = num_instances / dataset.batch_size
+        self.num_batches = num_instances // dataset.batch_size
         if settings.checks_per_epoch == 1:
-            self.check_freq = self.num_batches
-        elif settings.checks_per_epoch > 1:
-            self.check_freq = self.num_batches // settings.checks_per_epoch
+            self.check_freq = self.num_batches - 1  # check after last batch
         elif settings.checks_per_epoch > self.num_batches:
-            self.check_freq = 1
+            self.check_freq = 1  # check after each batch
+        elif settings.checks_per_epoch > 1:
+            self.check_freq = self.num_batches // settings.checks_per_epoch  # check just
         else:
-            self.check_freq = 0
+            self.check_freq = 0  # no checks
+        if settings.verbose:
+            print()
+            print("Evaluation check every {}/{} batches".format(
+                self.check_freq, self.num_batches))
+            print()
 
         self.task_scheduler = TaskScheduler(
             {task['name']: task.get('schedule', {}) for task in settings.tasks},
