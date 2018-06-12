@@ -106,7 +106,6 @@ class SimpleModel(BaseModel):
                            'cemb_type': self.cemb_type,
                            'include_self': self.include_self,
                            'pos_crf': self.pos_crf}}
-        
 
     def loss(self, batch_data):
         ((word, wlen), (char, clen)), tasks = batch_data
