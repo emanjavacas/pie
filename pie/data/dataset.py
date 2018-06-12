@@ -88,7 +88,7 @@ class LabelEncoder(object):
         if self.max_size:
             most_common = self.freqs.most_common(n=self.max_size)
         else:
-            most_common = [it for it, c in  self.freqs.items() if c >= self.min_freq]
+            most_common = [it for it in self.freqs.items() if it[1] >= self.min_freq]
         self.inverse_table = list(self.reserved) + [sym for sym, _ in most_common]
         self.table = {sym: idx for idx, sym in enumerate(self.inverse_table)}
         self.fitted = True

@@ -41,12 +41,13 @@
     // each task's name refers to the corresponding data field
     // this behaviour can be changed in case the name differs from the data field
     // by using a "target" key that refers to the target data field
-    // e.g. {"name": "lemma-char", "target": "lemma", "level": "char"}
-    // e.g. {"name": "lemma-word", "target": "lemma"}
+    // e.g. {"name": "lemma-char", "settings": {"target": "lemma"}}
+    // e.g. {"name": "lemma-word", "settings": {"target": "lemma"}}
     {
       // name (by default should match the target task)
       "name": "lemma",
       "settings": {
+	// encoder settings (other entries are: "target", "max_size", "min_freq")
 	"level": "char", "bos": true, "eos": true
       },
       // schedule: additional schedule params can be passed to control the extent
