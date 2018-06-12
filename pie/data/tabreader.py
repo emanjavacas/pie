@@ -1,12 +1,13 @@
 
-from .base_reader import BaseReader, LineParseException
+from .base_reader import BaseReader, LineParseException, MissingDefaultException
 
 
 class LineParser(object):
     """
     Inner class to handle sentence breaks
     """
-    def __init__(self, tasks, breakline_type, breakline_ref, breakline_data):
+    def __init__(self, tasks, breakline_type, breakline_ref, breakline_data, reader):
+        self.reader = reader
         # breakline info
         self.breakline_type = breakline_type
         self.breakline_ref = breakline_ref
@@ -20,10 +21,14 @@ class LineParser(object):
         Adds line to current sentence.
         """
         inp, *tasks = line.split()
+
         if len(tasks) < len(self.tasks):
-            raise LineParseException(
-                "Not enough number of tasks. Expected {} but got {} at line {}."
-                .format(len(self.tasks), len(tasks), linenum))
+            try:
+                tasks = [self.reader.get_default(task, inp) for task in self.tasks]
+            except MissingDefaultException:
+                raise LineParseException(
+                    "Not enough number of tasks. Expected {} but got {} at line {}."
+                    .format(len(self.tasks), len(tasks), linenum))
 
         self.inp.append(inp)
 
@@ -82,17 +87,18 @@ class TabReader(BaseReader):
         split sentences.
     breakline_ref : str, tab used to decide on line breaks
     max_sent_len : int, break lines to this length if they'd become longer
+    tasks[task].default : str, method to use to fill in missing values
     """
     def __init__(self, settings, fpath, line_parser=LineParser):
-        self.line_parser = line_parser
-        self.header = settings.header
+        self.header = settings.header  # needed for get_tasks
         self.tasks_order = settings.tasks_order
+        super(TabReader, self).__init__(settings, fpath)
+
+        self.line_parser = line_parser
         self.breakline_type = settings.breakline_type
         self.breakline_ref = settings.breakline_ref
         self.breakline_data = settings.breakline_data
         self.max_sent_len = settings.max_sent_len
-
-        super(TabReader, self).__init__(settings, fpath)
 
     def parselines(self):
         """
@@ -103,7 +109,8 @@ class TabReader(BaseReader):
                 next(f)
 
             parser = self.line_parser(
-                self.tasks, self.breakline_type, self.breakline_ref, self.breakline_data)
+                self.tasks, self.breakline_type,
+                self.breakline_ref, self.breakline_data, self)
 
             for line_num, line in enumerate(f):
                 line = line.strip()

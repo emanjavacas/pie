@@ -6,6 +6,11 @@ class LineParseException(Exception):
     pass
 
 
+class MissingDefaultException(Exception):
+    def __init__(self, task):
+        self.task = task
+
+
 class BaseReader(object):
     """
     Abstract reader class
@@ -13,6 +18,20 @@ class BaseReader(object):
     def __init__(self, settings, fpath):
         self.fpath = fpath
         self.tasks = tuple(self.get_tasks())
+        self.tasks_defaults = {task['name']: task.get("default")
+                               for task in settings.tasks if task['name'] in self.tasks}
+
+    def get_default(self, task, value):
+        """
+        Get default value for task if given
+        """
+        default = self.tasks_defaults[task]
+        if default is not None:
+            if default.lower() == 'copy':
+                return value
+            return default
+
+        raise MissingDefaultException(task)
 
     def readsents(self):
         """
