@@ -13,8 +13,9 @@ class LabelEncoder(object):
     """
     Label encoder
     """
-    def __init__(self, pad=True, eos=False, bos=False,
-                 vocabsize=None, level='word', target=None, name=None, **kwargs):
+    def __init__(self, level='word', target=None, name=None,
+                 pad=True, eos=False, bos=False,
+                 max_size=None, min_freq=1, **kwargs):
 
         if level.lower() not in ('word', 'char'):
             raise ValueError("`level` must be 'word' or 'char'")
@@ -22,7 +23,8 @@ class LabelEncoder(object):
         self.eos = constants.EOS if eos else None
         self.pad = constants.PAD if pad else None
         self.bos = constants.BOS if bos else None
-        self.vocabsize = vocabsize
+        self.max_size = max_size
+        self.min_freq = min_freq
         self.level = level.lower()
         self.target = target
         self.name = name
@@ -47,7 +49,7 @@ class LabelEncoder(object):
         return self.pad == other.pad and \
             self.eos == other.eos and \
             self.bos == other.bos and \
-            self.vocabsize == other.vocabsize and \
+            self.max_size == other.max_size and \
             self.level == other.level and \
             self.target == other.target and \
             self.freqs == other.freqs and \
@@ -83,7 +85,10 @@ class LabelEncoder(object):
             logging.warning("Computing vocabulary for empty encoder {}"
                             .format(self.name))
 
-        most_common = self.freqs.most_common(n=self.vocabsize or len(self.freqs))
+        if self.max_size:
+            most_common = self.freqs.most_common(n=self.max_size)
+        else:
+            most_common = [it for it, c in  self.freqs.items() if c >= self.min_freq]
         self.inverse_table = list(self.reserved) + [sym for sym, _ in most_common]
         self.table = {sym: idx for idx, sym in enumerate(self.inverse_table)}
         self.fitted = True
@@ -159,7 +164,8 @@ class LabelEncoder(object):
                 'pad': self.pad,
                 'level': self.level,
                 'target': self.target,
-                'vocabsize': self.vocabsize,
+                'max_size': self.max_size,
+                'min_freq': self.min_freq,
                 'freqs': dict(self.freqs),
                 'table': dict(self.table),
                 'inverse_table': self.inverse_table,
@@ -169,7 +175,7 @@ class LabelEncoder(object):
     def from_json(cls, obj):
         inst = cls(pad=obj['pad'], eos=obj['eos'], bos=obj['bos'],
                    level=obj['level'], target=obj['target'],
-                   vocabsize=obj['vocabsize'], name=obj['name'])
+                   max_size=obj['max_size'], min_freq=['min_freq'], name=obj['name'])
         inst.freqs = Counter(obj['freqs'])
         inst.table = dict(obj['table'])
         inst.inverse_table = list(obj['inverse_table'])
@@ -183,10 +189,12 @@ class MultiLabelEncoder(object):
     """
     Complex Label encoder for all tasks.
     """
-    def __init__(self, word_vocabsize=None, char_vocabsize=None):
-        self.word = LabelEncoder(vocabsize=word_vocabsize, name='word')
-        self.char = LabelEncoder(vocabsize=char_vocabsize, name='char', level='char',
-                                 eos=True, bos=True)
+    def __init__(self, word_max_size=None, char_max_size=None,
+                 word_min_freq=1, char_min_freq=None):
+        self.word = LabelEncoder(max_size=word_max_size, min_freq=word_min_freq,
+                                 name='word')
+        self.char = LabelEncoder(max_size=char_max_size, min_freq=char_min_freq,
+                                 name='char', level='char', eos=True, bos=True)
         self.tasks = {}
 
     def __repr__(self):
@@ -213,8 +221,10 @@ class MultiLabelEncoder(object):
 
     @classmethod
     def from_settings(cls, settings, tasks=None):
-        le = cls(word_vocabsize=settings.word_vocabsize,
-                 char_vocabsize=settings.char_vocabsize)
+        le = cls(word_max_size=settings.word_max_size,
+                 word_min_freq=settings.word_min_freq,
+                 char_max_size=settings.char_max_size,
+                 char_min_freq=settings.char_min_freq)
 
         for task in settings.tasks:
             task_settings = task.get("settings", {})
