@@ -5,6 +5,9 @@ import json
 from json_minify import json_minify
 
 
+DEFAULTPATH = os.sep.join([os.path.dirname(__file__), 'default_settings.json'])
+
+
 class Settings(dict):
     def __init__(self, *args, **kwargs):
         super(Settings, self).__init__(*args, **kwargs)
@@ -67,6 +70,14 @@ def recursive_merge(s1, s2):
     return s1
 
 
+def load_default_settings():
+    """
+    Load built-in default settings
+    """
+    with open(DEFAULTPATH) as f:
+        return Settings(json.loads(json_minify(f.read())))
+
+
 def settings_from_file(config_path):
     """Loads and parses a parameter file.
 
@@ -88,8 +99,7 @@ def settings_from_file(config_path):
             "Couldn't read config file: %s. Exception: %s" % (config_path, str(e)))
 
     # add default values for missing settings:
-    defaults_path = os.sep.join((os.path.dirname(__file__), 'default_settings.json'))
-    with open(defaults_path, 'r') as f:
+    with open(DEFAULTPATH, 'r') as f:
         defaults = json.loads(json_minify(f.read()))
 
     # settings = Settings(flat_merge(p, defaults))

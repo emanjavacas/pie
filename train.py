@@ -105,10 +105,10 @@ if __name__ == '__main__':
         if testset is not None:
             print("Evaluating model on test set")
             model.eval()
-            test_loss = model.evaluate(testset.batch_generator())
+            test_scores = model.evaluate(testset.batch_generator())
             print()
             print("::: Test scores :::")
             print()
-            print(yaml.dump(test_loss, default_flow_style=False))
+            print(yaml.dump(test_scores, default_flow_style=False))
             print()
     print("Bye!")

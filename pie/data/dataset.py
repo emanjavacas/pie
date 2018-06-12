@@ -291,6 +291,10 @@ class MultiLabelEncoder(object):
                 char.append(self.char.transform(w))
 
             # task data
+            if tasks is None:
+                # during inference there is no task data (pass None)
+                continue
+
             for le in self.tasks.values():
                 if le.level == 'word':
                     tasks_dict[le.name].append(le.transform(tasks[le.target]))
@@ -381,22 +385,7 @@ class Dataset(object):
         """
         Transform batch data to tensors
         """
-        device = device or self.device
-
-        (word, char), tasks = self.label_encoder.transform(batch)
-
-        word = torch_utils.pad_batch(
-            word, self.label_encoder.word.get_pad(), device=device)
-        char = torch_utils.pad_batch(
-            char, self.label_encoder.char.get_pad(), device=device)
-
-        output_tasks = {}
-        for task, data in tasks.items():
-            output_tasks[task] = torch_utils.pad_batch(
-                data, self.label_encoder.tasks[task].get_pad(),
-                device=device)
-
-        return (word, char), output_tasks
+        return pack_batch(self.label_encoder, batch, device or self.device)
 
     def prepare_buffer(self, buf, **kwargs):
         "Transform buffer into batch generator"
@@ -464,6 +453,23 @@ class Dataset(object):
 
         if len(buf) > 0:
             yield from self.prepare_buffer(buf)
+
+
+def pack_batch(label_encoder, batch, device=None):
+    """
+    Transform batch data to tensors
+    """
+    (word, char), tasks = label_encoder.transform(batch)
+
+    word = torch_utils.pad_batch(word, label_encoder.word.get_pad(), device=device)
+    char = torch_utils.pad_batch(char, label_encoder.char.get_pad(), device=device)
+
+    output_tasks = {}
+    for task, data in tasks.items():
+        output_tasks[task] = torch_utils.pad_batch(
+            data, label_encoder.tasks[task].get_pad(), device=device)
+
+    return (word, char), output_tasks
 
 
 def wrap_device(it, device):

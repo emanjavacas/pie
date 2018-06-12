@@ -1,5 +1,6 @@
 
 import os
+import glob
 import itertools
 import re
 
@@ -65,3 +66,21 @@ def ensure_ext(path, ext, infix=None):
         path = '.'.join([path, oldext])
 
     return '.'.join([path, ext])
+
+
+def get_filenames(input_path):
+    """
+    Get filenames from path expression
+    """
+    if os.path.isdir(input_path):
+        filenames = [os.path.join(input_path, f) for f in os.listdir(input_path)
+                     if not f.startswith('.')]
+    elif os.path.isfile(input_path):
+        filenames = [input_path]
+    else:
+        filenames = glob.glob(input_path)
+
+    if len(filenames) == 0:
+        raise RuntimeError("Couldn't find files [{}]".format(input_path))
+
+    return filenames

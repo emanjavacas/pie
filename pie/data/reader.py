@@ -1,10 +1,12 @@
 
 import os
-import glob
 import random
+
+from pie.utils import get_filenames
 
 from .tabreader import TabReader
 from .conll_reader import CONLLReader
+
 
 
 class Reader(object):
@@ -23,20 +25,7 @@ class Reader(object):
         on shuffle the result might be non-determinitic)
     """
     def __init__(self, settings, input_path):
-        input_path = input_path or settings.input_path
-
-        if os.path.isdir(input_path):
-            filenames = [os.path.join(input_path, f)
-                         for f in os.listdir(input_path)
-                         if not f.startswith('.')]
-        elif os.path.isfile(input_path):
-            filenames = [input_path]
-        else:
-            filenames = glob.glob(input_path)
-
-        if len(filenames) == 0:
-            raise ValueError("Couldn't find files in: \"{}\"".format(input_path))
-
+        filenames = get_filenames(input_path or settings.input_path)
         self.readers = [self.get_reader(fpath)(settings, fpath) for fpath in filenames]
 
         # settings
