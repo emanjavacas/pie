@@ -91,6 +91,10 @@
 
   // * Model
   "emb_dim": 150,
+  // character embedding type (rnn or cnn)
+  "cemb_type": "rnn",
+  // how to merge word-level and char-level embeddings (mixer or concat)
+  "merge_type": "concat",
   "hidden_size": 300,
   "num_layers": 1
 }
