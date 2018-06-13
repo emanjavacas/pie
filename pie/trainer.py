@@ -54,11 +54,15 @@ class TaskScheduler(object):
         return value > (self.tasks[task]['best'] + threshold)
 
     def step(self, scores, model):
+        """
+        Advance schedule step based on dev scores (accuracy)
+        """
         for task, score in scores.items():
             if task not in self.tasks:
                 # ignore
                 continue
 
+            # check if we improve
             if self.is_best(task, score['accuracy']):
                 self.tasks[task]['best'] = score['accuracy']
                 self.tasks[task]['steps'] = 0
@@ -68,6 +72,7 @@ class TaskScheduler(object):
             else:
                 self.tasks[task]['steps'] += 1
 
+            # check if we need to stop globally or downweight a task loss
             patience = self.tasks[task].get('patience', self.patience)
             if self.tasks[task]['steps'] >= patience:
                 # maybe stop entire training
@@ -107,7 +112,7 @@ class Trainer(object):
         self.model = model
         self.optim = getattr(optim, settings.optim)(model.parameters(), lr=settings.lr)
         self.lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            self.optim, patience=2, verbose=settings.verbose, factor=0.25)
+            self.optim, patience=1, verbose=settings.verbose, factor=0.75)
         self.clip_norm = settings.clip_norm
 
         self.report_freq = settings.report_freq
@@ -202,6 +207,7 @@ class Trainer(object):
 
         if self.verbose:
             print(self.task_scheduler)
+            print()
 
     def train_epoch(self, dev):
         rep_loss, rep_items, rep_batches = collections.defaultdict(float), 0, 0

@@ -2,6 +2,7 @@
 import time
 import yaml
 import logging
+from datetime import datetime
 
 from pie.settings import settings_from_file
 from pie.trainer import Trainer
@@ -19,6 +20,17 @@ numpy.random.seed(seed)
 torch.manual_seed(seed)
 if torch.cuda.is_available():
     torch.cuda.manual_seed(seed)
+
+
+def get_fname_infix(settings):
+    # fname
+    fname = os.path.join(settings.modelpath, settings.modelname),
+    # infix
+    targets = [t['name'] for t in settings.tasks if t.get('schedule', {}).get('target')]
+    timestamp = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
+    infix = '-'.join(['+'.join(targets), timestamp])
+
+    return fname, infix
 
 
 if __name__ == '__main__':
@@ -113,4 +125,10 @@ if __name__ == '__main__':
             print()
             print(yaml.dump(test_scores, default_flow_style=False))
             print()
+
+        # save model
+        fpath, infix = get_fname_infix(settings)
+        fpath = model.save(fpath, infix=infix)
+        print("Saved best model to: [{}]".format(fpath))
+
     print("Bye!")

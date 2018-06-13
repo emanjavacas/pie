@@ -92,6 +92,11 @@ class BaseModel(nn.Module):
         """
         fpath = utils.ensure_ext(fpath, 'tar', infix)
 
+        # create dir if necessary
+        dirname = os.path.dirname(fpath)
+        if not os.path.isdir(dirname):
+            os.makedirs(dirname)
+
         with tarfile.open(fpath, 'w') as tar:
             # serialize label_encoder
             string, path = json.dumps(self.label_encoder.jsonify()), 'label_encoder.zip'

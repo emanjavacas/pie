@@ -38,8 +38,6 @@ class LinearDecoder(nn.Module):
 
     def forward(self, enc_outs):
         linear_out = self.decoder(enc_outs)
-        linear_out = F.dropout(
-            linear_out, p=self.dropout, training=self.training)
 
         return linear_out
 
@@ -271,6 +269,7 @@ class AttentionalDecoder(nn.Module):
     def __init__(self, label_encoder, in_dim, hidden_size, context_dim=0, dropout=0.0):
         self.label_encoder = label_encoder
         self.context_dim = context_dim
+        self.dropout = dropout
         super(AttentionalDecoder, self).__init__()
 
         if label_encoder.get_eos() is None and label_encoder.get_bos() is None:

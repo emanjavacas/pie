@@ -2,6 +2,10 @@
   // * General
   "verbose": true,
   "device": "cpu",
+  // model name to be used for saving
+  "modelname": "model",
+  // model path to be used for saving
+  "modelpath": "./",
 
   // * Data
   // path or unix-like expression to file(s)/dir with training data:
@@ -53,7 +57,7 @@
       // schedule: additional schedule params can be passed to control the extent
       // of learning of each task. There are 2 types of tasks: targets and slaves
       // depending on the value of "target" (if true then task is target else slave)
-      // For targets, "patience", "threshold" control early stopping (how many steps
+      // For target, "patience", "threshold" control early stopping (how many steps
       // without improvement over the threshold we need before stopping learning).
       // For slaves, they control how we decay the loss weight of that task and the
       // extra parameters are: "factor" (by how much) and "min_weight" (minimum weight)

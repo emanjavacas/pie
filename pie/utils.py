@@ -62,7 +62,7 @@ def ensure_ext(path, ext, infix=None):
         oldext = oldext[1:]
     if infix is not None:
         path = "-".join([path, infix])
-    if oldext != ext:
+    if oldext and oldext != ext:
         path = '.'.join([path, oldext])
 
     return '.'.join([path, ext])
