@@ -80,7 +80,8 @@ if __name__ == '__main__':
         testset = Dataset(settings, Reader(settings, settings.test_path), label_encoder)
 
     # model
-    model = SimpleModel(trainset.label_encoder, settings.emb_dim, settings.hidden_size,
+    model = SimpleModel(trainset.label_encoder,
+                        settings.wemb_dim, settings.cemb_dim, settings.hidden_size,
                         settings.num_layers, dropout=settings.dropout,
                         cemb_type=settings.cemb_type,
                         include_self=settings.include_self, pos_crf=True)

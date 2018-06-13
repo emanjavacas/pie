@@ -91,7 +91,8 @@
   "checks_per_epoch": 0,
 
   // * Model
-  "emb_dim": 150,
+  "wemb_dim": 150,
+  "cemb_dim": 150,
   // character embedding type (rnn or cnn)
   "cemb_type": "rnn",
   // how to merge word-level and char-level embeddings (mixer or concat)

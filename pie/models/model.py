@@ -8,7 +8,7 @@ import torch.nn.functional as F
 
 from pie import torch_utils
 
-from .embedding import RNNEmbedding, EmbeddingMixer, EmbeddingConcat
+from .embedding import RNNEmbedding, CNNEmbedding, EmbeddingMixer, EmbeddingConcat
 from .decoder import AttentionalDecoder, LinearDecoder, CRFDecoder
 from .encoder import RNNEncoder
 from .base_model import BaseModel
@@ -19,17 +19,20 @@ class SimpleModel(BaseModel):
     Parameters
     ==========
     label_encoder : MultiLabelEncoder
-    emb_dim : int, embedding dimension for all embedding layers
+    wemb_dim : int, embedding dimension for word-level embedding layer
+    cemb_dim : int, embedding dimension for char-level embedding layer
     hidden_size : int, hidden_size for all hidden layers
     dropout : float
     merge_type : str, one of "concat", "mixer", method to merge word-level and
         char-level embeddings
     cemb_type : str, one of "RNN", "CNN", layer to use for char-level embeddings
     """
-    def __init__(self, label_encoder, emb_dim, hidden_size, num_layers, dropout=0.0,
-                 merge_type='concat', cemb_type='RNN', include_self=True, pos_crf=True):
+    def __init__(self, label_encoder, wemb_dim, cemb_dim, hidden_size, num_layers,
+                 dropout=0.0, merge_type='concat', cemb_type='RNN',
+                 include_self=True, pos_crf=True):
         # args
-        self.emb_dim = emb_dim
+        self.wemb_dim = wemb_dim
+        self.cemb_dim = cemb_dim
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         # kwargs
@@ -41,25 +44,34 @@ class SimpleModel(BaseModel):
         super().__init__(label_encoder)
 
         # Embeddings
-        self.wemb = nn.Embedding(len(label_encoder.word), emb_dim,
-                                 padding_idx=label_encoder.word.get_pad())
+        self.wemb = None
+        if self.wemb_dim > 0:
+            self.wemb = nn.Embedding(len(label_encoder.word), wemb_dim,
+                                     padding_idx=label_encoder.word.get_pad())
+        self.cemb = None
         if cemb_type.upper() == 'RNN':
-            self.cemb = RNNEmbedding(len(label_encoder.char), emb_dim,
+            self.cemb = RNNEmbedding(len(label_encoder.char), cemb_dim,
                                      padding_idx=label_encoder.char.get_pad())
         elif cemb_type.upper() == 'CNN':
-            self.cemb = CNNEmbedding(len(label_encoder.char), emb_dim,
+            self.cemb = CNNEmbedding(len(label_encoder.char), cemb_dim,
                                      padding_idx=label_encoder.char.get_pad())
 
-        if merge_type.lower() == 'mixer':
-            if self.cemb.embedding_dim != self.wemb.embedding_dim:
-                raise ValueError("EmbeddingMixer needs equal embedding dims")
-            self.merger = EmbeddingMixer(emb_dim)
-            in_dim = emb_dim
-        elif merge_type == 'concat':
-            self.merger = EmbeddingConcat()
-            in_dim = self.wemb.embedding_dim + self.cemb.embedding_dim
+        self.merger = None
+        if self.cemb is not None and self.wemb is not None:
+            if merge_type.lower() == 'mixer':
+                if self.cemb.embedding_dim != self.wemb.embedding_dim:
+                    raise ValueError("EmbeddingMixer needs equal embedding dims")
+                self.merger = EmbeddingMixer(wemb_dim)
+                in_dim = wemb_dim
+            elif merge_type == 'concat':
+                self.merger = EmbeddingConcat()
+                in_dim = self.wemb.embedding_dim + self.cemb.embedding_dim
+            else:
+                raise ValueError("Unknown merge method: {}".format(merge_type))
+        elif self.cemb is None:
+            in_dim = wemb_dim
         else:
-            raise ValueError("Unknown merge method: {}".format(merge_type))
+            in_dim = self.cemb.embedding_dim
 
         # Encoder
         self.encoder = RNNEncoder(
@@ -78,23 +90,24 @@ class SimpleModel(BaseModel):
         if 'lemma' in label_encoder.tasks:
             self.lemma_sequential = label_encoder.tasks['lemma'].level == 'char'
             if self.lemma_sequential:
+                if self.cemb is None:
+                    raise ValueError("Sequential lemmatizer requires char embeddings")
                 self.lemma_decoder = AttentionalDecoder(
-                    label_encoder.tasks['lemma'], emb_dim, emb_dim, #hidden_size,
+                    label_encoder.tasks['lemma'],
+                    self.cemb.embedding_dim, self.cemb.embedding_dim, #hidden_size,
                     context_dim=hidden_size, dropout=dropout)
             else:
                 self.lemma_decoder = LinearDecoder(
                     label_encoder.tasks['lemma'], hidden_size, dropout=dropout)
 
-        linear_tasks = []
+        self.linear_tasks, linear_tasks = None, OrderedDict()
         for task in label_encoder.tasks:
             if task in ('pos', 'lemma'):
                 continue
-            linear_tasks.append((task, LinearDecoder(
-                label_encoder.tasks[task], hidden_size, dropout=dropout)))
+            linear_tasks[task] = LinearDecoder(
+                label_encoder.tasks[task], hidden_size, dropout=dropout)
         if len(linear_tasks) > 0:
-            self.linear_tasks = nn.Sequential(OrderedDict(linear_tasks))
-        else:
-            self.linear_tasks = None
+            self.linear_tasks = nn.Sequential(linear_tasks)
 
         # - Self
         if self.include_self:
@@ -102,22 +115,39 @@ class SimpleModel(BaseModel):
                 label_encoder.word, hidden_size, dropout=dropout)
 
     def get_args_and_kwargs(self):
-        return {'args': (self.emb_dim, self.hidden_size, self.num_layers),
+        return {'args': (self.wemb_dim, self.cemb_dim, self.hidden_size, self.num_layers),
                 'kwargs': {'dropout': self.dropout,
                            'merge_type': self.merge_type,
                            'cemb_type': self.cemb_type,
                            'include_self': self.include_self,
                            'pos_crf': self.pos_crf}}
 
+    def embedding(self, word, wlen, char, clen):
+        wemb, cemb, cemb_outs = None, None, None
+        if self.wemb is not None:
+            wemb = self.wemb(word)
+            wemb = F.dropout(wemb, p=self.dropout, training=self.training)
+        if self.cemb is not None:
+            cemb, cemb_outs = self.cemb(char, clen, wlen)
+            # cemb_outs: (seq_len x batch x emb_dim)
+            cemb = F.dropout(cemb, p=self.dropout, training=self.training)
+
+        if wemb is None:
+            emb = cemb
+        elif cemb is None:
+            emb = wemb
+        else:
+            emb = self.merger(wemb, cemb)
+
+        return emb, cemb_outs
+
     def loss(self, batch_data):
         ((word, wlen), (char, clen)), tasks = batch_data
         output = {}
 
-        wemb, (cemb, cemb_outs) = self.wemb(word), self.cemb(char, clen, wlen)
-        # cemb_outs: (seq_len x batch x emb_dim)
-        wemb = F.dropout(wemb, p=self.dropout, training=self.training)
-        cemb = F.dropout(cemb, p=self.dropout, training=self.training)
-        enc_outs = self.encoder(self.merger(wemb, cemb), wlen)
+        emb, cemb_outs = self.embedding(word, wlen, char, clen)
+        enc_outs = self.encoder(emb, wlen)
+        enc_outs = F.dropout(enc_outs, p=self.dropout, training=self.training)
 
         # POS
         if 'pos' in tasks:
@@ -162,8 +192,8 @@ class SimpleModel(BaseModel):
         (word, wlen), (char, clen) = inp
 
         # forward
-        wemb, (cemb, cemb_outs) = self.wemb(word), self.cemb(char, clen, wlen)
-        enc_outs = self.encoder(self.merger(wemb, cemb), wlen)
+        emb, cemb_outs = self.embedding(word, wlen, char, clen)
+        enc_outs = self.encoder(emb, wlen)
 
         # pos
         if 'pos' in self.label_encoder.tasks:
@@ -196,8 +226,8 @@ if __name__ == '__main__':
 
     settings = settings_from_file('./config.json')
     data = Dataset(settings)
-    model = SimpleModel(data.label_encoder, settings.emb_dim, settings.hidden_size,
-                        settings.num_layers)
+    model = SimpleModel(data.label_encoder, settings.wemb_dim, settings.cemb_dim,
+                        settings.hidden_size, settings.num_layers)
     model.to(settings.device)
 
     for batch in data.batch_generator():
