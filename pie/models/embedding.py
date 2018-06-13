@@ -29,7 +29,7 @@ class CNNEmbedding(nn.Module):
 
         convs = []
         for W in kernel_sizes:
-            wide_pad = (0, math.floor(W / 2))
+            wide_pad = (0, (W-1) // 2)
             conv = nn.Conv2d(
                 1, out_channels, (embedding_dim, W), padding=wide_pad)
             convs.append(conv)
@@ -51,17 +51,23 @@ class CNNEmbedding(nn.Module):
 
         emb = F.dropout(emb, p=self.dropout, training=self.training)
 
-        conv_outs = []
+        conv_outs, maxlen = [], 0
         for conv in self.convs:
-            conv_out = F.relu(conv(emb).squeeze(2))  # (batch x C_o x seq_len)
-            conv_out = F.max_pool1d(conv_out, conv_out.size(2))
-            conv_out = conv_out.squeeze(2)  # (batch x C_0)
-            conv_outs.append(conv_out)
+            # (batch x C_o x seq_len)
+            conv_outs.append(F.relu(conv(emb).squeeze(2)))
+            maxlen = max(maxlen, conv_outs[-1].size(2))
 
-        # (batch * nwords x C_o * len(kernel_sizes))
-        output = torch.cat(conv_outs, dim=1)
-        output = torch_utils.pad_flat_batch(output, nwords, maxlen=max(nwords).item())
-        return output, None
+        conv_outs = [F.pad(out, (0, maxlen - out.size(2))) for out in conv_outs]
+        # (batch * nwords x C_o * len(kernel_sizes) x seq_len)
+        conv_outs = torch.cat(conv_outs, dim=1)
+        # (batch * nwords  x C_o * len(kernel_sizes) x 1)
+        conv_out = F.max_pool1d(conv_outs, maxlen).squeeze(2)
+        conv_out = torch_utils.pad_flat_batch(
+            conv_out, nwords, maxlen=max(nwords).item())
+
+        conv_outs = conv_outs.transpose(0, 2).transpose(1, 2)
+
+        return conv_out, conv_outs
 
 
 class RNNEmbedding(RNNEncoder):
