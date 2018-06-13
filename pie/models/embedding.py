@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from pie import torch_utils
+from pie import initialization
 
 from .encoder import RNNEncoder
 
@@ -33,6 +34,13 @@ class CNNEmbedding(nn.Module):
                 1, out_channels, (embedding_dim, W), padding=wide_pad)
             convs.append(conv)
         self.convs = nn.ModuleList(convs)
+
+        self.init()
+
+    def init(self):
+        initialization.init_embeddings(self.emb)
+        for conv in self.convs:
+            initialization.init_conv(conv)
 
     def forward(self, char, nchars, nwords):
         emb = self.emb(char)
@@ -65,7 +73,8 @@ class RNNEmbedding(RNNEncoder):
         self.embedding_dim = embedding_dim
         super().__init__(embedding_dim, hidden_size=embedding_dim, **kwargs)
 
-        self.embs = nn.Embedding(num_embeddings, embedding_dim, padding_idx=padding_idx)
+        self.emb = nn.Embedding(num_embeddings, embedding_dim, padding_idx=padding_idx)
+        initialization.init_embeddings(self.emb)
 
     def forward(self, char, nchars, nwords):
         """
@@ -75,7 +84,7 @@ class RNNEmbedding(RNNEncoder):
         nchars : tensor(batch)
         nwords : tensor(output batch)
         """
-        char = self.embs(char)
+        char = self.emb(char)
         # (max_seq_len x batch * nwords x emb_dim)
         emb_outs = super().forward(char, nchars)
         # (batch * nwords x emb_dim)

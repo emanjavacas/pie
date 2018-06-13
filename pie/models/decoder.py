@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_packed_sequence as unpack
 
-from pie import inits
+from pie import initialization
 from pie import torch_utils
 from pie.constants import TINY
 
@@ -34,7 +34,7 @@ class LinearDecoder(nn.Module):
 
     def init(self):
         # linear
-        inits.init_linear(self.decoder)
+        initialization.init_linear(self.decoder)
 
     def forward(self, enc_outs):
         linear_out = self.decoder(enc_outs)
@@ -83,7 +83,7 @@ class CRFDecoder(nn.Module):
         self.init()
 
     def init(self):
-        inits.init_linear(self.projection)
+        initialization.init_linear(self.projection)
         # transitions
         nn.init.xavier_normal_(self.transition)
         nn.init.normal_(self.start_transition)
@@ -211,8 +211,8 @@ class Attention(nn.Module):
         self.init()
 
     def init(self):
-        inits.init_linear(self.linear_in)
-        inits.init_linear(self.linear_out)
+        initialization.init_linear(self.linear_in)
+        initialization.init_linear(self.linear_out)
 
     def forward(self, dec_outs, enc_outs, lengths):
         """
@@ -288,11 +288,11 @@ class AttentionalDecoder(nn.Module):
 
     def init(self):
         # embeddings
-        inits.init_embeddings(self.embs)
+        initialization.init_embeddings(self.embs)
         # rnn
-        inits.init_rnn(self.rnn)
+        initialization.init_rnn(self.rnn)
         # linear
-        inits.init_linear(self.proj)
+        initialization.init_linear(self.proj)
 
     def forward(self, targets, lengths, enc_outs, src_lengths, context=None):
         """

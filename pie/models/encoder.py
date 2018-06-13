@@ -3,6 +3,7 @@ import torch.nn as nn
 from torch.nn.utils.rnn import pad_packed_sequence as unpack
 
 from pie import torch_utils
+from pie import initialization
 
 
 class RNNEncoder(nn.Module):
@@ -24,6 +25,11 @@ class RNNEncoder(nn.Module):
         self.rnn = nn.GRU(
             in_size, hidden_size // self.num_dirs,
             num_layers=num_layers, bidirectional=bidirectional, dropout=dropout)
+
+        self.init()
+
+    def init(self):
+        initialization.init_rnn(self.rnn)
 
     def forward(self, inp, lengths):
         hidden = torch_utils.init_hidden_for(
