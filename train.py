@@ -82,6 +82,7 @@ if __name__ == '__main__':
     # model
     model = SimpleModel(trainset.label_encoder, settings.emb_dim, settings.hidden_size,
                         settings.num_layers, dropout=settings.dropout,
+                        cemb_type=settings.cemb_type,
                         include_self=settings.include_self, pos_crf=True)
     model.to(settings.device)
 

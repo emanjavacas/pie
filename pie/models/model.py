@@ -43,14 +43,14 @@ class SimpleModel(BaseModel):
         # Embeddings
         self.wemb = nn.Embedding(len(label_encoder.word), emb_dim,
                                  padding_idx=label_encoder.word.get_pad())
-        if cemb_type == 'RNN':
+        if cemb_type.upper() == 'RNN':
             self.cemb = RNNEmbedding(len(label_encoder.char), emb_dim,
                                      padding_idx=label_encoder.char.get_pad())
-        elif cemb_type == 'CNN':
+        elif cemb_type.upper() == 'CNN':
             self.cemb = CNNEmbedding(len(label_encoder.char), emb_dim,
                                      padding_idx=label_encoder.char.get_pad())
 
-        if merge_type == 'mixer':
+        if merge_type.lower() == 'mixer':
             if self.cemb.embedding_dim != self.wemb.embedding_dim:
                 raise ValueError("EmbeddingMixer needs equal embedding dims")
             self.merger = EmbeddingMixer(emb_dim)
@@ -67,21 +67,23 @@ class SimpleModel(BaseModel):
 
         # Decoders
         # - POS
-        if self.pos_crf:
-            self.pos_decoder = CRFDecoder(label_encoder.tasks['pos'], hidden_size)
-        else:
-            self.pos_decoder = LinearDecoder(
-                label_encoder.tasks['pos'], hidden_size, dropout=dropout)
+        if 'pos' in label_encoder.tasks:
+            if self.pos_crf:
+                self.pos_decoder = CRFDecoder(label_encoder.tasks['pos'], hidden_size)
+            else:
+                self.pos_decoder = LinearDecoder(
+                    label_encoder.tasks['pos'], hidden_size, dropout=dropout)
 
         # - lemma
-        self.lemma_sequential = label_encoder.tasks['lemma'].level == 'char'
-        if self.lemma_sequential:
-            self.lemma_decoder = AttentionalDecoder(
-                label_encoder.tasks['lemma'], emb_dim, emb_dim, #hidden_size,
-                context_dim=hidden_size, dropout=dropout)
-        else:
-            self.lemma_decoder = LinearDecoder(
-                label_encoder.tasks['lemma'], hidden_size, dropout=dropout)
+        if 'lemma' in label_encoder.tasks:
+            self.lemma_sequential = label_encoder.tasks['lemma'].level == 'char'
+            if self.lemma_sequential:
+                self.lemma_decoder = AttentionalDecoder(
+                    label_encoder.tasks['lemma'], emb_dim, emb_dim, #hidden_size,
+                    context_dim=hidden_size, dropout=dropout)
+            else:
+                self.lemma_decoder = LinearDecoder(
+                    label_encoder.tasks['lemma'], hidden_size, dropout=dropout)
 
         linear_tasks = []
         for task in label_encoder.tasks:
@@ -118,25 +120,26 @@ class SimpleModel(BaseModel):
         enc_outs = self.encoder(self.merger(wemb, cemb), wlen)
 
         # POS
-        pos, plen = tasks['pos']
-        pos_logits = self.pos_decoder(enc_outs)
-        if self.pos_crf:
-            pos_loss = self.pos_decoder.loss(pos_logits, pos, plen)
-        else:
-            pos_loss = self.pos_decoder.loss(pos_logits, pos)
-        output['pos'] = pos_loss
+        if 'pos' in tasks:
+            pos, plen = tasks['pos']
+            pos_logits = self.pos_decoder(enc_outs)
+            if self.pos_crf:
+                pos_loss = self.pos_decoder.loss(pos_logits, pos, plen)
+            else:
+                pos_loss = self.pos_decoder.loss(pos_logits, pos)
+            output['pos'] = pos_loss
 
         # lemma
-        lemma, llen = tasks['lemma']
-        if self.lemma_sequential:
-            cemb_outs = F.dropout(cemb_outs, p=self.dropout, training=self.training)
-            lemma_context = torch_utils.flatten_padded_batch(enc_outs, wlen)
-            lemma_logits = self.lemma_decoder(
-                lemma, llen, cemb_outs, clen, context=lemma_context)
-        else:
-            lemma_logits = self.lemma_decoder(enc_outs)
-        lemma_loss = self.lemma_decoder.loss(lemma_logits, lemma)
-        output['lemma'] = lemma_loss
+        if 'lemma' in tasks:
+            lemma, llen = tasks['lemma']
+            if self.lemma_sequential:
+                cemb_outs = F.dropout(cemb_outs, p=self.dropout, training=self.training)
+                lemma_context = torch_utils.flatten_padded_batch(enc_outs, wlen)
+                lemma_logits = self.lemma_decoder(
+                    lemma, llen, cemb_outs, clen, context=lemma_context)
+            else:
+                lemma_logits = self.lemma_decoder(enc_outs)
+            output['lemma'] = self.lemma_decoder.loss(lemma_logits, lemma)
 
         # linear tasks
         if self.linear_tasks is not None:
@@ -163,19 +166,21 @@ class SimpleModel(BaseModel):
         enc_outs = self.encoder(self.merger(wemb, cemb), wlen)
 
         # pos
-        pos_hyps, _ = self.pos_decoder.predict(enc_outs, wlen)
-        preds['pos'] = pos_hyps
+        if 'pos' in self.label_encoder.tasks:
+            pos_hyps, _ = self.pos_decoder.predict(enc_outs, wlen)
+            preds['pos'] = pos_hyps
 
         # lemma
-        if self.lemma_sequential:
-            lemma_context = torch_utils.flatten_padded_batch(enc_outs, wlen)
-            lemma_hyps, _ = self.lemma_decoder.predict_max(
-                cemb_outs, clen, context=lemma_context)
-            lemma_hyps = [''.join(hyp) for hyp in lemma_hyps]
+        if 'lemma' in self.label_encoder.tasks:
+            if self.lemma_sequential:
+                lemma_context = torch_utils.flatten_padded_batch(enc_outs, wlen)
+                lemma_hyps, _ = self.lemma_decoder.predict_max(
+                    cemb_outs, clen, context=lemma_context)
+                lemma_hyps = [''.join(hyp) for hyp in lemma_hyps]
 
-        else:
-            lemma_hyps, _ = self.lemma_decoder.predict(enc_outs, wlen)
-        preds['lemma'] = lemma_hyps
+            else:
+                lemma_hyps, _ = self.lemma_decoder.predict(enc_outs, wlen)
+            preds['lemma'] = lemma_hyps
 
         if self.linear_tasks is not None:
             for task, decoder in self.linear_tasks._modules.items():
