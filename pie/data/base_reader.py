@@ -25,7 +25,7 @@ class BaseReader(object):
         """
         Get default value for task if given
         """
-        default = self.tasks_defaults[task]
+        default = self.tasks_defaults.get(task)
         if default is not None:
             if default.lower() == 'copy':
                 return value

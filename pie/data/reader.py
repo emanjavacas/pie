@@ -8,7 +8,6 @@ from .tabreader import TabReader
 from .conll_reader import CONLLReader
 
 
-
 class Reader(object):
     """
     Dispatcher class
