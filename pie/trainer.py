@@ -1,4 +1,6 @@
 
+import os
+import uuid
 import logging
 import yaml
 import time
@@ -14,9 +16,10 @@ logging.basicConfig(format='%(asctime)s : %(message)s', level=logging.INFO)
 
 
 class EarlyStopException(Exception):
-    def __init__(self, task, loss):
+    def __init__(self, task, loss, state_dict):
         self.task = task
         self.loss = loss
+        self.best_state_dict = state_dict
 
 
 class TaskScheduler(object):
@@ -34,10 +37,13 @@ class TaskScheduler(object):
         self.threshold = threshold
         self.min_weight = min_weight
 
+        self.fid = '/tmp/{}'.format(str(uuid.uuid1()))
+
     def __repr__(self):
-        output = "<TaskScheduler>"
+        output = "<TaskScheduler patience={} factor={} threshold={} min_weight={}>" \
+                    .format(self.patience, self.factor, self.threshold, self.min_weight)
         for task, values in self.tasks.items():
-            output += '\n\t<Task '
+            output += '\n\t<Task name={} '.format(task)
             output += ' '.join('{}={}'.format(key, val) for key, val in values.items())
             output += '>'
         output += '\n</TaskScheduler>'
@@ -47,7 +53,7 @@ class TaskScheduler(object):
         threshold = self.tasks[task].get('threshold', self.threshold)
         return value > (self.tasks[task]['best'] + threshold)
 
-    def step(self, scores):
+    def step(self, scores, model):
         for task, score in scores.items():
             if task not in self.tasks:
                 # ignore
@@ -56,14 +62,19 @@ class TaskScheduler(object):
             if self.is_best(task, score['accuracy']):
                 self.tasks[task]['best'] = score['accuracy']
                 self.tasks[task]['steps'] = 0
+                if self.tasks[task].get('target', False):
+                    # serialize model params
+                    torch.save(model.state_dict(), self.fid)
             else:
                 self.tasks[task]['steps'] += 1
 
             patience = self.tasks[task].get('patience', self.patience)
-            if self.tasks[task]['steps'] > patience:
+            if self.tasks[task]['steps'] >= patience:
                 # maybe stop entire training
                 if self.tasks[task].get('target', False):
-                    raise EarlyStopException(task, self.tasks[task]['best'])
+                    state_dict = torch.load(self.fid)
+                    os.remove(self.fid)
+                    raise EarlyStopException(task, self.tasks[task]['best'], state_dict)
 
                 # update task weight
                 else:
@@ -187,7 +198,7 @@ class Trainer(object):
 
         self.model.train()
         self.lr_scheduler.step(self.weight_loss(dev_loss))
-        self.task_scheduler.step(dev_scores)
+        self.task_scheduler.step(dev_scores, self.model)
 
         if self.verbose:
             print(self.task_scheduler)
@@ -240,6 +251,8 @@ class Trainer(object):
 
         except EarlyStopException as e:
             logging.info("Early stopping training: "
-                         "task [{}] with best loss {:.3f}".format(e.task, e.best))
+                         "task [{}] with best loss {:.3f}".format(e.task, e.loss))
+
+            self.model.load_state_dict(e.best_state_dict)
 
         logging.info("Finished training in [{:g}]".format(time.time() - start))
