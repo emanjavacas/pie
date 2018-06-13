@@ -21,12 +21,12 @@ class EarlyStopException(Exception):
 
 class TaskScheduler(object):
     """
-    Track losses
+    Track scores
     """
     def __init__(self, tasks, patience, factor, threshold, min_weight):
 
         for task, values in tasks.items():
-            tasks[task] = {'steps': 0, 'best': float('inf'), 'weight': 1, **values}
+            tasks[task] = {'steps': 0, 'best': 0, 'weight': 1, **values}
         self.tasks = tasks
 
         self.patience = patience
@@ -34,18 +34,27 @@ class TaskScheduler(object):
         self.threshold = threshold
         self.min_weight = min_weight
 
-    def is_best(self, task, loss):
-        threshold = self.tasks[task].get('threshold', self.threshold)
-        return loss < (self.tasks[task]['best'] - threshold)
+    def __repr__(self):
+        output = "<TaskScheduler>"
+        for task, values in self.tasks.items():
+            output += '\n\t<Task '
+            output += ' '.join('{}={}'.format(key, val) for key, val in values.items())
+            output += '>'
+        output += '\n</TaskScheduler>'
+        return output
 
-    def step(self, losses):
-        for task, loss in losses.items():
+    def is_best(self, task, value):
+        threshold = self.tasks[task].get('threshold', self.threshold)
+        return value > (self.tasks[task]['best'] + threshold)
+
+    def step(self, scores):
+        for task, score in scores.items():
             if task not in self.tasks:
                 # ignore
                 continue
 
-            if self.is_best(task, loss) <= self.tasks[task]['best']:
-                self.tasks[task]['best'] = loss
+            if self.is_best(task, score['accuracy']):
+                self.tasks[task]['best'] = score['accuracy']
                 self.tasks[task]['steps'] = 0
             else:
                 self.tasks[task]['steps'] += 1
@@ -56,7 +65,7 @@ class TaskScheduler(object):
                 if self.tasks[task].get('target', False):
                     raise EarlyStopException(task, self.tasks[task]['best'])
 
-                # update loss weight
+                # update task weight
                 else:
                     factor = self.tasks[task].get('factor', self.factor)
                     new_weight = self.tasks[task]['weight'] * factor
@@ -82,6 +91,7 @@ class Trainer(object):
     """
     def __init__(self, settings, model, dataset, num_instances):
 
+        self.verbose = settings.verbose
         self.dataset = dataset
         self.model = model
         self.optim = getattr(optim, settings.optim)(model.parameters(), lr=settings.lr)
@@ -99,15 +109,20 @@ class Trainer(object):
             self.check_freq = self.num_batches // settings.checks_per_epoch  # check just
         else:
             self.check_freq = 0  # no checks
+
+        self.task_scheduler = TaskScheduler(
+            {task['name']: task.get('schedule', {}) for task in settings.tasks},
+            settings.patience, settings.factor, settings.threshold, settings.min_weight)
+
         if settings.verbose:
             print()
             print("Evaluation check every {}/{} batches".format(
                 self.check_freq, self.num_batches))
             print()
-
-        self.task_scheduler = TaskScheduler(
-            {task['name']: task.get('schedule', {}) for task in settings.tasks},
-            settings.patience, settings.factor, settings.threshold, settings.min_weight)
+            print("::: Task schedules :::")
+            print()
+            print(self.task_scheduler)
+            print()
 
     def weight_loss(self, loss):
         """
@@ -172,7 +187,10 @@ class Trainer(object):
 
         self.model.train()
         self.lr_scheduler.step(self.weight_loss(dev_loss))
-        self.task_scheduler.step(dev_loss)
+        self.task_scheduler.step(dev_scores)
+
+        if self.verbose:
+            print(self.task_scheduler)
 
     def train_epoch(self, dev):
         rep_loss, rep_items, rep_batches = collections.defaultdict(float), 0, 0
