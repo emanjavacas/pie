@@ -265,7 +265,10 @@ class MultiLabelEncoder(object):
         return ninsts
 
     def fit_reader(self, reader):
-        return self.fit(line for (_, line) in reader.readsents())
+        """
+        fit reader in a non verbose way (to warn about parsing issues)
+        """
+        return self.fit(line for (_, line) in reader.readsents(silent=False))
 
     def transform(self, sents):
         """

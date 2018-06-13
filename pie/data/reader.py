@@ -64,14 +64,14 @@ class Reader(object):
 
         return tuple(tasks)
 
-    def readsents(self):
+    def readsents(self, silent=True):
         """
         Read sents over files
         """
         self.reset()
         total = 0
         for reader in self.readers:
-            for data in reader.readsents():
+            for data in reader.readsents(silent=silent):
                 # check # lines processed
                 if total >= self.max_sents:
                     break

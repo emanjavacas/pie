@@ -33,7 +33,7 @@ class BaseReader(object):
 
         raise MissingDefaultException(task)
 
-    def readsents(self):
+    def readsents(self, silent=True):
         """
         Generator over dataset sentences. Each output is a tuple of (Input, Tasks)
         objects with, where each entry is a list of strings.
@@ -46,9 +46,10 @@ class BaseReader(object):
                 current_sent += 1
 
             except LineParseException as e:
-                logging.warning(
-                    "Parse error at [{}:sent={}]\n  => {}"
-                    .format(self.fpath, current_sent + 1, str(e)))
+                if not silent:
+                    logging.warning(
+                        "Parse error at [{}:sent={}]\n  => {}"
+                        .format(self.fpath, current_sent + 1, str(e)))
                 continue
 
             except StopIteration:
