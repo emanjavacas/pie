@@ -146,7 +146,7 @@ class Trainer(object):
         """
         weights = self.task_scheduler.get_weights()
 
-        return sum(weights[k] * loss[k] for k in loss)
+        return sum(weights.get(k, 1) * loss[k] for k in loss)
 
     def evaluate(self, dataset, num_batches=None):
         """
