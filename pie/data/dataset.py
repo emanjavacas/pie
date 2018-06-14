@@ -67,6 +67,22 @@ class LabelEncoder(object):
             '<LabelEncoder name="{}" target="{}" level="{}" vocab="{}" fitted="{}">'
         ).format(self.name, self.target, self.level, length, self.fitted)
 
+    def get_type_stats(self):
+        if not self.fitted:
+            raise ValueError("Vocabulary hasn't been computed yet")
+
+        total_types = len(self.freqs)
+        known_types = len(self) - len(self.reserved)
+        return known_types, total_types, known_types / total_types
+
+    def get_token_stats(self):
+        if not self.fitted:
+            raise ValueError("Vocabulary hasn't been computed yet")
+
+        total_tokens = sum(self.freqs.values())
+        known_tokens = sum(self.freqs[w] for w in self.table)
+        return known_tokens, total_tokens, known_tokens / total_tokens
+
     def add(self, seq):
         if self.fitted:
             raise ValueError("Already fitted")
@@ -153,6 +169,9 @@ class LabelEncoder(object):
 
     def get_bos(self):
         return self._get_sym(constants.BOS)
+
+    def get_unk(self):
+        return self._get_sym(constants.UNK)
 
     def jsonify(self):
         if not self.fitted:
