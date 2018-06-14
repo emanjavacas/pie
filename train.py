@@ -1,4 +1,5 @@
 
+import os
 import time
 import yaml
 import logging
@@ -24,7 +25,7 @@ if torch.cuda.is_available():
 
 def get_fname_infix(settings):
     # fname
-    fname = os.path.join(settings.modelpath, settings.modelname),
+    fname = os.path.join(settings.modelpath, settings.modelname)
     # infix
     targets = [t['name'] for t in settings.tasks if t.get('schedule', {}).get('target')]
     timestamp = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
