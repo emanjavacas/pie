@@ -1,8 +1,10 @@
 
 import os
+import sys
 import glob
 import itertools
 import re
+from contextlib import contextmanager
 
 
 def window(it):
@@ -56,12 +58,22 @@ def ensure_ext(path, ext, infix=None):
     'model-0.87.pt'
     >>> ensure_ext("model.test", "pt", infix="0.87")
     'model-0.87.test.pt'
+    >>> ensure_ext("model.test", "test", infix="pie")
+    'model-pie.test'
     """
     path, oldext = os.path.splitext(path)
+
+    # normalize extension
+    if ext.startswith("."):
+        ext = ext[1:]
     if oldext.startswith("."):
         oldext = oldext[1:]
+
+    # infix
     if infix is not None:
         path = "-".join([path, infix])
+
+    # add old extension if not the same as the new one
     if oldext and oldext != ext:
         path = '.'.join([path, oldext])
 
@@ -84,3 +96,17 @@ def get_filenames(input_path):
         raise RuntimeError("Couldn't find files [{}]".format(input_path))
 
     return filenames
+
+
+@contextmanager
+def shutup():
+    with open(os.devnull, "w") as void:
+        old_out = sys.stdout
+        old_err = sys.stderr
+        sys.stdout = void
+        sys.stderr = void
+        try:
+            yield
+        finally:
+            sys.stdout = old_out
+            sys.stderr = old_err

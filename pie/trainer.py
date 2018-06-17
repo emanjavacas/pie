@@ -112,7 +112,8 @@ class Trainer(object):
         self.model = model
         self.optim = getattr(optim, settings.optim)(model.parameters(), lr=settings.lr)
         self.lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            self.optim, patience=1, verbose=settings.verbose, factor=0.75)
+            self.optim, patience=settings.lr_patience, factor=settings.lr_factor,
+            verbose=settings.verbose)
         self.clip_norm = settings.clip_norm
 
         self.report_freq = settings.report_freq

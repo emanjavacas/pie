@@ -3,12 +3,13 @@ import torch.nn as nn
 
 
 def init_embeddings(embeddings):
-    nn.init.uniform_(embeddings.weight, -0.05, 0.05)
+    embeddings.reset_parameters()
 
 
 def init_linear(linear):
-    nn.init.uniform_(linear.weight, -0.05, 0.05)
+    linear.reset_parameters()
     nn.init.constant_(linear.bias, 0.)
+    pass
 
 
 def init_rnn(rnn):
@@ -24,14 +25,11 @@ def init_rnn(rnn):
             nn.init.xavier_uniform_(getattr(rnn, f'weight_ih_l{layer}'))
             nn.init.constant_(getattr(rnn, f'bias_hh_l{layer}'), 0.)
             nn.init.constant_(getattr(rnn, f'bias_ih_l{layer}'), 0.)
+    pass
 
 
 def init_conv(conv):
-    nn.init.xavier_uniform_(conv.weight)
-    nn.init.constant_(conv.bias, 0.)
-
-
-def init_sequential_linear(sequential):
-    for child in sequential.children():
-        if isinstance(child, nn.Linear):
-            init_linear(child)
+    conv.reset_parameters()
+    # nn.init.xavier_uniform_(conv.weight)
+    # nn.init.constant_(conv.bias, 0.)
+    pass

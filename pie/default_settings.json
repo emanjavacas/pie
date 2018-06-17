@@ -88,11 +88,14 @@
   "shuffle": true,
   "optim": "Adam",
   "lr": 0.001,
+  "lr_factor": 0.75,
+  "lr_patience": 2,
   "clip_norm": 5.0,
   // print training loss every so many batches
   "report_freq": 10,
   // check model on dev-set so many times during epoch
-  "checks_per_epoch": 0,
+  "checks_per_epoch": 1,
+  "pretrain_embeddings": false,
 
   // * Model
   "wemb_dim": 150,

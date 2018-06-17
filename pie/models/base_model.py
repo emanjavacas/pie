@@ -12,6 +12,7 @@ import torch.nn as nn
 
 from pie import utils
 from pie.data import MultiLabelEncoder
+from pie.settings import Settings
 
 from .evaluation import Scorer
 
@@ -44,7 +45,7 @@ class BaseModel(nn.Module):
         """
         raise NotImplementedError
 
-    def predict(self, inp):
+    def predict(self, inp, *tasks):
         """
         Compute predictions based on already processed input
         """
@@ -86,7 +87,7 @@ class BaseModel(nn.Module):
 
         return {task: scorer.get_scores() for task, scorer in scorers.items()}
 
-    def save(self, fpath, infix=None):
+    def save(self, fpath, infix=None, settings=None):
         """
         Serialize model to path
         """
@@ -116,6 +117,11 @@ class BaseModel(nn.Module):
             tar.add(tmppath, arcname='state_dict.pt')
             os.remove(tmppath)
 
+            # if passed, serialize settings
+            if settings is not None:
+                string, path = json.dumps(settings), 'settings.zip'
+                add_gzip_to_tar(string, path, tar)
+
         return fpath
 
     @staticmethod
@@ -130,12 +136,21 @@ class BaseModel(nn.Module):
                 get_gzip_from_tar(tar, 'label_encoder.zip'))
             params = json.loads(get_gzip_from_tar(tar, 'parameters.zip'))
             model_type = getattr(pie.models, get_gzip_from_tar(tar, 'class.zip'))
-            model = model_type(le, *params['args'], **params['kwargs'])
+            with utils.shutup():
+                model = model_type(le, *params['args'], **params['kwargs'])
+            # if passed, load settings
+            try:
+                settings = Settings(json.loads(get_gzip_from_tar(tar, 'settings.zip')))
+                model._settings = settings
+            except:
+                pass
 
             # load state_dict
             tmppath = '/tmp/{}'.format(str(uuid.uuid1()))
             tar.extract('state_dict.pt', path=tmppath)
             model.load_state_dict(torch.load(os.path.join(tmppath, 'state_dict.pt')))
             shutil.rmtree(tmppath)
+
+        model.eval()
 
         return model
