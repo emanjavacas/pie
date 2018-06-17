@@ -183,7 +183,8 @@ class SimpleModel(BaseModel):
 
         return output
 
-    def predict(self, inp):
+    def predict(self, inp, *tasks):
+        tasks = set(self.label_encoder.tasks if not len(tasks) else tasks)
         preds = {}
         # unpack
         (word, wlen), (char, clen) = inp
@@ -193,12 +194,12 @@ class SimpleModel(BaseModel):
         enc_outs = self.encoder(emb, wlen)
 
         # pos
-        if 'pos' in self.label_encoder.tasks:
+        if 'pos' in self.label_encoder.tasks and 'pos' in tasks:
             pos_hyps, _ = self.pos_decoder.predict(enc_outs, wlen)
             preds['pos'] = pos_hyps
 
         # lemma
-        if 'lemma' in self.label_encoder.tasks:
+        if 'lemma' in self.label_encoder.tasks and 'lemma' in tasks:
             if self.lemma_sequential:
                 lemma_context = torch_utils.flatten_padded_batch(enc_outs, wlen)
                 lemma_hyps, _ = self.lemma_decoder.predict_max(
@@ -211,8 +212,9 @@ class SimpleModel(BaseModel):
 
         if self.linear_tasks is not None:
             for task, decoder in self.linear_tasks._modules.items():
-                hyps, _ = decoder.predict(enc_outs, wlen)
-                preds[task] = hyps
+                if task in tasks:
+                    hyps, _ = decoder.predict(enc_outs, wlen)
+                    preds[task] = hyps
 
         return preds
 
