@@ -8,7 +8,7 @@ from datetime import datetime
 from pie.settings import settings_from_file
 from pie.trainer import Trainer
 from pie.data import Dataset, Reader, MultiLabelEncoder
-from pie.models import SimpleModel
+from pie.models import SimpleModel, get_pretrained_embeddings
 
 # set seeds
 import random
@@ -43,7 +43,7 @@ if __name__ == '__main__':
     settings = settings_from_file(args.config_path)
 
     # datasets
-    reader = Reader(settings, input_path=settings.input_path)
+    reader = Reader(settings, settings.input_path)
     tasks = reader.check_tasks(expected=None)
     label_encoder = MultiLabelEncoder.from_settings(settings, tasks=tasks)
     if settings.verbose:
@@ -102,6 +102,17 @@ if __name__ == '__main__':
                         settings.num_layers, dropout=settings.dropout,
                         cemb_type=settings.cemb_type,
                         include_self=settings.include_self, pos_crf=True)
+
+    # pretrain embeddings
+    if settings.pretrain_embeddings:
+        if model.wemb is not None:
+            wemb_reader = Reader(
+                settings, settings.input_path, settings.dev_path, settings.test_path)
+            weight = get_pretrained_embeddings(
+                wemb_reader, label_encoder, size=settings.wemb_dim,
+                window=5, negative=5, min_count=1)
+            model.wemb.weight.data = torch.tensor(weight, dtype=torch.float32)
+
     model.to(settings.device)
 
     print("::: Model :::")
@@ -133,7 +144,7 @@ if __name__ == '__main__':
 
         # save model
         fpath, infix = get_fname_infix(settings)
-        fpath = model.save(fpath, infix=infix)
+        fpath = model.save(fpath, infix=infix, settings=settings)
         print("Saved best model to: [{}]".format(fpath))
 
     print("Bye!")
