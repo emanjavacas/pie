@@ -33,7 +33,7 @@ class BaseReader(object):
 
         raise MissingDefaultException(task)
 
-    def readsents(self, silent=True):
+    def readsents(self, silent=True, only_tokens=False):
         """
         Generator over dataset sentences. Each output is a tuple of (Input, Tasks)
         objects with, where each entry is a list of strings.
@@ -42,8 +42,12 @@ class BaseReader(object):
 
         while True:
             try:
-                yield (self.fpath, current_sent), next(lines)
                 current_sent += 1
+                inp, tasks = next(lines)
+                if only_tokens:
+                    yield inp
+                else:
+                    yield (self.fpath, current_sent), (inp, tasks)
 
             except LineParseException as e:
                 if not silent:
