@@ -11,6 +11,37 @@ from pie.constants import TINY
 from .beam_search import Beam
 
 
+class Highway(nn.Module):
+    """
+    Highway network
+    """
+    def __init__(self, in_features, num_layers, act='relu'):
+        self.in_features = in_features
+
+        self.act = act
+        super().__init__()
+
+        self.layers = nn.ModuleList(
+            [nn.Linear(in_features, in_features*2) for _ in range(num_layers)])
+
+        self.init()
+
+    def init(self):
+        for layer in self.layers:
+            initialization.init_linear(layer)
+            # bias gate to let information go untouched
+            nn.init.constant_(layer.bias[self.in_features:], 1.)
+
+    def forward(self, inp):
+        current = inp
+        for layer in self.layers:
+            inp, gate = layer(current).chunk(2, dim=-1)
+            inp, gate = getattr(F, self.act)(inp), F.sigmoid(gate)
+            current = gate * current + (1 - gate) * inp
+
+        return current
+
+
 class LinearDecoder(nn.Module):
     """
     Simple Linear Decoder that outputs a probability distribution
@@ -21,14 +52,19 @@ class LinearDecoder(nn.Module):
     label_encoder : LabelEncoder
     in_features : int, input dimension
     """
-    def __init__(self, label_encoder, in_features, dropout=0.0):
+    def __init__(self, label_encoder, in_features, highway_layers=0, highway_act='relu'):
         self.label_encoder = label_encoder
-        self.dropout = dropout
         super(LinearDecoder, self).__init__()
 
+        # nll weight
         nll_weight = torch.ones(len(label_encoder))
         nll_weight[label_encoder.get_pad()] = 0.
         self.register_buffer('nll_weight', nll_weight)
+        # highway
+        self.highway = None
+        if highway_layers > 0:
+            self.highway = Highway(in_features, highway_layers, highway_act)
+        # decoder output
         self.decoder = nn.Linear(in_features, len(label_encoder))
         self.init()
 
@@ -37,6 +73,8 @@ class LinearDecoder(nn.Module):
         initialization.init_linear(self.decoder)
 
     def forward(self, enc_outs):
+        if hasattr(self, 'highway') and self.highway is not None:
+            enc_outs = self.highway(enc_outs)
         linear_out = self.decoder(enc_outs)
 
         return linear_out
@@ -73,6 +111,8 @@ class CRFDecoder(nn.Module):
         super().__init__()
 
         vocab = len(label_encoder)
+        # self.projection = nn.Sequential(Highway(hidden_size, 1),
+        #                                 nn.Linear(hidden_size, vocab))
         self.projection = nn.Linear(hidden_size, vocab)
         self.transition = nn.Parameter(torch.Tensor(vocab, vocab))
         self.start_transition = nn.Parameter(torch.Tensor(vocab))
@@ -81,7 +121,6 @@ class CRFDecoder(nn.Module):
         self.init()
 
     def init(self):
-        initialization.init_linear(self.projection)
         # transitions
         nn.init.xavier_normal_(self.transition)
         nn.init.normal_(self.start_transition)

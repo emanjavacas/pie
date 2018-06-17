@@ -83,8 +83,7 @@ class SimpleModel(BaseModel):
             if self.pos_crf:
                 self.pos_decoder = CRFDecoder(label_encoder.tasks['pos'], hidden_size)
             else:
-                self.pos_decoder = LinearDecoder(
-                    label_encoder.tasks['pos'], hidden_size, dropout=dropout)
+                self.pos_decoder = LinearDecoder(label_encoder.tasks['pos'], hidden_size)
 
         # - lemma
         if 'lemma' in label_encoder.tasks:
@@ -98,21 +97,19 @@ class SimpleModel(BaseModel):
                     context_dim=hidden_size, dropout=dropout)
             else:
                 self.lemma_decoder = LinearDecoder(
-                    label_encoder.tasks['lemma'], hidden_size, dropout=dropout)
+                    label_encoder.tasks['lemma'], hidden_size)
 
         self.linear_tasks, linear_tasks = None, OrderedDict()
         for task in label_encoder.tasks:
             if task in ('pos', 'lemma'):
                 continue
-            linear_tasks[task] = LinearDecoder(
-                label_encoder.tasks[task], hidden_size, dropout=dropout)
+            linear_tasks[task] = LinearDecoder(label_encoder.tasks[task], hidden_size)
         if len(linear_tasks) > 0:
             self.linear_tasks = nn.Sequential(linear_tasks)
 
         # - Self
         if self.include_self:
-            self.self_decoder = LinearDecoder(
-                label_encoder.word, hidden_size, dropout=dropout)
+            self.self_decoder = LinearDecoder(label_encoder.word, hidden_size)
 
     def get_args_and_kwargs(self):
         return {'args': (self.wemb_dim, self.cemb_dim, self.hidden_size, self.num_layers),
