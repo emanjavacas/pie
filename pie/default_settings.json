@@ -95,6 +95,7 @@
   "report_freq": 10,
   // check model on dev-set so many times during epoch
   "checks_per_epoch": 1,
+  // whether to use word2vec to initialize the embeddings
   "pretrain_embeddings": false,
 
   // * Model
