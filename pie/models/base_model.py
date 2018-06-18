@@ -14,7 +14,7 @@ from pie import utils
 from pie.data import MultiLabelEncoder
 from pie.settings import Settings
 
-from .evaluation import Scorer
+from .scorer import Scorer
 
 
 def add_gzip_to_tar(string, subpath, tar):
@@ -91,6 +91,7 @@ class BaseModel(nn.Module):
         """
         Serialize model to path
         """
+        import pie
         fpath = utils.ensure_ext(fpath, 'tar', infix)
 
         # create dir if necessary
@@ -117,6 +118,11 @@ class BaseModel(nn.Module):
             tar.add(tmppath, arcname='state_dict.pt')
             os.remove(tmppath)
 
+            # serialize current pie commit
+            if pie.__commit__ is not None:
+                string, path = pie.__commit__, 'pie-commit.zip'
+                add_gzip_to_tar(string, path, tar)
+
             # if passed, serialize settings
             if settings is not None:
                 string, path = json.dumps(settings), 'settings.zip'
@@ -132,19 +138,33 @@ class BaseModel(nn.Module):
         import pie
 
         with tarfile.open(utils.ensure_ext(fpath, 'tar'), 'r') as tar:
+            # check commit
+            try:
+                commit = get_gzip_from_tar(tar, 'pie-commit.zip')
+            except Exception:
+                # no commit in file
+                commit = None
+            if pie.__commit__ is not None and commit is not None:
+                logging.warn(
+                    ("Model {} was serialized with a previous "
+                     "version of `pie`. This might result in issues."
+                     "Model commit is {}, whereas current `pie` commit is {}"
+                    ).format(fpath, commit, pie.__commit__))
+            # load label encoder
             le = MultiLabelEncoder.load_from_string(
                 get_gzip_from_tar(tar, 'label_encoder.zip'))
+            # load model parameters
             params = json.loads(get_gzip_from_tar(tar, 'parameters.zip'))
+            # instantiate model
             model_type = getattr(pie.models, get_gzip_from_tar(tar, 'class.zip'))
             with utils.shutup():
                 model = model_type(le, *params['args'], **params['kwargs'])
-            # if passed, load settings
+            # (optional) load settings
             try:
                 settings = Settings(json.loads(get_gzip_from_tar(tar, 'settings.zip')))
                 model._settings = settings
             except:
                 pass
-
             # load state_dict
             tmppath = '/tmp/{}'.format(str(uuid.uuid1()))
             tar.extract('state_dict.pt', path=tmppath)

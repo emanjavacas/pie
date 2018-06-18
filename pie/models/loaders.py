@@ -1,9 +1,12 @@
 
 import numpy as np
-from gensim.models import Word2Vec
 
 
 def get_pretrained_embeddings(reader, label_encoder, **kwargs):
+    from pie import utils
+    with utils.shutup():        # avoid pattern warning
+        from gensim.models import Word2Vec
+
     word2vec = Word2Vec(reader.get_token_iterator(), **kwargs)
     weight = np.zeros((len(label_encoder.word), word2vec.wv.vector_size))
 
