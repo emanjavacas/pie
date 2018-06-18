@@ -1,19 +1,19 @@
 
 from sklearn.metrics import precision_score, recall_score, accuracy_score
-
-
-def format_score(score):
-    return round(float(score), 3)
+from pie import utils
 
 
 def compute_scores(trues, preds):
-    p = precision_score(trues, preds, average='macro')
-    r = recall_score(trues, preds, average='macro')
-    a = accuracy_score(trues, preds)
 
-    return {'accuracy': format_score(a),
-            'precision': format_score(p),
-            'recall': format_score(r)}
+    def format_score(score):
+        return round(float(score), 4)
+
+    with utils.shutup():
+        p = format_score(precision_score(trues, preds, average='macro'))
+        r = format_score(recall_score(trues, preds, average='macro'))
+        a = format_score(accuracy_score(trues, preds))
+
+    return {'accuracy': a, 'precision': p, 'recall': r, 'support': len(trues)}
 
 
 class Scorer(object):
