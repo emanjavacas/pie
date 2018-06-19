@@ -30,6 +30,6 @@ def init_rnn(rnn):
 
 def init_conv(conv):
     conv.reset_parameters()
-    # nn.init.xavier_uniform_(conv.weight)
-    # nn.init.constant_(conv.bias, 0.)
+    nn.init.xavier_uniform_(conv.weight)
+    nn.init.constant_(conv.bias, 0.)
     pass

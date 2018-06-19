@@ -41,7 +41,6 @@ if __name__ == '__main__':
 
     tagger = Tagger(device=args.device, batch_size=args.batch_size, lower=args.lower)
 
-    print("::: Tagging :::")
     for model, tasks in args.model_spec:
         tagger.add_model(model, *tasks)
         print(" - model: {}".format(model))
