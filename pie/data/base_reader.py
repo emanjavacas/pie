@@ -42,19 +42,21 @@ class BaseReader(object):
 
         while True:
             try:
+                line = next(lines)
                 current_sent += 1
-                inp, tasks = next(lines)
+                # check if parse exception
+                if isinstance(line, LineParseException):
+                    if not silent:
+                        logging.warning(
+                            "Parse error at [{}:sent={}]\n  => {}"
+                            .format(self.fpath, current_sent + 1, str(line)))
+                    continue
+
+                inp, tasks = line
                 if only_tokens:
                     yield inp
                 else:
                     yield (self.fpath, current_sent), (inp, tasks)
-
-            except LineParseException as e:
-                if not silent:
-                    logging.warning(
-                        "Parse error at [{}:sent={}]\n  => {}"
-                        .format(self.fpath, current_sent + 1, str(e)))
-                continue
 
             except StopIteration:
                 break

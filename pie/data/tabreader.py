@@ -118,7 +118,10 @@ class TabReader(BaseReader):
                 if not line:    # avoid empty line
                     continue
 
-                parser.add(line, line_num)
+                try:
+                    parser.add(line, line_num)
+                except LineParseException as e:
+                    yield e
 
                 if parser.check_breakline() or len(parser.inp) >= self.max_sent_len:
                     yield parser.inp, parser.tasks

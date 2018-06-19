@@ -1,7 +1,7 @@
 
 import collections
 
-from .base_reader import BaseReader, LineParseException
+from .base_reader import BaseReader
 
 
 MORPHMAPPER = {
