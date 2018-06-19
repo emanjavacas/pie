@@ -177,9 +177,10 @@ class SimpleModel(BaseModel):
 
         # self (autoregressive language-model like loss)
         if self.include_self:
-            self_logits = self.self_decoder(torch_utils.prepad(enc_outs[:-1]))
-            self_loss = self.self_decoder.loss(self_logits, word)
-            output['self'] = self_loss * 0.2
+            if len(enc_outs) > 1:  # can't compute loss for 1-length batches
+                self_logits = self.self_decoder(torch_utils.prepad(enc_outs[:-1]))
+                self_loss = self.self_decoder.loss(self_logits, word)
+                output['self'] = self_loss * 0.2
 
         return output
 
