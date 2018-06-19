@@ -1,7 +1,6 @@
 
 import os
 import time
-import yaml
 import logging
 from datetime import datetime
 
@@ -131,20 +130,16 @@ if __name__ == '__main__':
         trainer.train_epochs(settings.epochs, dev=devset)
     except KeyboardInterrupt:
         print("Stopping training")
-    finally:
-        if testset is not None:
-            print("Evaluating model on test set")
-            model.eval()
-            test_scores = model.evaluate(testset.batch_generator())
-            print()
-            print("::: Test scores :::")
-            print()
-            print(yaml.dump(test_scores, default_flow_style=False))
-            print()
 
-        # save model
-        fpath, infix = get_fname_infix(settings)
-        fpath = model.save(fpath, infix=infix, settings=settings)
-        print("Saved best model to: [{}]".format(fpath))
+    if testset is not None:
+        print("Evaluating model on test set")
+        model.eval()
+        for task in model.evaluate(testset.batch_generator()).values():
+            task.print_summary()
+
+    # save model
+    fpath, infix = get_fname_infix(settings)
+    fpath = model.save(fpath, infix=infix, settings=settings)
+    print("Saved best model to: [{}]".format(fpath))
 
     print("Bye!")

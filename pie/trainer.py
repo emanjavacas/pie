@@ -2,7 +2,6 @@
 import os
 import uuid
 import logging
-import yaml
 import time
 import collections
 
@@ -191,18 +190,18 @@ class Trainer(object):
         self.model.eval()
 
         with torch.no_grad():
-            dev_loss, dev_scores = self.evaluate(dev), self.model.evaluate(dev)
-
+            dev_loss = self.evaluate(dev)
+            print()
             print("::: Dev losses :::")
             print()
             print('\n'.join('{}: {:.3f}'.format(k, v) for k, v in dev_loss.items()))
             print()
-            print("::: Dev scores :::")
-            print()
-            print(yaml.dump(dev_scores, default_flow_style=False))
-            print()
+            summary = self.model.evaluate(dev)
+            for task in summary.values():
+                task.print_summary()
 
         self.model.train()
+        dev_scores = {task: scorer.get_scores() for task, scorer in summary.items()}
         self.lr_scheduler.step(self.weight_loss(dev_loss))
         self.task_scheduler.step(dev_scores, self.model)
 

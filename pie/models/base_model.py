@@ -85,7 +85,7 @@ class BaseModel(nn.Module):
                 for task, scorer in scorers.items():
                     scorer.register_batch(preds[task], trues[task])
 
-        return {task: scorer.get_scores() for task, scorer in scorers.items()}
+        return scorers
 
     def save(self, fpath, infix=None, settings=None):
         """

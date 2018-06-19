@@ -38,13 +38,8 @@ if __name__ == '__main__':
     settings.device = args.device
 
     reader = Reader(settings, args.test_path)
-
     dataset = Dataset(settings, reader, model.label_encoder)
     dataset = device_wrapper(list(dataset.batch_generator()), args.device)
 
-    scores = model.evaluate(dataset)
-    print()
-    print("::: Test scores :::")
-    print()
-    print(yaml.dump(scores, default_flow_style=False))
-    print()
+    for task in model.evaluate(dataset).values():
+        task.print_summary(full=args.full)
