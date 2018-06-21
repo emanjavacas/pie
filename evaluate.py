@@ -9,7 +9,7 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('model_path')
-    parser.add_argument('test_path', help="unix string")
+    parser.add_argument('test_path', help="unix string", nargs='+')
     parser.add_argument('--settings', help="settings file used for training")
     parser.add_argument('--batch_size', type=int, default=500)
     parser.add_argument('--buffer_size', type=int, default=100000)
@@ -36,7 +36,7 @@ if __name__ == '__main__':
     settings.buffer_size = args.buffer_size
     settings.device = args.device
 
-    reader = Reader(settings, args.test_path)
+    reader = Reader(settings, *args.test_path)
     dataset = Dataset(settings, reader, model.label_encoder)
     dataset = device_wrapper(list(dataset.batch_generator()), args.device)
 

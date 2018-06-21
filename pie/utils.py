@@ -91,11 +91,8 @@ def get_filenames(input_path):
                      if not f.startswith('.')]
     elif os.path.isfile(input_path):
         filenames = [input_path]
-    else:
+    else:                       # unix string
         filenames = glob.glob(input_path)
-
-    if len(filenames) == 0:
-        raise RuntimeError("Couldn't find files [{}]".format(input_path))
 
     return filenames
 

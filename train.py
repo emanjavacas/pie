@@ -92,7 +92,7 @@ if __name__ == '__main__':
         logging.warning("No devset: cannot monitor/optimize training")
 
     testset = None
-    if settings.test_path is not None:
+    if settings.test_path:
         testset = Dataset(settings, Reader(settings, settings.test_path), label_encoder)
 
     # model

@@ -5,6 +5,7 @@ import uuid
 import json
 import tarfile
 import gzip
+import logging
 
 import tqdm
 import torch

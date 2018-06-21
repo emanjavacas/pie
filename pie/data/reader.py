@@ -25,12 +25,12 @@ class Reader(object):
     """
     def __init__(self, settings, *input_paths):
         filenames = []
-        if len(input_paths) == 0:
-            filenames.extend(get_filenames(settings.input_path))
-        else:
-            for input_path in input_paths:
-                if input_path is not None:
-                    filenames.extend(get_filenames(input_path))
+        for input_path in input_paths:
+            if input_path is not None:
+                filenames.extend(get_filenames(input_path))
+
+        if len(filenames) == 0:
+            raise RuntimeError("Couldn't find files [{}]".format(''.join(input_paths)))
 
         self.readers = [self.get_reader(fpath)(settings, fpath) for fpath in filenames]
 
