@@ -145,11 +145,12 @@ class BaseModel(nn.Module):
             except Exception:
                 # no commit in file
                 commit = None
-            if pie.__commit__ is not None and commit is not None:
+            if pie.__commit__ is not None and commit is not None \
+               and pie.__commit__ != commit:
                 logging.warn(
                     ("Model {} was serialized with a previous "
-                     "version of `pie`. This might result in issues."
-                     "Model commit is {}, whereas current `pie` commit is {}"
+                     "version of `pie`. This might result in issues. "
+                     "Model commit is {}, whereas current `pie` commit is {}."
                     ).format(fpath, commit, pie.__commit__))
             # load label encoder
             le = MultiLabelEncoder.load_from_string(
