@@ -11,5 +11,6 @@ from . import utils
 from . import trainer
 from . import settings
 from . import tagger
+from . import initialization
 from .data import *
 from .models import *

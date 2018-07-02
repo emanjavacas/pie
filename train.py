@@ -6,6 +6,7 @@ from datetime import datetime
 
 from pie.settings import settings_from_file
 from pie.trainer import Trainer
+from pie import initialization
 from pie.data import Dataset, Reader, MultiLabelEncoder
 from pie.models import SimpleModel, get_pretrained_embeddings
 
@@ -102,15 +103,22 @@ if __name__ == '__main__':
                         cemb_type=settings.cemb_type,
                         include_self=settings.include_self, pos_crf=True)
 
-    # pretrain embeddings
-    if settings.pretrain_embeddings:
-        if model.wemb is not None:
+    # pretrain(/load pretrained) embeddings
+    if model.wemb is not None:
+        if settings.pretrain_embeddings:
             wemb_reader = Reader(
                 settings, settings.input_path, settings.dev_path, settings.test_path)
             weight = get_pretrained_embeddings(
                 wemb_reader, label_encoder, size=settings.wemb_dim,
                 window=5, negative=5, min_count=1)
             model.wemb.weight.data = torch.tensor(weight, dtype=torch.float32)
+
+        elif settings.load_pretrained_embeddings:
+            if not os.path.isfile(settings.load_pretrained_embeddings):
+                print("Couldn't find pretrained embeddings in: {}. Skipping...".format(
+                    settings.load_pretrained_embeddings))
+            initialization.init_pretrained_embeddings(
+                settings.load_pretrained_embeddings, label_encoder.word, model.wemb)
 
     model.to(settings.device)
 

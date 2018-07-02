@@ -97,6 +97,8 @@
   "checks_per_epoch": 1,
   // whether to use word2vec to initialize the embeddings
   "pretrain_embeddings": false,
+  // path to file with word2vec pretrained embeddings
+  "load_pretrained_embeddings": "",
 
   // * Model
   "wemb_dim": 150,
