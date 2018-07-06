@@ -83,9 +83,8 @@ if __name__ == '__main__':
 
     devset = None
     if settings.dev_path is not None:
-        devset = Dataset(
-            settings, Reader(settings, settings.dev_path), label_encoder=label_encoder
-        ).batch_generator()
+        devset = Dataset(settings, Reader(settings, settings.dev_path), label_encoder)
+        devset = devset.get_batches()
     elif settings.dev_split > 0:
         devset = trainset.get_dev_split(ninsts, split=settings.dev_split)
         ninsts = ninsts - (len(devset) * settings.batch_size)
@@ -138,10 +137,11 @@ if __name__ == '__main__':
         trainer.train_epochs(settings.epochs, dev=devset)
     except KeyboardInterrupt:
         print("Stopping training")
+    finally:
+        model.eval()
 
     if testset is not None:
         print("Evaluating model on test set")
-        model.eval()
         for task in model.evaluate(testset.batch_generator()).values():
             task.print_summary()
 

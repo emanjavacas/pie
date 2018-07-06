@@ -450,6 +450,14 @@ class Dataset(object):
 
         return device_wrapper(batches, device=self.device)
 
+    def get_batches(self):
+        """
+        Put batches on memory (for dev/test sets)
+        """
+        batches = list(data for (_, data) in self.reader.readsents())
+        batches = list(self.prepare_buffer(batches, device='cpu'))
+        return device_wrapper(batches, device=self.device)
+
     def batch_generator(self):
         """
         Generator over dataset batches. Each batch is a tuple of (input, tasks):
