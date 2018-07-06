@@ -10,13 +10,11 @@ def model_spec(inp):
     """
     >>> example = 'model-pos-2018:03:05.tar'
     >>> model_spec(example)
-    ('model-pos-2018:03:05.tar', [])
+    [('model-pos-2018:03:05.tar', [])]
 
     >>> example = '<model-pos-2018:03:05.tar,pos><model-pos-2018:03:05.tar,lemma>'
-    >>> for path, tasks in model_spec(example):
-    >>>     print(path, tasks)
-    model-pos-2018:03:05.tar, []
-    model-pos-2018:03:05.tar, ['lemma']
+    >>> model_spec(example)
+    [('model-pos-2018:03:05.tar', ['pos']), ('model-pos-2018:03:05.tar', ['lemma'])]
     """
     if not inp.startswith('<'):
         return [(inp, [])]

@@ -43,10 +43,9 @@ class EncoderDecoder(nn.Module):
         self.embs = nn.Embedding(len(label_encoder), emb_dim,
                                  padding_idx=label_encoder.get_pad())
         nn.init.uniform_(self.embs.weight, -0.05, 0.05)
-        self.encoder = RNNEncoder(
-            emb_dim, hidden_size, bidirectional=True, dropout=dropout)
+        self.encoder = RNNEncoder(emb_dim, hidden_size, dropout=dropout)
         self.decoder = AttentionalDecoder(
-            label_encoder, emb_dim, hidden_size, dropout=dropout)
+            label_encoder, emb_dim, hidden_size * 2, dropout=dropout)
 
     def forward(self, src, src_len, trg, trg_len):
         enc_outs = self.encoder(self.embs(src), src_len)
