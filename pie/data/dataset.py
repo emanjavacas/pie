@@ -473,17 +473,17 @@ class Dataset(object):
         buf = []
         for (fpath, line_num), data in self.reader.readsents():
 
-            # check if buffer is full and yield
-            if len(buf) == self.buffer_size:
-                yield from self.prepare_buffer(buf)
-                buf = []
-
             # don't use dev sentences
             if fpath in self.dev_sents and line_num in self.dev_sents[fpath]:
                 continue
 
             # fill buffer
             buf.append(data)
+
+            # check if buffer is full and yield
+            if len(buf) == self.buffer_size:
+                yield from self.prepare_buffer(buf)
+                buf = []
 
         if len(buf) > 0:
             yield from self.prepare_buffer(buf)

@@ -82,7 +82,7 @@ if __name__ == '__main__':
     trainset = Dataset(settings, reader, label_encoder)
 
     devset = None
-    if settings.dev_path is not None:
+    if settings.dev_path:
         devset = Dataset(settings, Reader(settings, settings.dev_path), label_encoder)
         devset = devset.get_batches()
     elif settings.dev_split > 0:

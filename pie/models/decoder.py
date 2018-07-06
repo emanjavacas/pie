@@ -82,7 +82,8 @@ class LinearDecoder(nn.Module):
     def loss(self, logits, targets):
         loss = F.cross_entropy(
             logits.view(-1, len(self.label_encoder)), targets.view(-1),
-            weight=self.nll_weight, size_average=False)
+            weight=self.nll_weight, size_average=False,
+            ignore_index=self.label_encoder.get_pad())
 
         return loss / targets.ne(self.label_encoder.get_pad()).sum().item()
 
@@ -377,7 +378,8 @@ class AttentionalDecoder(nn.Module):
 
         loss = F.cross_entropy(
             logits.view(-1, len(self.label_encoder)), targets.view(-1),
-            weight=self.nll_weight, size_average=False)
+            weight=self.nll_weight, size_average=False,
+            ignore_index=self.label_encoder.get_pad())
 
         return loss / targets.ne(self.label_encoder.get_pad()).sum().item()
 
