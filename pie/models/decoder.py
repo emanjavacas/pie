@@ -95,11 +95,12 @@ class LinearDecoder(nn.Module):
         probs = F.softmax(self.decoder(enc_outs), dim=-1)
         probs, preds = torch.max(probs.transpose(0, 1), dim=-1)
 
-        preds = [self.label_encoder.inverse_transform(pred)[:length]
-                 for pred, length in zip(preds.tolist(), lengths.tolist())]
-        probs = probs.tolist()
+        output_probs, output_preds = [], []
+        for idx, length in enumerate(lengths.tolist()):
+            output_preds.append(self.label_encoder.inverse_transform(preds[idx])[:length])
+            output_probs.append(probs[idx].tolist())
 
-        return preds, probs
+        return output_preds, output_probs
 
 
 class CRFDecoder(nn.Module):

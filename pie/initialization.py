@@ -5,6 +5,7 @@ import torch.nn as nn
 
 def init_embeddings(embeddings):
     embeddings.reset_parameters()
+    # nn.init.constant_(embeddings.weight, 0.01)
 
 
 def init_linear(linear):
