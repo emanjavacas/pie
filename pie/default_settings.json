@@ -82,12 +82,14 @@
 
   // * Training
   "buffer_size": 10000,
+  // preprocess data to have similar sentence lengths inside batch
+  "minimize_pad": true,
   "dropout": 0,
   "word_dropout": 0,
   "epochs": 5,
   "batch_size": 50,
   "shuffle": true,
-  "optim": "Adam",
+  "optimizer": "Adam",
   "lr": 0.001,
   "lr_factor": 0.75,
   "lr_patience": 2,

@@ -109,10 +109,13 @@ class Trainer(object):
         self.verbose = settings.verbose
         self.dataset = dataset
         self.model = model
-        self.optim = getattr(optim, settings.optim)(model.parameters(), lr=settings.lr)
-        self.lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            self.optim, patience=settings.lr_patience, factor=settings.lr_factor,
-            verbose=settings.verbose)
+        self.optim = getattr(optim, settings.optimizer)(
+            model.parameters(), lr=settings.lr)
+        self.lr_scheduler = None
+        if settings.lr_factor < 1.0:
+            self.lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+                self.optim, patience=settings.lr_patience, factor=settings.lr_factor,
+                verbose=settings.verbose)
         self.clip_norm = settings.clip_norm
 
         self.report_freq = settings.report_freq
@@ -202,7 +205,8 @@ class Trainer(object):
 
         self.model.train()
         dev_scores = {task: scorer.get_scores() for task, scorer in summary.items()}
-        self.lr_scheduler.step(self.weight_loss(dev_loss))
+        if self.lr_scheduler is not None:
+            self.lr_scheduler.step(self.weight_loss(dev_loss))
         self.task_scheduler.step(dev_scores, self.model)
 
         if self.verbose:

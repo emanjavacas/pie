@@ -371,6 +371,8 @@ class Dataset(object):
     batch_size : int, number of sentences per batch
     device : str, target device to put the processed batches on
     shuffle : bool, whether to shuffle items in the buffer
+    minimize_pad : bool, whether to pack batches with sentences of similar length
+       in order to minimize padding.
 
     Parameters
     ===========
@@ -390,6 +392,7 @@ class Dataset(object):
         self.batch_size = settings.batch_size
         self.device = settings.device
         self.shuffle = settings.shuffle
+        self.minimize_pad = settings.minimize_pad
 
         # data
         self.dev_sents = defaultdict(set)
@@ -416,7 +419,8 @@ class Dataset(object):
             inp, tasks = data
             return len(inp)
 
-        buf = sorted(buf, key=key, reverse=True)
+        if self.minimize_pad:
+            buf = sorted(buf, key=key, reverse=True)
         batches = list(utils.chunks(buf, self.batch_size))
 
         if self.shuffle:
