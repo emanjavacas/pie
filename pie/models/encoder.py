@@ -25,7 +25,7 @@ class RNNEncoder(nn.Module):
 
     def forward(self, inp, lengths):
         hidden = torch_utils.init_hidden_for(
-            inp, self.num_dirs, self.num_layers, self.hidden_size, self.cell)
+            inp, 2, self.num_layers, self.hidden_size, self.cell)
 
         inp, unsort = torch_utils.pack_sort(inp, lengths)
         inp, _ = self.rnn(inp, hidden)
