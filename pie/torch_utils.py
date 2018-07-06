@@ -203,6 +203,29 @@ def make_length_mask(lengths):
                 .lt(lengths.unsqueeze(1))
 
 
+def word_dropout(inp, p, training, encoder):
+    """
+    Drop input words based on frequency
+    """
+    # don't do anything during training
+    if p == 0.0 or not training:
+        return inp
+
+    # (seq_len x batch)
+    seq_len, batch = inp.size()
+    # get batch of word frequencies
+    mask = torch.tensor(
+        [[encoder.freqs[encoder.inverse_table[inp[i, j].item()]]
+          for j in range(batch)] for i in range(seq_len)]
+    ).float().to(inp.device)
+    # compute bernoulli mask
+    mask = 1 - torch.bernoulli(mask / (p + mask))
+    # don't drop padding
+    mask.masked_fill_(inp.eq(encoder.get_pad()), 0)
+    # set words to unknowns
+    return inp.masked_fill(mask.byte(), encoder.get_unk())
+
+
 def log_sum_exp(x, dim=-1):
     """
     Numerically stable log_sum_exp

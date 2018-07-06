@@ -28,15 +28,17 @@ class SimpleModel(BaseModel):
     cemb_type : str, one of "RNN", "CNN", layer to use for char-level embeddings
     """
     def __init__(self, label_encoder, wemb_dim, cemb_dim, hidden_size, num_layers,
-                 dropout=0.0, merge_type='concat', cemb_type='RNN',
-                 include_self=True, pos_crf=True):
+                 dropout=0.0, merge_type='concat', cemb_type='RNN', cell='GRU',
+                 include_self=True, pos_crf=True, word_dropout=0.0):
         # args
         self.wemb_dim = wemb_dim
         self.cemb_dim = cemb_dim
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         # kwargs
+        self.cell = cell
         self.dropout = dropout
+        self.word_dropout = word_dropout
         self.merge_type = merge_type
         self.cemb_type = cemb_type
         self.include_self = include_self
@@ -51,7 +53,8 @@ class SimpleModel(BaseModel):
         self.cemb = None
         if cemb_type.upper() == 'RNN':
             self.cemb = RNNEmbedding(len(label_encoder.char), cemb_dim,
-                                     padding_idx=label_encoder.char.get_pad())
+                                     padding_idx=label_encoder.char.get_pad(),
+                                     cell=cell)
         elif cemb_type.upper() == 'CNN':
             self.cemb = CNNEmbedding(len(label_encoder.char), cemb_dim,
                                      padding_idx=label_encoder.char.get_pad())
@@ -75,7 +78,7 @@ class SimpleModel(BaseModel):
 
         # Encoder
         self.encoder = RNNEncoder(
-            in_dim, hidden_size, num_layers=num_layers, dropout=dropout)
+            in_dim, hidden_size, num_layers=num_layers, dropout=dropout, cell=cell)
 
         # Decoders
         # - POS
@@ -114,6 +117,8 @@ class SimpleModel(BaseModel):
     def get_args_and_kwargs(self):
         return {'args': (self.wemb_dim, self.cemb_dim, self.hidden_size, self.num_layers),
                 'kwargs': {'dropout': self.dropout,
+                           'word_dropout': self.word_dropout,
+                           'cell': self.cell,
                            'merge_type': self.merge_type,
                            'cemb_type': self.cemb_type,
                            'include_self': self.include_self,
@@ -122,12 +127,13 @@ class SimpleModel(BaseModel):
     def embedding(self, word, wlen, char, clen):
         wemb, cemb, cemb_outs = None, None, None
         if self.wemb is not None:
+            # set words to unknown with prob `p` depending on word frequency
+            word = torch_utils.word_dropout(
+                word, self.word_dropout, self.training, self.label_encoder.word)
             wemb = self.wemb(word)
-            wemb = F.dropout(wemb, p=self.dropout, training=self.training)
         if self.cemb is not None:
-            cemb, cemb_outs = self.cemb(char, clen, wlen)
             # cemb_outs: (seq_len x batch x emb_dim)
-            cemb = F.dropout(cemb, p=self.dropout, training=self.training)
+            cemb, cemb_outs = self.cemb(char, clen, wlen)
 
         if wemb is None:
             emb = cemb
@@ -143,6 +149,9 @@ class SimpleModel(BaseModel):
         output = {}
 
         emb, cemb_outs = self.embedding(word, wlen, char, clen)
+        emb = F.dropout(emb, p=self.dropout, training=self.training)
+        if cemb_outs is not None:
+            cemb_outs = F.dropout(cemb_outs, p=self.dropout, training=self.training)
         enc_outs = self.encoder(emb, wlen)
         enc_outs = F.dropout(enc_outs, p=self.dropout, training=self.training)
 

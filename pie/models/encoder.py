@@ -22,7 +22,7 @@ class RNNEncoder(nn.Module):
         self.cell = cell
         super().__init__()
 
-        self.rnn = nn.GRU(
+        self.rnn = getattr(nn, cell)(
             in_size, hidden_size // self.num_dirs,
             num_layers=num_layers, bidirectional=bidirectional, dropout=dropout)
 
@@ -37,7 +37,7 @@ class RNNEncoder(nn.Module):
             self.hidden_size // self.num_dirs, self.cell)
 
         inp, unsort = torch_utils.pack_sort(inp, lengths)
-        inp, _ = self.rnn(inp, hidden)
+        inp, _ = self.rnn(inp)
         inp, _ = unpack(inp)
         inp = inp[:, unsort]
 

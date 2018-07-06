@@ -16,12 +16,11 @@ class CNNEmbedding(nn.Module):
     Character-level Embeddings with Convolutions following Kim 2014.
     """
     def __init__(self, num_embeddings, embedding_dim, padding_idx=None,
-                 kernel_sizes=(5, 4, 3), out_channels=100, dropout=0.0):
+                 kernel_sizes=(5, 4, 3), out_channels=100):
         self.num_embeddings = num_embeddings
         self.embedding_dim = out_channels * len(kernel_sizes)
         self.kernel_sizes = kernel_sizes
         self.out_channels = out_channels
-        self.dropout = dropout
         super().__init__()
 
         self.emb = nn.Embedding(
@@ -48,8 +47,6 @@ class CNNEmbedding(nn.Module):
         emb = emb.transpose(0, 1)  # (batch x seq_len x emb_dim)
         emb = emb.transpose(1, 2)  # (batch x emb_dim x seq_len)
         emb = emb.unsqueeze(1)     # (batch x 1 x emb_dim x seq_len)
-
-        emb = F.dropout(emb, p=self.dropout, training=self.training)
 
         conv_outs, maxlen = [], 0
         for conv in self.convs:

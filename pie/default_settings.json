@@ -83,6 +83,7 @@
   // * Training
   "buffer_size": 10000,
   "dropout": 0,
+  "word_dropout": 0,
   "epochs": 5,
   "batch_size": 50,
   "shuffle": true,
@@ -108,5 +109,6 @@
   // how to merge word-level and char-level embeddings (mixer or concat)
   "merge_type": "concat",
   "hidden_size": 300,
-  "num_layers": 1
+  "num_layers": 1,
+  "cell": "LSTM"
 }
