@@ -1,8 +1,6 @@
 
 from collections import OrderedDict
 
-import tqdm
-
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -68,7 +66,7 @@ class SimpleModel(BaseModel):
                 in_dim = wemb_dim
             elif merge_type == 'concat':
                 self.merger = EmbeddingConcat()
-                in_dim = self.wemb.embedding_dim + self.cemb.embedding_dim
+                in_dim = wemb_dim + self.cemb.embedding_dim
             else:
                 raise ValueError("Unknown merge method: {}".format(merge_type))
         elif self.cemb is None:
@@ -84,9 +82,11 @@ class SimpleModel(BaseModel):
         # - POS
         if 'pos' in label_encoder.tasks:
             if self.pos_crf:
-                self.pos_decoder = CRFDecoder(label_encoder.tasks['pos'], hidden_size)
+                self.pos_decoder = CRFDecoder(
+                    label_encoder.tasks['pos'], hidden_size * 2)
             else:
-                self.pos_decoder = LinearDecoder(label_encoder.tasks['pos'], hidden_size)
+                self.pos_decoder = LinearDecoder(
+                    label_encoder.tasks['pos'], hidden_size * 2)
 
         # - lemma
         if 'lemma' in label_encoder.tasks:
@@ -96,23 +96,23 @@ class SimpleModel(BaseModel):
                     raise ValueError("Sequential lemmatizer requires char embeddings")
                 self.lemma_decoder = AttentionalDecoder(
                     label_encoder.tasks['lemma'],
-                    self.cemb.embedding_dim, self.cemb.embedding_dim, #hidden_size,
-                    context_dim=hidden_size, dropout=dropout)
+                    self.cemb.embedding_dim, self.cemb.embedding_dim,  # hidden_size * 2,
+                    context_dim=hidden_size * 2, dropout=dropout)
             else:
                 self.lemma_decoder = LinearDecoder(
-                    label_encoder.tasks['lemma'], hidden_size)
+                    label_encoder.tasks['lemma'], hidden_size * 2)
 
         self.linear_tasks, linear_tasks = None, OrderedDict()
         for task in label_encoder.tasks:
             if task in ('pos', 'lemma'):
                 continue
-            linear_tasks[task] = LinearDecoder(label_encoder.tasks[task], hidden_size)
+            linear_tasks[task] = LinearDecoder(label_encoder.tasks[task], hidden_size * 2)
         if len(linear_tasks) > 0:
             self.linear_tasks = nn.Sequential(linear_tasks)
 
         # - Self
         if self.include_self:
-            self.self_decoder = LinearDecoder(label_encoder.word, hidden_size)
+            self.self_decoder = LinearDecoder(label_encoder.word, hidden_size * 2)
 
     def get_args_and_kwargs(self):
         return {'args': (self.wemb_dim, self.cemb_dim, self.hidden_size, self.num_layers),
@@ -150,8 +150,6 @@ class SimpleModel(BaseModel):
 
         emb, cemb_outs = self.embedding(word, wlen, char, clen)
         emb = F.dropout(emb, p=self.dropout, training=self.training)
-        if cemb_outs is not None:
-            cemb_outs = F.dropout(cemb_outs, p=self.dropout, training=self.training)
         enc_outs = self.encoder(emb, wlen)
         enc_outs = F.dropout(enc_outs, p=self.dropout, training=self.training)
 
@@ -231,10 +229,13 @@ class SimpleModel(BaseModel):
 
 if __name__ == '__main__':
     from pie.settings import settings_from_file
-    from pie.data import Dataset
+    from pie.data import Dataset, Reader, MultiLabelEncoder
 
     settings = settings_from_file('./config.json')
-    data = Dataset(settings)
+    reader = Reader(settings, settings.input_path)
+    label_encoder = MultiLabelEncoder.from_settings(settings)
+    label_encoder.fit_reader(reader)
+    data = Dataset(settings, reader, label_encoder)
     model = SimpleModel(data.label_encoder, settings.wemb_dim, settings.cemb_dim,
                         settings.hidden_size, settings.num_layers)
     model.to(settings.device)

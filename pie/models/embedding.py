@@ -1,6 +1,4 @@
 
-import math
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -69,12 +67,12 @@ class CNNEmbedding(nn.Module):
 
 class RNNEmbedding(RNNEncoder):
     """
-    Character-level Embeddings with RNNs.
+    Character-level Embeddings with BiRNNs.
     """
     def __init__(self, num_embeddings, embedding_dim, padding_idx=None, **kwargs):
         self.num_embeddings = num_embeddings
-        self.embedding_dim = embedding_dim
         super().__init__(embedding_dim, hidden_size=embedding_dim, **kwargs)
+        self.embedding_dim = embedding_dim * 2  # bidirectional
 
         self.emb = nn.Embedding(num_embeddings, embedding_dim, padding_idx=padding_idx)
         initialization.init_embeddings(self.emb)
@@ -91,7 +89,11 @@ class RNNEmbedding(RNNEncoder):
         # (max_seq_len x batch * nwords x emb_dim)
         emb_outs = super().forward(char, nchars)
         # (batch * nwords x emb_dim)
-        emb = torch_utils.get_last_token(emb_outs, nchars)
+        fwd = emb_outs[:, :, :self.rnn.hidden_size]
+        bwd = emb_outs[:, :, self.rnn.hidden_size:]
+        fwd_last = torch_utils.get_last_token(fwd, nchars)
+        bwd_last = bwd[0]
+        emb = torch.cat([fwd_last, bwd_last], -1)
         emb = torch_utils.pad_flat_batch(emb, nwords, maxlen=max(nwords).item())
 
         return emb, emb_outs
@@ -140,7 +142,7 @@ if __name__ == '__main__':
 
     emb_dim = 20
     wemb = nn.Embedding(len(data.label_encoder.word), emb_dim)
-    cemb = RNNEmbedding(len(data.label_encoder.char), emb_dim, bidirectional=True)
+    cemb = RNNEmbedding(len(data.label_encoder.char), emb_dim)
     cnncemb = CNNEmbedding(len(data.label_encoder.char), emb_dim)
 
     mixer = EmbeddingMixer(20)
