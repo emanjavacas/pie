@@ -14,20 +14,15 @@ def init_linear(linear):
     pass
 
 
-def init_rnn(rnn):
-    if isinstance(rnn, (nn.GRUCell, nn.LSTMCell, nn.RNNCell)):
-        nn.init.xavier_uniform_(rnn.weight_hh)
-        nn.init.xavier_uniform_(rnn.weight_ih)
-        nn.init.constant_(rnn.bias_hh, 0.)
-        nn.init.constant_(rnn.bias_ih, 0.)
-
-    else:
-        for layer in range(rnn.num_layers):
-            nn.init.xavier_uniform_(getattr(rnn, f'weight_hh_l{layer}'))
-            nn.init.xavier_uniform_(getattr(rnn, f'weight_ih_l{layer}'))
-            nn.init.constant_(getattr(rnn, f'bias_hh_l{layer}'), 0.)
-            nn.init.constant_(getattr(rnn, f'bias_ih_l{layer}'), 0.)
-    pass
+def init_rnn(rnn, forget_bias=1.0):
+    for pname, p in rnn.named_parameters():
+        if 'bias' in pname:
+            nn.init.constant_(p, 0.)
+            # forget_bias
+            if 'LSTM' in type(rnn).__name__:
+                nn.init.constant_(p[rnn.hidden_size:rnn.hidden_size*2], forget_bias)
+        else:
+            nn.init.xavier_uniform_(p)
 
 
 def init_conv(conv):

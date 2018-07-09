@@ -224,7 +224,7 @@ class Trainer(object):
             # optimize
             self.optim.zero_grad()
             self.weight_loss(loss).backward()
-            if self.clip_norm is not None:
+            if self.clip_norm > 0:
                 clip_grad_norm_(self.model.parameters(), self.clip_norm)
             self.optim.step()
 
