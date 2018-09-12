@@ -85,7 +85,7 @@ class LinearDecoder(nn.Module):
             weight=self.nll_weight, size_average=False,
             ignore_index=self.label_encoder.get_pad())
 
-        return loss / targets.ne(self.label_encoder.get_pad()).sum().item()
+        return loss# / targets.ne(self.label_encoder.get_pad()).sum().item()
 
     def predict(self, enc_outs, lengths):
         """
