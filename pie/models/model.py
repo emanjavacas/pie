@@ -102,6 +102,7 @@ class SimpleModel(BaseModel):
                 self.lemma_decoder = LinearDecoder(
                     label_encoder.tasks['lemma'], hidden_size * 2)
 
+        # - other linear tasks
         self.linear_tasks, linear_tasks = None, OrderedDict()
         for task in label_encoder.tasks:
             if task in ('pos', 'lemma'):
@@ -110,7 +111,7 @@ class SimpleModel(BaseModel):
         if len(linear_tasks) > 0:
             self.linear_tasks = nn.Sequential(linear_tasks)
 
-        # - Self
+        # - LM
         if self.include_self:
             self.self_decoder = LinearDecoder(label_encoder.word, hidden_size * 2)
 
@@ -148,44 +149,54 @@ class SimpleModel(BaseModel):
         ((word, wlen), (char, clen)), tasks = batch_data
         output = {}
 
+        # Embedding
         emb, cemb_outs = self.embedding(word, wlen, char, clen)
+
+        # Encoder
         emb = F.dropout(emb, p=self.dropout, training=self.training)
         enc_outs = self.encoder(emb, wlen)
-        enc_outs = F.dropout(enc_outs, p=self.dropout, training=self.training)
 
-        # POS
+        # Decoders
+        # - POS
         if 'pos' in tasks:
             pos, plen = tasks['pos']
-            pos_logits = self.pos_decoder(enc_outs)
+            layer = self.label_encoder.tasks['pos'].meta.get('layer', -1)
+            outs = F.dropout(enc_outs[layer], p=self.dropout, training=self.training)
+            pos_logits = self.pos_decoder(outs)
             if self.pos_crf:
                 pos_loss = self.pos_decoder.loss(pos_logits, pos, plen)
             else:
                 pos_loss = self.pos_decoder.loss(pos_logits, pos)
             output['pos'] = pos_loss
 
-        # lemma
+        # - lemma
         if 'lemma' in tasks:
             lemma, llen = tasks['lemma']
+            layer = self.label_encoder.tasks['lemma'].meta.get('layer', -1)
+            outs = F.dropout(enc_outs[layer], p=self.dropout, training=self.training)
             if self.lemma_sequential:
                 cemb_outs = F.dropout(cemb_outs, p=self.dropout, training=self.training)
-                lemma_context = torch_utils.flatten_padded_batch(enc_outs, wlen)
+                lemma_context = torch_utils.flatten_padded_batch(outs, wlen)
                 lemma_logits = self.lemma_decoder(
                     lemma, llen, cemb_outs, clen, context=lemma_context)
             else:
-                lemma_logits = self.lemma_decoder(enc_outs)
+                lemma_logits = self.lemma_decoder(outs)
             output['lemma'] = self.lemma_decoder.loss(lemma_logits, lemma)
 
-        # linear tasks
+        # - other linear tasks
         if self.linear_tasks is not None:
             for task, decoder in self.linear_tasks._modules.items():
-                logits = decoder(enc_outs)
+                layer = self.label_encoder.tasks[task].meta.get('layer', -1)
+                outs = F.dropout(enc_outs[layer], p=self.dropout, training=self.training)
+                logits = decoder(outs)
                 tinp, tlen = tasks[task]
                 output[task] = decoder.loss(logits, tinp)
 
-        # self (autoregressive language-model like loss)
+        # - LM
         if self.include_self:
-            if len(enc_outs) > 1:  # can't compute loss for 1-length batches
-                self_logits = self.self_decoder(torch_utils.prepad(enc_outs[:-1]))
+            if len(emb) > 1:  # can't compute loss for 1-length batches
+                outs = enc_outs[0]  # always at first layer
+                self_logits = self.self_decoder(torch_utils.prepad(outs[:-1]))
                 self_loss = self.self_decoder.loss(self_logits, word)
                 output['self'] = self_loss * 0.2
 
@@ -194,34 +205,39 @@ class SimpleModel(BaseModel):
     def predict(self, inp, *tasks):
         tasks = set(self.label_encoder.tasks if not len(tasks) else tasks)
         preds = {}
-        # unpack
         (word, wlen), (char, clen) = inp
 
-        # forward
+        # Embedding
         emb, cemb_outs = self.embedding(word, wlen, char, clen)
+
+        # Encoder
         enc_outs = self.encoder(emb, wlen)
 
-        # pos
+        # Decoders
+        # - pos
         if 'pos' in self.label_encoder.tasks and 'pos' in tasks:
-            pos_hyps, _ = self.pos_decoder.predict(enc_outs, wlen)
+            layer = self.label_encoder.tasks['pos'].meta.get('layer', -1)
+            pos_hyps, _ = self.pos_decoder.predict(enc_outs[layer], wlen)
             preds['pos'] = pos_hyps
 
-        # lemma
+        # - lemma
         if 'lemma' in self.label_encoder.tasks and 'lemma' in tasks:
+            layer = self.label_encoder.tasks['lemma'].meta.get('layer', -1)
             if self.lemma_sequential:
-                lemma_context = torch_utils.flatten_padded_batch(enc_outs, wlen)
+                lemma_context = torch_utils.flatten_padded_batch(enc_outs[layer], wlen)
                 lemma_hyps, _ = self.lemma_decoder.predict_max(
                     cemb_outs, clen, context=lemma_context)
                 lemma_hyps = [''.join(hyp) for hyp in lemma_hyps]
-
             else:
-                lemma_hyps, _ = self.lemma_decoder.predict(enc_outs, wlen)
+                lemma_hyps, _ = self.lemma_decoder.predict(enc_outs[layer], wlen)
             preds['lemma'] = lemma_hyps
 
+        # - other linear tasks
         if self.linear_tasks is not None:
             for task, decoder in self.linear_tasks._modules.items():
                 if task in tasks:
-                    hyps, _ = decoder.predict(enc_outs, wlen)
+                    layer = self.label_encoder.tasks[task].meta.get('layer', -1)
+                    hyps, _ = decoder.predict(enc_outs[layer], wlen)
                     preds[task] = hyps
 
         return preds

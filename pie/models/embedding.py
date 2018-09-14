@@ -87,10 +87,10 @@ class RNNEmbedding(RNNEncoder):
         """
         char = self.emb(char)
         # (max_seq_len x batch * nwords x emb_dim)
-        emb_outs = super().forward(char, nchars)
+        emb_outs = super().forward(char, nchars)[-1]
         # (batch * nwords x emb_dim)
-        fwd = emb_outs[:, :, :self.rnn.hidden_size]
-        bwd = emb_outs[:, :, self.rnn.hidden_size:]
+        fwd = emb_outs[:, :, :self.hidden_size]
+        bwd = emb_outs[:, :, self.hidden_size:]
         fwd_last = torch_utils.get_last_token(fwd, nchars)
         bwd_last = bwd[0]
         emb = torch.cat([fwd_last, bwd_last], -1)

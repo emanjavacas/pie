@@ -15,11 +15,12 @@ class LabelEncoder(object):
     """
     def __init__(self, level='word', target=None, name=None,
                  pad=True, eos=False, bos=False,
-                 max_size=None, min_freq=1, **kwargs):
+                 max_size=None, min_freq=1, **meta):
 
         if level.lower() not in ('word', 'char'):
             raise ValueError("`level` must be 'word' or 'char'")
 
+        self.meta = meta  # dictionary with other task-relevant information
         self.eos = constants.EOS if eos else None
         self.pad = constants.PAD if pad else None
         self.bos = constants.BOS if bos else None
@@ -181,6 +182,7 @@ class LabelEncoder(object):
                 'eos': self.eos,
                 'bos': self.bos,
                 'pad': self.pad,
+                'meta': self.meta,
                 'level': self.level,
                 'target': self.target,
                 'max_size': self.max_size,
@@ -194,7 +196,8 @@ class LabelEncoder(object):
     def from_json(cls, obj):
         inst = cls(pad=obj['pad'], eos=obj['eos'], bos=obj['bos'],
                    level=obj['level'], target=obj['target'],
-                   max_size=obj['max_size'], min_freq=['min_freq'], name=obj['name'])
+                   max_size=obj['max_size'], min_freq=['min_freq'],
+                   name=obj['name'], meta=obj.get('meta', {}))
         inst.freqs = Counter(obj['freqs'])
         inst.table = dict(obj['table'])
         inst.inverse_table = list(obj['inverse_table'])
@@ -234,8 +237,8 @@ class MultiLabelEncoder(object):
 
         return True
 
-    def add_task(self, name, **kwargs):
-        self.tasks[name] = LabelEncoder(name=name, **kwargs)
+    def add_task(self, name, **meta):
+        self.tasks[name] = LabelEncoder(name=name, **meta)
         return self
 
     @classmethod
@@ -421,6 +424,9 @@ class Dataset(object):
 
         if self.minimize_pad:
             buf = sorted(buf, key=key, reverse=True)
+        elif self.shuffle:
+            random.shuffle(buf)
+
         batches = list(utils.chunks(buf, self.batch_size))
 
         if self.shuffle:
