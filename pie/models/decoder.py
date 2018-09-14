@@ -82,10 +82,10 @@ class LinearDecoder(nn.Module):
     def loss(self, logits, targets):
         loss = F.cross_entropy(
             logits.view(-1, len(self.label_encoder)), targets.view(-1),
-            weight=self.nll_weight, size_average=False,
+            weight=self.nll_weight, size_average=True,
             ignore_index=self.label_encoder.get_pad())
 
-        return loss# / targets.ne(self.label_encoder.get_pad()).sum().item()
+        return loss
 
     def predict(self, enc_outs, lengths):
         """
@@ -198,10 +198,11 @@ class CRFDecoder(nn.Module):
         # (batch x seq_len) => (seq_len x batch)
         mask = mask.t()
         # logits = logits * mask.unsqueeze(2).expand_as(logits)
-
         Z = self.partition(logits, mask)
         score = self.score(logits, mask, targets)
 
+        # FIXME: this gives the average loss per sentence (perhaps it should)
+        # be weighted down to make it also per word?
         return torch.mean(Z - score)
 
     def predict(self, enc_outs, lengths):
@@ -378,10 +379,12 @@ class AttentionalDecoder(nn.Module):
 
         loss = F.cross_entropy(
             logits.view(-1, len(self.label_encoder)), targets.view(-1),
-            weight=self.nll_weight, size_average=False,
+            weight=self.nll_weight, size_average=True,
             ignore_index=self.label_encoder.get_pad())
 
-        return loss / targets.ne(self.label_encoder.get_pad()).sum().item()
+        # FIXME: normalize loss to be word-level
+
+        return loss
 
     def predict_sequence(self, enc_outs, lengths, context=None):
         """
