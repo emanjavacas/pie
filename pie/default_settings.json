@@ -83,7 +83,7 @@
   // * Training
   "buffer_size": 10000,
   // preprocess data to have similar sentence lengths inside batch
-  "minimize_pad": true,
+  "minimize_pad": false,
   "dropout": 0,
   "word_dropout": 0,
   "epochs": 5,

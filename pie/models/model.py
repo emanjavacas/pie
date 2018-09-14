@@ -4,7 +4,7 @@ from collections import OrderedDict
 import torch.nn as nn
 import torch.nn.functional as F
 
-from pie import torch_utils
+from pie import torch_utils, initialization
 
 from .embedding import RNNEmbedding, CNNEmbedding, EmbeddingMixer, EmbeddingConcat
 from .decoder import AttentionalDecoder, LinearDecoder, CRFDecoder
@@ -48,6 +48,9 @@ class SimpleModel(BaseModel):
         if self.wemb_dim > 0:
             self.wemb = nn.Embedding(len(label_encoder.word), wemb_dim,
                                      padding_idx=label_encoder.word.get_pad())
+            # init embeddings
+            initialization.init_embeddings(self.wemb)
+
         self.cemb = None
         if cemb_type.upper() == 'RNN':
             self.cemb = RNNEmbedding(len(label_encoder.char), cemb_dim,

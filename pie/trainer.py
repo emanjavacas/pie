@@ -44,7 +44,7 @@ class TaskScheduler(object):
         for task, values in self.tasks.items():
             output += '\n\t<Task name={} '.format(task)
             output += ' '.join('{}={}'.format(key, val) for key, val in values.items())
-            output += '>'
+            output += '/>'
         output += '\n</TaskScheduler>'
         return output
 

@@ -5,13 +5,11 @@ import torch.nn as nn
 
 def init_embeddings(embeddings):
     embeddings.reset_parameters()
-    # nn.init.constant_(embeddings.weight, 0.01)
+    nn.init.constant_(embeddings.weight, 0.01)
 
 
 def init_linear(linear):
     linear.reset_parameters()
-    nn.init.constant_(linear.bias, 0.)
-    pass
 
 
 def init_rnn(rnn, forget_bias=1.0):
@@ -22,7 +20,17 @@ def init_rnn(rnn, forget_bias=1.0):
             if 'LSTM' in type(rnn).__name__:
                 nn.init.constant_(p[rnn.hidden_size:rnn.hidden_size*2], forget_bias)
         else:
-            nn.init.xavier_uniform_(p)
+            pass
+        # elif pname.startswith('weight_ih'):
+        #     nn.init.orthogonal_(p)
+        # elif pname.startswith('weight_hh'):
+        #     gates = 1
+        #     if 'LSTM' in type(rnn).__name__:
+        #         gates = 4
+        #     elif 'GRU' in type(rnn).__name__:
+        #         gates = 3
+        #     for i in range(gates):
+        #         nn.init.eye_(p[i * rnn.hidden_size: (i+1) * rnn.hidden_size])
 
 
 def init_conv(conv):
