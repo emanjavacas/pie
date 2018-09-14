@@ -226,6 +226,16 @@ def word_dropout(inp, p, training, encoder):
     return inp.masked_fill(mask.byte(), encoder.get_unk())
 
 
+def sequential_dropout(inp, p, training):
+    if not training or not p:
+        return inp
+
+    mask = inp.new(1, inp.size(1), inp.size(2)).bernoulli_(1 - p)
+    mask = mask / (1 - p)
+
+    return inp * mask.expand_as(inp)
+
+
 def log_sum_exp(x, dim=-1):
     """
     Numerically stable log_sum_exp

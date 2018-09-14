@@ -6,11 +6,12 @@ from pie import initialization
 
 
 class RNNEncoder(nn.Module):
-    def __init__(self, in_size, hidden_size, num_layers=1, cell='GRU'):
+    def __init__(self, in_size, hidden_size, num_layers=1, cell='GRU', dropout=0.0):
 
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.cell = cell
+        self.dropout = dropout
         super().__init__()
 
         rnn = []
@@ -36,6 +37,11 @@ class RNNEncoder(nn.Module):
 
         for layer, rnn in enumerate(self.rnn):
             louts, _ = rnn(inp, hidden[layer])
+            if layer != len(self.rnn) - 1:
+                louts, lengths = nn.utils.rnn.pad_packed_sequence(louts)
+                louts = torch_utils.sequential_dropout(
+                    louts, self.dropout, self.training)
+                louts = nn.utils.rnn.pack_padded_sequence(louts, lengths)
             outs.append(louts)
             inp = louts
 

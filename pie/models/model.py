@@ -79,7 +79,7 @@ class SimpleModel(BaseModel):
 
         # Encoder
         self.encoder = RNNEncoder(
-            in_dim, hidden_size, num_layers=num_layers, cell=cell)
+            in_dim, hidden_size, num_layers=num_layers, cell=cell, dropout=dropout)
 
         # Decoders
         # - POS
