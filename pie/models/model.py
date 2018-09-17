@@ -150,8 +150,9 @@ class SimpleModel(BaseModel):
             self.linear_tasks = nn.Sequential(linear_tasks)
 
         # - LM
-        if self.include_self:
-            self.self_decoder = LinearDecoder(label_encoder.word, hidden_size * 2)
+        if self.include_lm:
+            self.lm_decoder_fwd = LinearDecoder(label_encoder.word, hidden_size)
+            self.lm_decoder_bwd = LinearDecoder(label_encoder.word, hidden_size)
 
     def get_args_and_kwargs(self):
         return {'args': (self.wemb_dim, self.cemb_dim, self.hidden_size, self.num_layers),
@@ -235,12 +236,16 @@ class SimpleModel(BaseModel):
                 output[task] = decoder.loss(logits, tinp)
 
         # - LM
-        if self.include_self:
+        if self.include_lm:
             if len(emb) > 1:  # can't compute loss for 1-length batches
-                outs = enc_outs[0]  # always at first layer
-                self_logits = self.self_decoder(torch_utils.prepad(outs[:-1]))
-                self_loss = self.self_decoder.loss(self_logits, word)
-                output['self'] = self_loss * 0.2
+                # always at first layer
+                fwd, bwd = enc_outs[0].chunk(2, dim=2)
+                # forward logits
+                logits = self.lm_decoder_fwd(torch_utils.pad(fwd[:-1], pos='pre'))
+                output['fwd'] = self.lm_weight * self.lm_decoder_fwd.loss(logits, word)
+                # backward logits
+                logits = self.lm_decoder_fwd(torch_utils.pad(bwd[1:], pos='post'))
+                output['bwd'] = self.lm_weight * self.lm_decoder_bwd.loss(logits, word)
 
         return output
 

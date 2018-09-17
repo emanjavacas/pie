@@ -342,7 +342,8 @@ class AttentionalDecoder(nn.Module):
         """
         targets, lengths = targets[:-1], lengths - 1
         if self.label_encoder.get_bos() is None:  # needs prepad
-            targets = torch_utils.prepad(targets, pad=self.label_encoder.get_eos())
+            targets = torch_utils.pad(
+                targets, pad=self.label_encoder.get_eos(), pos='pre')
             lengths += 1
             
         embs = self.embs(targets)

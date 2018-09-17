@@ -175,13 +175,21 @@ def pad_batch(batch, padding_id, device='cpu'):
     return output, lengths
 
 
-def prepad(batch, pad=0):
+def pad(batch, pad=0, pos='pre'):
     """
     >>> batch = torch.tensor([[1, 1], [2, 2], [3, 3], [4, 4]])
-    >>> prepad(batch, pad=-1).tolist()
+    >>> pad(batch, pad=-1, pos='pre').tolist()
     [[-1, -1], [1, 1], [2, 2], [3, 3], [4, 4]]
+    >>> pad(batch, pad=5, pos='post).tolist()
+    [[1, 1], [2, 2], [3, 3], [5, 5]]
     """
-    padding = (0, 0) * (batch.dim() - 1) + (1, 0)
+    if pos.lower() == 'pre':
+        padding = (0, 0) * (batch.dim() - 1) + (1, 0)
+    elif pos.lower() == 'post':
+        padding = (0, 0) * (batch.dim() - 1) + (0, 1)
+    else:
+        raise ValueError("Unknown value for pos: {}".format(pos))
+
     return F.pad(batch, padding, value=pad)
 
 

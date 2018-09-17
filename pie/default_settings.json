@@ -35,7 +35,7 @@
   "char_min_freq": 1,
   "word_min_freq": 1,
   // whether to include autoregressive loss
-  "include_self": false,
+  "include_lm": false,
   // header
   "header": true,
   // expected order of tasks for tabreader
