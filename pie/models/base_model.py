@@ -94,7 +94,7 @@ class BaseModel(nn.Module):
         """
         Serialize model to path
         """
-        import pie
+        import pie # to handle git commits
         fpath = utils.ensure_ext(fpath, 'tar', infix)
 
         # create dir if necessary

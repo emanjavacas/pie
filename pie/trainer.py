@@ -221,6 +221,9 @@ class Trainer(object):
             # get loss
             loss = self.model.loss(batch)
 
+            if not loss:
+                raise ValueError("Got empty loss, no tasks defined?")
+
             # optimize
             self.optim.zero_grad()
             self.weight_loss(loss).backward()

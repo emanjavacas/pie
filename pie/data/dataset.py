@@ -69,6 +69,9 @@ class LabelEncoder(object):
         ).format(self.name, self.target, self.level, length, self.fitted)
 
     def get_type_stats(self):
+        """
+        Compute number of known types, total number of types and ratio
+        """
         if not self.fitted:
             raise ValueError("Vocabulary hasn't been computed yet")
 
@@ -77,6 +80,9 @@ class LabelEncoder(object):
         return known_types, total_types, known_types / total_types
 
     def get_token_stats(self):
+        """
+        Compute number of known tokens, total number of types and ratio
+        """
         if not self.fitted:
             raise ValueError("Vocabulary hasn't been computed yet")
 
