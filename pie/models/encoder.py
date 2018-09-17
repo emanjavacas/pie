@@ -38,18 +38,15 @@ class RNNEncoder(nn.Module):
         outs = []
 
         for layer, rnn in enumerate(self.rnn):
+            # apply dropout only in between layers (not on the output)
+            if layer > 0 and layer != len(self.rnn) - 1:
+                inp, lengths = nn.utils.rnn.pad_packed_sequence(inp)
+                inp = torch_utils.sequential_dropout(inp, self.dropout, self.training)
+                inp = nn.utils.rnn.pack_padded_sequence(inp, lengths)
+            # run layer
             louts, _ = rnn(inp, hidden[layer])
-            if layer != len(self.rnn) - 1:
-                louts, lengths = nn.utils.rnn.pad_packed_sequence(louts)
-                louts = torch_utils.sequential_dropout(
-                    louts, self.dropout, self.training)
-                louts = nn.utils.rnn.pack_padded_sequence(louts, lengths)
-            outs.append(louts)
+            # unpack
+            outs.append(nn.utils.rnn.pad_packed_sequence(louts)[0][:, unsort])
             inp = louts
-
-        # unpack
-        for layer in range(len(self.rnn)):
-            louts, _ = nn.utils.rnn.pad_packed_sequence(outs[layer])
-            outs[layer] = louts[:, unsort]
 
         return outs
