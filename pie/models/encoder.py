@@ -6,12 +6,14 @@ from pie import initialization
 
 
 class RNNEncoder(nn.Module):
-    def __init__(self, in_size, hidden_size, num_layers=1, cell='GRU', dropout=0.0):
+    def __init__(self, in_size, hidden_size, num_layers=1, cell='GRU', dropout=0.0,
+                 init_rnn='default'):
 
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.cell = cell
         self.dropout = dropout
+        self.init_rnn = init_rnn
         super().__init__()
 
         rnn = []
@@ -24,7 +26,7 @@ class RNNEncoder(nn.Module):
 
     def init(self):
         for rnn in self.rnn:
-            initialization.init_rnn(rnn)
+            initialization.init_rnn(rnn, scheme=self.init_rnn)
 
     def forward(self, inp, lengths):
         hidden = [

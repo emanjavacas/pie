@@ -9,28 +9,36 @@ def init_embeddings(embeddings):
 
 
 def init_linear(linear):
+    # nn.init.xavier_uniform_(linear.weight)
     linear.reset_parameters()
 
 
-def init_rnn(rnn, forget_bias=1.0):
+def init_rnn(rnn, forget_bias=1.0, scheme='default'):
+    print("Initializing {} with scheme: {}".format(type(rnn).__name__, scheme))
     for pname, p in rnn.named_parameters():
         if 'bias' in pname:
             nn.init.constant_(p, 0.)
             # forget_bias
             if 'LSTM' in type(rnn).__name__:
                 nn.init.constant_(p[rnn.hidden_size:rnn.hidden_size*2], forget_bias)
-        else:
-            pass
-        # elif pname.startswith('weight_ih'):
-        #     nn.init.orthogonal_(p)
-        # elif pname.startswith('weight_hh'):
-        #     gates = 1
-        #     if 'LSTM' in type(rnn).__name__:
-        #         gates = 4
-        #     elif 'GRU' in type(rnn).__name__:
-        #         gates = 3
-        #     for i in range(gates):
-        #         nn.init.eye_(p[i * rnn.hidden_size: (i+1) * rnn.hidden_size])
+
+        elif pname.startswith('weight_ih'):
+            if scheme == 'xavier_uniform':
+                nn.init.xavier_uniform_(p)
+            elif scheme == 'orthogonal':
+                nn.init.orthogonal_(p)
+
+        elif pname.startswith('weight_hh'):
+            if scheme == 'xavier_uniform':
+                nn.init.xavier_uniform_(p)
+            elif scheme == 'orthogonal':
+                gates = 1
+                if 'LSTM' in type(rnn).__name__:
+                    gates = 4
+                elif 'GRU' in type(rnn).__name__:
+                    gates = 3
+                for i in range(gates):
+                    nn.init.eye_(p[i * rnn.hidden_size: (i+1) * rnn.hidden_size])
 
 
 def init_conv(conv):

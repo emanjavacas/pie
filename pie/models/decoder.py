@@ -308,10 +308,12 @@ class AttentionalDecoder(nn.Module):
     hidden_size : int, hidden size of the encoder, decoder and attention modules.
     context_dim : int (optional), dimensionality of additional context vectors
     """
-    def __init__(self, label_encoder, in_dim, hidden_size, context_dim=0, dropout=0.0):
+    def __init__(self, label_encoder, in_dim, hidden_size, context_dim=0, dropout=0.0,
+                 init_rnn='default'):
         self.label_encoder = label_encoder
         self.context_dim = context_dim
         self.dropout = dropout
+        self.init_rnn = init_rnn
         super(AttentionalDecoder, self).__init__()
 
         if label_encoder.get_eos() is None and label_encoder.get_bos() is None:
@@ -331,7 +333,7 @@ class AttentionalDecoder(nn.Module):
         # embeddings
         initialization.init_embeddings(self.embs)
         # rnn
-        initialization.init_rnn(self.rnn)
+        initialization.init_rnn(self.rnn, scheme=self.init_rnn)
         # linear
         initialization.init_linear(self.proj)
 

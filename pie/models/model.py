@@ -76,7 +76,7 @@ class SimpleModel(BaseModel):
         if cemb_type.upper() == 'RNN':
             self.cemb = RNNEmbedding(len(label_encoder.char), cemb_dim,
                                      padding_idx=label_encoder.char.get_pad(),
-                                     cell=cell)
+                                     cell=cell, init_rnn=init_rnn)
         elif cemb_type.upper() == 'CNN':
             self.cemb = CNNEmbedding(len(label_encoder.char), cemb_dim,
                                      padding_idx=label_encoder.char.get_pad())
