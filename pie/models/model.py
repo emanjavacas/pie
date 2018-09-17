@@ -1,6 +1,7 @@
 
 from collections import OrderedDict
 
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -10,6 +11,19 @@ from .embedding import RNNEmbedding, CNNEmbedding, EmbeddingMixer, EmbeddingConc
 from .decoder import AttentionalDecoder, LinearDecoder, CRFDecoder
 from .encoder import RNNEncoder
 from .base_model import BaseModel
+
+
+def get_lemma_context(outs, wemb, wlen, lemma_context):
+    if lemma_context.lower() == 'sentence':
+        return torch_utils.flatten_padded_batch(outs, wlen)
+    elif lemma_context.lower() == 'word':
+        return torch_utils.flatten_padded_batch(wemb, wlen)
+    elif lemma_context.lower() == 'both':
+        outs = torch_utils.flatten_padded_batch(outs, wlen)
+        wemb = torch_utils.flatten_padded_batch(wemb, wlen)
+        return torch.cat([outs, wemb], -1)
+    else:
+        return None
 
 
 class SimpleModel(BaseModel):
@@ -26,8 +40,9 @@ class SimpleModel(BaseModel):
     cemb_type : str, one of "RNN", "CNN", layer to use for char-level embeddings
     """
     def __init__(self, label_encoder, wemb_dim, cemb_dim, hidden_size, num_layers,
-                 dropout=0.0, merge_type='concat', cemb_type='RNN', cell='GRU',
-                 include_self=True, pos_crf=True, word_dropout=0.0):
+                 dropout=0.0, word_dropout=0.0, merge_type='concat', cemb_type='RNN',
+                 cell='GRU', lemma_context="sentence", include_lm=True, lm_weight=0.2,
+                 pos_crf=True, init_rnn='xavier_uniform'):
         # args
         self.wemb_dim = wemb_dim
         self.cemb_dim = cemb_dim
@@ -39,9 +54,15 @@ class SimpleModel(BaseModel):
         self.word_dropout = word_dropout
         self.merge_type = merge_type
         self.cemb_type = cemb_type
-        self.include_self = include_self
+        self.include_lm = include_lm
         self.pos_crf = pos_crf
+        self.lemma_context = lemma_context
+        # only during training
+        self.init_rnn = init_rnn
+        self.lm_weight = lm_weight
         super().__init__(label_encoder)
+
+        lemma_only = len(label_encoder.tasks) == 1 and 'lemma' in label_encoder.tasks
 
         # Embeddings
         self.wemb = None
@@ -78,8 +99,13 @@ class SimpleModel(BaseModel):
             in_dim = self.cemb.embedding_dim
 
         # Encoder
-        self.encoder = RNNEncoder(
-            in_dim, hidden_size, num_layers=num_layers, cell=cell, dropout=dropout)
+        self.encoder = None
+        if lemma_only and self.lemma_context.lower() not in ('sentence', 'both'):
+            print("Model doesn't need sentence encoder, leaving uninitialized")
+        else:
+            self.encoder = RNNEncoder(
+                in_dim, hidden_size, num_layers=num_layers, cell=cell, dropout=dropout,
+                init_rnn=init_rnn)
 
         # Decoders
         # - POS
@@ -97,10 +123,19 @@ class SimpleModel(BaseModel):
             if self.lemma_sequential:
                 if self.cemb is None:
                     raise ValueError("Sequential lemmatizer requires char embeddings")
+
+                context_dim = 0
+                if lemma_context.lower() == 'sentence':
+                    context_dim = hidden_size * 2  # bidirectional encoder
+                elif lemma_context.lower() == 'word':
+                    context_dim = wemb_dim
+                elif lemma_context.lower() == 'both':
+                    context_dim = hidden_size * 2 + wemb_dim
+
                 self.lemma_decoder = AttentionalDecoder(
                     label_encoder.tasks['lemma'],
-                    self.cemb.embedding_dim, self.cemb.embedding_dim,  # hidden_size * 2,
-                    context_dim=hidden_size * 2, dropout=dropout)
+                    self.cemb.embedding_dim, self.cemb.embedding_dim,
+                    context_dim=context_dim, dropout=dropout, init_rnn=init_rnn)
             else:
                 self.lemma_decoder = LinearDecoder(
                     label_encoder.tasks['lemma'], hidden_size * 2)
@@ -125,8 +160,9 @@ class SimpleModel(BaseModel):
                            'cell': self.cell,
                            'merge_type': self.merge_type,
                            'cemb_type': self.cemb_type,
-                           'include_self': self.include_self,
-                           'pos_crf': self.pos_crf}}
+                           'include_lm': self.include_lm,
+                           'pos_crf': self.pos_crf,
+                           'lemma_context': self.lemma_context}}
 
     def embedding(self, word, wlen, char, clen):
         wemb, cemb, cemb_outs = None, None, None
@@ -139,6 +175,14 @@ class SimpleModel(BaseModel):
             # cemb_outs: (seq_len x batch x emb_dim)
             cemb, cemb_outs = self.cemb(char, clen, wlen)
 
+        return wemb, cemb, cemb_outs
+
+    def loss(self, batch_data):
+        ((word, wlen), (char, clen)), tasks = batch_data
+        output = {}
+
+        # Embedding
+        wemb, cemb, cemb_outs = self.embedding(word, wlen, char, clen)
         if wemb is None:
             emb = cemb
         elif cemb is None:
@@ -146,18 +190,11 @@ class SimpleModel(BaseModel):
         else:
             emb = self.merger(wemb, cemb)
 
-        return emb, cemb_outs
-
-    def loss(self, batch_data):
-        ((word, wlen), (char, clen)), tasks = batch_data
-        output = {}
-
-        # Embedding
-        emb, cemb_outs = self.embedding(word, wlen, char, clen)
-
         # Encoder
         emb = F.dropout(emb, p=self.dropout, training=self.training)
-        enc_outs = self.encoder(emb, wlen)
+        enc_outs = None
+        if self.encoder is not None:
+            enc_outs = self.encoder(emb, wlen)
 
         # Decoders
         # - POS
@@ -176,10 +213,12 @@ class SimpleModel(BaseModel):
         if 'lemma' in tasks:
             lemma, llen = tasks['lemma']
             layer = self.label_encoder.tasks['lemma'].meta.get('layer', -1)
-            outs = F.dropout(enc_outs[layer], p=self.dropout, training=self.training)
+            outs = None
+            if enc_outs is not None:
+                outs = F.dropout(enc_outs[layer], p=self.dropout, training=self.training)
             if self.lemma_sequential:
                 cemb_outs = F.dropout(cemb_outs, p=self.dropout, training=self.training)
-                lemma_context = torch_utils.flatten_padded_batch(outs, wlen)
+                lemma_context = get_lemma_context(outs, wemb, wlen, self.lemma_context)
                 lemma_logits = self.lemma_decoder(
                     lemma, llen, cemb_outs, clen, context=lemma_context)
             else:
@@ -211,10 +250,18 @@ class SimpleModel(BaseModel):
         (word, wlen), (char, clen) = inp
 
         # Embedding
-        emb, cemb_outs = self.embedding(word, wlen, char, clen)
+        wemb, cemb, cemb_outs = self.embedding(word, wlen, char, clen)
+        if wemb is None:
+            emb = cemb
+        elif cemb is None:
+            emb = wemb
+        else:
+            emb = self.merger(wemb, cemb)
 
         # Encoder
-        enc_outs = self.encoder(emb, wlen)
+        enc_outs = None
+        if self.encoder is not None:
+            enc_outs = self.encoder(emb, wlen)
 
         # Decoders
         # - pos
@@ -226,13 +273,16 @@ class SimpleModel(BaseModel):
         # - lemma
         if 'lemma' in self.label_encoder.tasks and 'lemma' in tasks:
             layer = self.label_encoder.tasks['lemma'].meta.get('layer', -1)
+            outs = None
+            if enc_outs is not None:
+                outs = enc_outs[layer]
             if self.lemma_sequential:
-                lemma_context = torch_utils.flatten_padded_batch(enc_outs[layer], wlen)
+                lemma_context = get_lemma_context(outs, wemb, wlen, self.lemma_context)
                 lemma_hyps, _ = self.lemma_decoder.predict_max(
                     cemb_outs, clen, context=lemma_context)
                 lemma_hyps = [''.join(hyp) for hyp in lemma_hyps]
             else:
-                lemma_hyps, _ = self.lemma_decoder.predict(enc_outs[layer], wlen)
+                lemma_hyps, _ = self.lemma_decoder.predict(outs, wlen)
             preds['lemma'] = lemma_hyps
 
         # - other linear tasks

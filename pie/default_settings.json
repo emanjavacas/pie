@@ -112,5 +112,10 @@
   "merge_type": "concat",
   "hidden_size": 300,
   "num_layers": 1,
-  "cell": "LSTM"
+  "cell": "LSTM",
+  // in case of char-level lemmatization:
+  // - "sentence"
+  // - "word"
+  // - "both"
+  "lemma_context": "sentence"
 }

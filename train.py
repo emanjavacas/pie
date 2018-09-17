@@ -110,9 +110,10 @@ if __name__ == '__main__':
     model = SimpleModel(trainset.label_encoder,
                         settings.wemb_dim, settings.cemb_dim, settings.hidden_size,
                         settings.num_layers, dropout=settings.dropout,
-                        word_dropout=settings.word_dropout,
                         cell=settings.cell, cemb_type=settings.cemb_type,
-                        include_self=settings.include_self, pos_crf=settings.pos_crf)
+                        word_dropout=settings.word_dropout,
+                        lemma_context=settings.lemma_context,
+                        include_lm=settings.include_lm, pos_crf=settings.pos_crf)
 
     # pretrain(/load pretrained) embeddings
     if model.wemb is not None:
