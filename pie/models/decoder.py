@@ -290,7 +290,7 @@ class Attention(nn.Module):
         # (out_seq_len x batch x hidden * 2)
         context = torch.cat([weighted.transpose(0, 1), dec_outs], 2)
         # (out_seq_len x batch x hidden)
-        context = F.tanh(self.linear_out(context))
+        context = torch.tanh(self.linear_out(context))
 
         return context, weights
 
@@ -309,7 +309,7 @@ class AttentionalDecoder(nn.Module):
     context_dim : int (optional), dimensionality of additional context vectors
     """
     def __init__(self, label_encoder, in_dim, hidden_size, context_dim=0, dropout=0.0,
-                 init_rnn='default'):
+                 cell='GRU', init_rnn='default'):
         self.label_encoder = label_encoder
         self.context_dim = context_dim
         self.dropout = dropout
@@ -323,7 +323,7 @@ class AttentionalDecoder(nn.Module):
         nll_weight[label_encoder.get_pad()] = 0.
         self.register_buffer('nll_weight', nll_weight)
         self.embs = nn.Embedding(len(label_encoder), in_dim)
-        self.rnn = nn.GRU(in_dim + context_dim, hidden_size, dropout=dropout)
+        self.rnn = getattr(nn, cell)(in_dim + context_dim, hidden_size)
         self.attn = Attention(hidden_size)
         self.proj = nn.Linear(hidden_size, len(label_encoder))
 

@@ -150,7 +150,7 @@ def flatten_padded_batch(batch, nwords):
     """
     with torch.no_grad():
         output = []
-        for sent, sentlen in zip(batch.t(), nwords):
+        for sent, sentlen in zip(batch.transpose(0, 1), nwords):
             output.extend(list(sent[:sentlen].chunk(sentlen)))  # remove <eos>
 
         return torch.cat(output, dim=0)
