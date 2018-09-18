@@ -201,7 +201,7 @@ class SimpleModel(BaseModel):
         if 'pos' in tasks:
             pos, plen = tasks['pos']
             layer = self.label_encoder.tasks['pos'].meta.get('layer', -1)
-            outs = F.dropout(enc_outs[layer], p=self.dropout, training=self.training)
+            outs = F.dropout(enc_outs[layer], p=0, training=self.training)
             pos_logits = self.pos_decoder(outs)
             if self.pos_crf:
                 pos_loss = self.pos_decoder.loss(pos_logits, pos, plen)
@@ -215,7 +215,7 @@ class SimpleModel(BaseModel):
             layer = self.label_encoder.tasks['lemma'].meta.get('layer', -1)
             outs = None
             if enc_outs is not None:
-                outs = F.dropout(enc_outs[layer], p=self.dropout, training=self.training)
+                outs = F.dropout(enc_outs[layer], p=0, training=self.training)
             if self.lemma_sequential:
                 cemb_outs = F.dropout(cemb_outs, p=self.dropout, training=self.training)
                 lemma_context = get_lemma_context(outs, wemb, wlen, self.lemma_context)
@@ -229,7 +229,7 @@ class SimpleModel(BaseModel):
         if self.linear_tasks is not None:
             for task, decoder in self.linear_tasks._modules.items():
                 layer = self.label_encoder.tasks[task].meta.get('layer', -1)
-                outs = F.dropout(enc_outs[layer], p=self.dropout, training=self.training)
+                outs = F.dropout(enc_outs[layer], p=0, training=self.training)
                 logits = decoder(outs)
                 tinp, tlen = tasks[task]
                 output[task] = decoder.loss(logits, tinp)
@@ -273,7 +273,8 @@ class SimpleModel(BaseModel):
         # - pos
         if 'pos' in self.label_encoder.tasks and 'pos' in tasks:
             layer = self.label_encoder.tasks['pos'].meta.get('layer', -1)
-            pos_hyps, _ = self.pos_decoder.predict(enc_outs[layer], wlen)
+            outs = F.dropout(enc_outs[layer], p=self.dropout, training=self.training)
+            pos_hyps, _ = self.pos_decoder.predict(outs, wlen)
             preds['pos'] = pos_hyps
 
         # - lemma
@@ -281,7 +282,7 @@ class SimpleModel(BaseModel):
             layer = self.label_encoder.tasks['lemma'].meta.get('layer', -1)
             outs = None
             if enc_outs is not None:
-                outs = enc_outs[layer]
+                outs = F.dropout(enc_outs[layer], p=self.dropout, training=self.training)
             if self.lemma_sequential:
                 lemma_context = get_lemma_context(outs, wemb, wlen, self.lemma_context)
                 lemma_hyps, _ = self.lemma_decoder.predict_max(
@@ -296,7 +297,8 @@ class SimpleModel(BaseModel):
             for task, decoder in self.linear_tasks._modules.items():
                 if task in tasks:
                     layer = self.label_encoder.tasks[task].meta.get('layer', -1)
-                    hyps, _ = decoder.predict(enc_outs[layer], wlen)
+                    outs = F.dropout(enc_outs[layer], p=0, training=self.training)
+                    hyps, _ = decoder.predict(outs, wlen)
                     preds[task] = hyps
 
         return preds

@@ -9,8 +9,8 @@ def init_embeddings(embeddings):
 
 
 def init_linear(linear):
-    # nn.init.xavier_uniform_(linear.weight)
     linear.reset_parameters()
+    nn.init.xavier_uniform_(linear.weight)
 
 
 def init_rnn(rnn, forget_bias=1.0, scheme='default'):
