@@ -26,35 +26,53 @@ class TaskScheduler(object):
     Track scores
     """
     def __init__(self, tasks, patience, factor, threshold, min_weight):
-
         for task, values in tasks.items():
-            tasks[task] = {'steps': 0, 'best': 0, 'weight': 1, **values}
-        self.tasks = tasks
+            tasks[task] = {'steps': 0, **values}
+            # set task mode
+            if 'mode' not in tasks[task]:
+                tasks[task]['mode'] = 'max'
+            # set initial weight
+            if 'weight' not in tasks[task]:
+                tasks[task]['weight'] = 1.0
+            # set initial best
+            if tasks[task]['mode'] == 'max':
+                tasks[task]['best'] = 0.0
+            else:
+                tasks[task]['best'] = float('inf')
 
+        self.tasks = tasks
         self.patience = patience
         self.factor = factor
         self.threshold = threshold
         self.min_weight = min_weight
-
         self.fid = '/tmp/{}'.format(str(uuid.uuid1()))
 
     def __repr__(self):
-        output = "<TaskScheduler patience={} factor={} threshold={} min_weight={}>" \
-                    .format(self.patience, self.factor, self.threshold, self.min_weight)
+        output = (
+            "<TaskScheduler patience=\"{}\" factor=\"{}\" " +
+            "threshold=\"{}\" min_weight=\"{}\">").format(
+                self.patience, self.factor, self.threshold, self.min_weight)
+
         for task, values in self.tasks.items():
-            output += '\n\t<Task name={} '.format(task)
-            output += ' '.join('{}={}'.format(key, val) for key, val in values.items())
+            output += '\n    <Task name="{}" '.format(task)
+            output += ' '.join('{}="{}"'.format(key, val) for key, val in values.items())
             output += '/>'
         output += '\n</TaskScheduler>'
         return output
 
     def is_best(self, task, value):
         threshold = self.tasks[task].get('threshold', self.threshold)
-        return value > (self.tasks[task]['best'] + threshold)
+        mode = self.tasks[task]['mode']
+        if mode.lower() == 'max':
+            return value > (self.tasks[task]['best'] + threshold)
+        elif mode.lower() == 'min':
+            return value < (self.tasks[task]['best'] - threshold)
+        else:
+            raise ValueError("Wrong mode value [{}] for task: {}".format(mode, task))
 
     def step(self, scores, model):
         """
-        Advance schedule step based on dev scores (accuracy)
+        Advance schedule step based on dev scores
         """
         for task, score in scores.items():
             if task not in self.tasks:
@@ -62,8 +80,8 @@ class TaskScheduler(object):
                 continue
 
             # check if we improve
-            if self.is_best(task, score['accuracy']):
-                self.tasks[task]['best'] = score['accuracy']
+            if self.is_best(task, score):
+                self.tasks[task]['best'] = score
                 self.tasks[task]['steps'] = 0
                 if self.tasks[task].get('target', False):
                     # serialize model params
@@ -79,7 +97,6 @@ class TaskScheduler(object):
                     state_dict = torch.load(self.fid)
                     os.remove(self.fid)
                     raise EarlyStopException(task, self.tasks[task]['best'], state_dict)
-
                 # update task weight
                 else:
                     factor = self.tasks[task].get('factor', self.factor)
@@ -129,9 +146,13 @@ class Trainer(object):
         else:
             self.check_freq = 0  # no checks
 
+        tasks = {task['name']: task.get('schedule', {}) for task in settings.tasks}
+        if settings.include_lm:
+            tasks['fwd_lm'] = settings.lm_schedule
+            tasks['bwd_lm'] = settings.lm_schedule
         self.task_scheduler = TaskScheduler(
-            {task['name']: task.get('schedule', {}) for task in settings.tasks},
-            settings.patience, settings.factor, settings.threshold, settings.min_weight)
+            tasks, settings.patience, settings.factor, settings.threshold,
+            settings.min_weight)
 
         if settings.verbose:
             print()
@@ -204,14 +225,20 @@ class Trainer(object):
                 task.print_summary()
 
         self.model.train()
-        dev_scores = {task: scorer.get_scores() for task, scorer in summary.items()}
-        if self.lr_scheduler is not None:
-            self.lr_scheduler.step(self.weight_loss(dev_loss))
+        dev_scores = {t: scorer.get_scores()['accuracy'] for t, scorer in summary.items()}
+        # add lm scores
+        if 'fwd_lm' in dev_loss or 'bwd_lm' in dev_loss:
+            dev_scores['fwd_lm'] = dev_loss['fwd_lm']
+            dev_scores['bwd_lm'] = dev_loss['bwd_lm']
+
         self.task_scheduler.step(dev_scores, self.model)
 
         if self.verbose:
             print(self.task_scheduler)
             print()
+
+        if self.lr_scheduler is not None:
+            self.lr_scheduler.step(self.weight_loss(dev_loss))
 
     def train_epoch(self, dev):
         rep_loss, rep_items, rep_batches = collections.defaultdict(float), 0, 0

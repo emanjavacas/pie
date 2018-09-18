@@ -41,7 +41,7 @@ class SimpleModel(BaseModel):
     """
     def __init__(self, label_encoder, wemb_dim, cemb_dim, hidden_size, num_layers,
                  dropout=0.0, word_dropout=0.0, merge_type='concat', cemb_type='RNN',
-                 cell='GRU', lemma_context="sentence", include_lm=True, lm_weight=0.2,
+                 cell='GRU', lemma_context="sentence", include_lm=True,
                  pos_crf=True, init_rnn='xavier_uniform'):
         # args
         self.wemb_dim = wemb_dim
@@ -59,7 +59,6 @@ class SimpleModel(BaseModel):
         self.lemma_context = lemma_context
         # only during training
         self.init_rnn = init_rnn
-        self.lm_weight = lm_weight
         super().__init__(label_encoder)
 
         lemma_only = len(label_encoder.tasks) == 1 and 'lemma' in label_encoder.tasks
@@ -239,13 +238,15 @@ class SimpleModel(BaseModel):
         if self.include_lm:
             if len(emb) > 1:  # can't compute loss for 1-length batches
                 # always at first layer
-                fwd, bwd = enc_outs[0].chunk(2, dim=2)
+                fwd, bwd = F.dropout(
+                    enc_outs[0], p=0, training=self.training
+                ).chunk(2, dim=2)
                 # forward logits
                 logits = self.lm_decoder_fwd(torch_utils.pad(fwd[:-1], pos='pre'))
-                output['fwd'] = self.lm_weight * self.lm_decoder_fwd.loss(logits, word)
+                output['fwd_lm'] = self.lm_decoder_fwd.loss(logits, word)
                 # backward logits
                 logits = self.lm_decoder_fwd(torch_utils.pad(bwd[1:], pos='post'))
-                output['bwd'] = self.lm_weight * self.lm_decoder_bwd.loss(logits, word)
+                output['bwd_lm'] = self.lm_decoder_bwd.loss(logits, word)
 
         return output
 

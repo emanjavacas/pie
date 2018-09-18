@@ -34,8 +34,6 @@
   // min freq per item to be incorporated in the vocabulary (only used if *_max_size is 0)
   "char_min_freq": 1,
   "word_min_freq": 1,
-  // whether to include autoregressive loss
-  "include_lm": false,
   // header
   "header": true,
   // expected order of tasks for tabreader
@@ -59,9 +57,10 @@
       // depending on the value of "target" (if true then task is target else slave)
       // For target, "patience", "threshold" control early stopping (how many steps
       // without improvement over the threshold we need before stopping learning).
-      // For slaves, they control how we decay the loss weight of that task and the
-      // extra parameters are: "factor" (by how much) and "min_weight" (minimum weight)
-      // given to the loss
+      // For auxiliary tasks, they control how we decay the loss weight of that task
+      // and the extra parameters are: "factor" (by how much), "min_weight"
+      // (minimum weight) given to the loss,  "weight" (initial weight) and "mode"
+      // (whether the task dev score is being minimized "min" or maximized "max")
       "schedule": {
 	"target": true, "patience": 2, "threshold": 0.001
       },
@@ -73,6 +72,13 @@
       "name": "pos", "default": "UNK"
     }
   ],
+
+  // whether to include autoregressive loss
+  "include_lm": false,
+  // lm settings in case it's included as an extra task
+  "lm_schedule": {
+    "patience": 2, "factor": 0.5, "weight": 0.2, "mode": "min"
+  },
 
   // general task schedule params (can be overwritten in the "settings" entry of each)
   "patience": 1000000, // default to very large value
