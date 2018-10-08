@@ -87,16 +87,16 @@ class RNNEmbedding(RNNEncoder):
         """
         char = self.emb(char)
         # (max_seq_len x batch * nwords x emb_dim)
-        emb_outs = super().forward(char, nchars)[-1]
-        # (batch * nwords x emb_dim)
-        fwd = emb_outs[:, :, :self.hidden_size]
-        bwd = emb_outs[:, :, self.hidden_size:]
-        fwd_last = torch_utils.get_last_token(fwd, nchars)
-        bwd_last = bwd[0]
-        emb = torch.cat([fwd_last, bwd_last], -1)
+        outs, emb = super().forward(char, nchars, return_hidden=True, only_last=True)
+        # use last hidden as embedding
+        if isinstance(emb, tuple):
+            emb = emb[0]
+        # (2 x batch x hidden) -> (batch x 2 * hidden)
+        emb = emb.transpose(0, 1).contiguous().view(len(nchars), -1)
+        # (batch x 2 * hidden) -> (nwords x batch x 2 * hidden)
         emb = torch_utils.pad_flat_batch(emb, nwords, maxlen=max(nwords).item())
 
-        return emb, emb_outs
+        return emb, outs
 
 
 class EmbeddingMixer(nn.Module):
