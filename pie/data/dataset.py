@@ -110,8 +110,11 @@ class LabelEncoder(object):
 
         if self.max_size:
             most_common = self.freqs.most_common(n=self.max_size)
-        else:
+        elif self.min_freq:
             most_common = [it for it in self.freqs.items() if it[1] >= self.min_freq]
+        else:
+            most_common = self.freqs.most_common()
+
         self.inverse_table = list(self.reserved) + [sym for sym, _ in most_common]
         self.table = {sym: idx for idx, sym in enumerate(self.inverse_table)}
         self.fitted = True
@@ -274,7 +277,12 @@ class MultiLabelEncoder(object):
         lines : iterator over tuples of (Input, Tasks)
         """
         ninsts = 0
-        for idx, (inp, tasks) in enumerate(lines):
+        for idx, inp in enumerate(lines):
+
+            tasks = None
+            if isinstance(inp, tuple):
+                inp, tasks = inp
+
             # input
             self.word.add(inp)
             self.char.add(inp)
@@ -315,7 +323,13 @@ class MultiLabelEncoder(object):
         """
         word, char, tasks_dict = [], [], defaultdict(list)
 
-        for inp, tasks in sents:
+        for inp in sents:
+            tasks = None
+
+            # task might not be passed
+            if isinstance(inp, tuple):
+                inp, tasks = inp
+
             # input data
             word.append(self.word.transform(inp))
             for w in inp:
