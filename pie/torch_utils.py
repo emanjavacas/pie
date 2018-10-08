@@ -111,21 +111,20 @@ def pad_flat_batch(emb, nwords, maxlen=None):
     >>> pad_flat_batch(torch.tensor(emb), torch.tensor(nwords)).tolist()
     [[[0], [3], [4]], [[1], [0], [5]], [[2], [0], [0]]]
     """
-    with torch.no_grad():
-        if len(emb) != sum(nwords):
-            raise ValueError("Got {} items but was asked to pad {}"
-                             .format(len(emb), sum(nwords).item()))
+    if len(emb) != sum(nwords):
+        raise ValueError("Got {} items but was asked to pad {}"
+                         .format(len(emb), sum(nwords).item()))
 
-        output, last = [], 0
-        maxlen = maxlen or max(nwords).item()
+    output, last = [], 0
+    maxlen = maxlen or max(nwords).item()
 
-        for sentlen in nwords.tolist():
-            padding = (0, 0, 0, maxlen - sentlen)
-            output.append(F.pad(emb[last:last+sentlen], padding))
-            last = last + sentlen
+    for sentlen in nwords.tolist():
+        padding = (0, 0, 0, maxlen - sentlen)
+        output.append(F.pad(emb[last:last+sentlen], padding))
+        last = last + sentlen
 
-        # (seq_len x batch x emb_dim)
-        output = torch.stack(output, dim=1)
+    # (seq_len x batch x emb_dim)
+    output = torch.stack(output, dim=1)
 
     return output
 
@@ -156,7 +155,7 @@ def flatten_padded_batch(batch, nwords):
         return torch.cat(output, dim=0)
 
 
-def pad_batch(batch, padding_id, device='cpu'):
+def pad_batch(batch, padding_id, device='cpu', return_lengths=True):
     """
     Pad batch into tensor
     """
@@ -170,9 +169,11 @@ def pad_batch(batch, padding_id, device='cpu'):
         output[0:lengths[i], i].copy_(
             torch.tensor(example, dtype=torch.int64, device=device))
 
-    lengths = torch.tensor(lengths, dtype=torch.int64, device=device)
+    if return_lengths:
+        lengths = torch.tensor(lengths, dtype=torch.int64, device=device)
+        return output, lengths
 
-    return output, lengths
+    return output
 
 
 def pad(batch, pad=0, pos='pre'):

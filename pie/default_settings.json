@@ -77,7 +77,7 @@
   "include_lm": false,
   // lm settings in case it's included as an extra task
   "lm_schedule": {
-    "patience": 2, "factor": 0.5, "weight": 0.2, "mode": "min"
+    "patience": 100, "factor": 0.5, "weight": 0.2, "mode": "min"
   },
 
   // general task schedule params (can be overwritten in the "settings" entry of each)
