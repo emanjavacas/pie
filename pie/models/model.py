@@ -41,8 +41,8 @@ class SimpleModel(BaseModel):
     """
     def __init__(self, label_encoder, wemb_dim, cemb_dim, hidden_size, num_layers,
                  dropout=0.0, word_dropout=0.0, merge_type='concat', cemb_type='RNN',
-                 cell='GRU', lemma_context="sentence", include_lm=True,
-                 pos_crf=True, init_rnn='xavier_uniform'):
+                 cell='LSTM', custom_cemb_cell=False, lemma_context="sentence",
+                 include_lm=True, pos_crf=True, init_rnn='xavier_uniform'):
         # args
         self.wemb_dim = wemb_dim
         self.cemb_dim = cemb_dim
@@ -56,6 +56,7 @@ class SimpleModel(BaseModel):
         self.cemb_type = cemb_type
         self.include_lm = include_lm
         self.pos_crf = pos_crf
+        self.custom_cemb_cell = custom_cemb_cell
         self.lemma_context = lemma_context
         # only during training
         self.init_rnn = init_rnn
@@ -75,6 +76,7 @@ class SimpleModel(BaseModel):
         if cemb_type.upper() == 'RNN':
             self.cemb = RNNEmbedding(len(label_encoder.char), cemb_dim,
                                      padding_idx=label_encoder.char.get_pad(),
+                                     custom_lstm=custom_cemb_cell,
                                      cell=cell, init_rnn=init_rnn)
         elif cemb_type.upper() == 'CNN':
             self.cemb = CNNEmbedding(len(label_encoder.char), cemb_dim,
@@ -163,7 +165,8 @@ class SimpleModel(BaseModel):
                            'cemb_type': self.cemb_type,
                            'include_lm': self.include_lm,
                            'pos_crf': self.pos_crf,
-                           'lemma_context': self.lemma_context}}
+                           'lemma_context': self.lemma_context,
+                           'custom_cemb_cell': self.custom_cemb_cell}}
 
     def embedding(self, word, wlen, char, clen):
         wemb, cemb, cemb_outs = None, None, None

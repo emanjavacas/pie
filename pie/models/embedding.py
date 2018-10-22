@@ -7,6 +7,7 @@ from pie import torch_utils
 from pie import initialization
 
 from .encoder import RNNEncoder
+from .lstm import CustomBiLSTM
 
 
 class CNNEmbedding(nn.Module):
@@ -65,17 +66,25 @@ class CNNEmbedding(nn.Module):
         return conv_out, conv_outs
 
 
-class RNNEmbedding(RNNEncoder):
+class RNNEmbedding(nn.Module):
     """
     Character-level Embeddings with BiRNNs.
     """
-    def __init__(self, num_embeddings, embedding_dim, padding_idx=None, **kwargs):
+    def __init__(self, num_embeddings, embedding_dim, padding_idx=None,
+                 custom_lstm=False, cell='LSTM', init_rnn='default'):
         self.num_embeddings = num_embeddings
-        super().__init__(embedding_dim, hidden_size=embedding_dim, **kwargs)
         self.embedding_dim = embedding_dim * 2  # bidirectional
+        super().__init__()
 
         self.emb = nn.Embedding(num_embeddings, embedding_dim, padding_idx=padding_idx)
         initialization.init_embeddings(self.emb)
+
+        if custom_lstm:
+            self.rnn = CustomBiLSTM(embedding_dim, embedding_dim)
+        else:
+            self.rnn = getattr(nn, cell)(
+                embedding_dim, embedding_dim, bidirectional=True)
+            initialization.init_rnn(self.rnn, scheme=init_rnn)
 
     def forward(self, char, nchars, nwords):
         """
@@ -85,12 +94,23 @@ class RNNEmbedding(RNNEncoder):
         nchars : tensor(batch)
         nwords : tensor(output batch)
         """
+        # embed
         char = self.emb(char)
+        # rnn
+        hidden = None
+        _, sort = torch.sort(nchars, descending=True)
+        _, unsort = sort.sort()
+        char, nchars = char[:, sort], nchars[sort]
+        if isinstance(self.rnn, nn.RNNBase):
+            outs, emb = self.rnn(
+                nn.utils.rnn.pack_padded_sequence(char, nchars), hidden)
+            outs, _ = nn.utils.rnn.pad_packed_sequence(outs)
+            if isinstance(emb, tuple):
+                emb, _ = emb
+        else:
+            outs, (emb, _) = self.rnn(char, hidden, nchars)
         # (max_seq_len x batch * nwords x emb_dim)
-        outs, emb = super().forward(char, nchars, return_hidden=True, only_last=True)
-        # use last hidden as embedding
-        if isinstance(emb, tuple):
-            emb = emb[0]
+        outs, emb = outs[:, unsort], emb[:, unsort]
         # (2 x batch x hidden) -> (batch x 2 * hidden)
         emb = emb.transpose(0, 1).contiguous().view(len(nchars), -1)
         # (batch x 2 * hidden) -> (nwords x batch x 2 * hidden)

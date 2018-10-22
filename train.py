@@ -117,6 +117,7 @@ if __name__ == '__main__':
                         settings.wemb_dim, settings.cemb_dim, settings.hidden_size,
                         settings.num_layers, dropout=settings.dropout,
                         cell=settings.cell, cemb_type=settings.cemb_type,
+                        custom_cemb_cell=settings.custom_cemb_cell,
                         word_dropout=settings.word_dropout,
                         lemma_context=settings.lemma_context,
                         include_lm=settings.include_lm, pos_crf=settings.pos_crf)
@@ -124,6 +125,7 @@ if __name__ == '__main__':
     # pretrain(/load pretrained) embeddings
     if model.wemb is not None:
         if settings.pretrain_embeddings:
+            print("Pretraining word embeddings")
             wemb_reader = Reader(
                 settings, settings.input_path, settings.dev_path, settings.test_path)
             weight = get_pretrained_embeddings(
@@ -132,11 +134,15 @@ if __name__ == '__main__':
             model.wemb.weight.data = torch.tensor(weight, dtype=torch.float32)
 
         elif settings.load_pretrained_embeddings:
+            print("Loading pretrained embeddings")
             if not os.path.isfile(settings.load_pretrained_embeddings):
                 print("Couldn't find pretrained embeddings in: {}. Skipping...".format(
                     settings.load_pretrained_embeddings))
             initialization.init_pretrained_embeddings(
                 settings.load_pretrained_embeddings, label_encoder.word, model.wemb)
+
+        if settings.freeze_embeddings:
+            model.wemb.weight.requires_grad = False
 
     model.to(settings.device)
 
