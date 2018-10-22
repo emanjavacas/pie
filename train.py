@@ -15,7 +15,9 @@ import random
 import numpy
 import torch
 
-seed = 1001
+now = datetime.now()
+seed = now.hour * 10000 + now.minute * 100 + now.second
+print("Using seed:", seed)
 random.seed(seed)
 numpy.random.seed(seed)
 torch.manual_seed(seed)
