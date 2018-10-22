@@ -152,14 +152,17 @@ if __name__ == '__main__':
     print()
     print("::: Model parameters :::")
     print()
-    print(sum(p.nelement() for p in model.parameters()))
+    trainable = sum(p.nelement() for p in model.parameters() if p.requires_grad)
+    total = sum(p.nelement() for p in model.parameters())
+    print("{}/{} trainable/total".format(trainable, total))
     print()
 
     # training
     print("Starting training")
     trainer = Trainer(settings, model, trainset, ninsts)
+    scores = None
     try:
-        trainer.train_epochs(settings.epochs, dev=devset)
+        scores = trainer.train_epochs(settings.epochs, dev=devset)
     except KeyboardInterrupt:
         print("Stopping training")
     finally:
@@ -176,3 +179,9 @@ if __name__ == '__main__':
     print("Saved best model to: [{}]".format(fpath))
 
     print("Bye!")
+
+    if scores is not None:
+        with open('{}.txt'.format('-'.join(get_targets(settings))), 'a') as f:
+            line = [infix, str(seed), datetime.now().strftime("%Y_%m_%d-%H_%M_%S")] + \
+                   ['{}:{:.6f}'.format(task, score) for task, score in scores.items()]
+            f.write('{}\n'.format('\t'.join(line)))

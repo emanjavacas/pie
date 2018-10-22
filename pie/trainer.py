@@ -240,9 +240,12 @@ class Trainer(object):
         if self.lr_scheduler is not None:
             self.lr_scheduler.step(self.weight_loss(dev_loss))
 
+        return dev_scores
+
     def train_epoch(self, dev):
         rep_loss, rep_items, rep_batches = collections.defaultdict(float), 0, 0
         rep_start = time.time()
+        scores = None
 
         for b, batch in enumerate(self.dataset.batch_generator()):
             # get loss
@@ -272,13 +275,15 @@ class Trainer(object):
 
             if self.check_freq > 0 and b > 0 and b % self.check_freq == 0:
                 if dev is not None:
-                    self.run_check(dev)
+                    scores = self.run_check(dev)
+                    return scores
 
     def train_epochs(self, epochs, dev=None):
         """
         Train the model for a number of epochs
         """
         start = time.time()
+        scores = None
 
         try:
             for e in range(1, epochs + 1):
@@ -291,8 +296,12 @@ class Trainer(object):
 
         except EarlyStopException as e:
             logging.info("Early stopping training: "
-                         "task [{}] with best loss {:.3f}".format(e.task, e.loss))
+                         "task [{}] with best score {:.3f}".format(e.task, e.loss))
 
             self.model.load_state_dict(e.best_state_dict)
+            scores = {e.task: e.loss}
 
         logging.info("Finished training in [{:g}]".format(time.time() - start))
+
+        # will be None if no dev test was provided or the model failed to converge
+        return scores
