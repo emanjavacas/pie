@@ -7,6 +7,7 @@ import random
 import torch
 
 from pie import utils, torch_utils, constants
+from . import preprocessors
 
 
 class LabelEncoder(object):
@@ -97,7 +98,7 @@ class LabelEncoder(object):
         if self.level == 'word':
             self.freqs.update(seq)
         else:
-            self.freqs.update(utils.flatten(seq))
+            self.freqs.update(c for tok in seq for c in tok)
             self.known_tokens.update(seq)
 
     def compute_vocab(self):
@@ -227,6 +228,7 @@ class MultiLabelEncoder(object):
         self.char = LabelEncoder(max_size=char_max_size, min_freq=char_min_freq,
                                  name='char', level='char', eos=True, bos=True)
         self.tasks = {}
+        self.preprocessors = {}
 
     def __repr__(self):
         return (
@@ -243,11 +245,15 @@ class MultiLabelEncoder(object):
                 return False
             if self.tasks[task] != other.tasks[task]:
                 return False
+            if self.preprocessors.get(task, {}) != other.preprocessors.get(task, {}):
+                return False
 
         return True
 
     def add_task(self, name, **meta):
         self.tasks[name] = LabelEncoder(name=name, **meta)
+        if 'preprocessor' in meta:
+            self.preprocessors[name] = meta['preprocessor']
         return self
 
     @classmethod
@@ -288,7 +294,12 @@ class MultiLabelEncoder(object):
             self.char.add(inp)
 
             for le in self.tasks.values():
-                le.add(tasks[le.target])
+                task_data = tasks[le.target]
+                # preprocess if needed
+                if le.name in self.preprocessors:
+                    preprocessor = getattr(preprocessors, self.preprocessors[le.name])
+                    task_data = [preprocessor(s1, s2) for s1, s2 in zip(inp, task_data)]
+                le.add(task_data)
 
             # increment counter
             ninsts += 1
@@ -341,10 +352,17 @@ class MultiLabelEncoder(object):
                 continue
 
             for le in self.tasks.values():
+                task_data = tasks[le.target]
+                # preprocess if needed
+                if le.name in self.preprocessors:
+                    preprocessor = getattr(preprocessors, self.preprocessors[le.name])
+                    task_data = [preprocessor(s1, s2) for s1, s2 in zip(inp, task_data)]
+
+                # add data
                 if le.level == 'word':
-                    tasks_dict[le.name].append(le.transform(tasks[le.target]))
+                    tasks_dict[le.name].append(le.transform(task_data))
                 else:
-                    for w in tasks[le.target]:
+                    for w in task_data:
                         tasks_dict[le.name].append(le.transform(w))
 
         return (word, char), tasks_dict
@@ -352,7 +370,8 @@ class MultiLabelEncoder(object):
     def jsonify(self):
         return {'word': self.word.jsonify(),
                 'char': self.char.jsonify(),
-                'tasks': {le.name: le.jsonify() for le in self.tasks.values()}}
+                'tasks': {le.name: le.jsonify() for le in self.tasks.values()},
+                'preprocessors': self.preprocessors}
 
     def save(self, path):
         with open(path, 'w+') as f:
@@ -365,6 +384,8 @@ class MultiLabelEncoder(object):
 
         for task, le in obj['tasks'].items():
             inst.tasks[task] = LabelEncoder.from_json(le)
+
+        inst.preprocessors = obj.get('preprocessors', {})
 
         return inst
 
