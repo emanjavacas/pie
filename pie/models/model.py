@@ -144,7 +144,8 @@ class SimpleModel(BaseModel):
         for task in label_encoder.tasks:
             if task in ('pos', 'lemma'):
                 continue
-            linear_tasks[task] = LinearDecoder(label_encoder.tasks[task], hidden_size * 2)
+            linear_tasks[task] = LinearDecoder(
+                label_encoder.tasks[task], hidden_size * 2)
         if len(linear_tasks) > 0:
             self.linear_tasks = nn.Sequential(linear_tasks)
 

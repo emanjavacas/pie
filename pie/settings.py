@@ -106,11 +106,17 @@ def settings_from_file(config_path):
     settings = Settings(recursive_merge(p, defaults))
 
     # ultimately overwrite settings from environ vars of the form PIE_{var}
+    checked = []
     for k in settings:
         env_k = 'PIE_{}'.format(k.upper())
         if env_k in os.environ:
             # transform to target type and overwrite settings
-            settings[k] = type(settings[k])(os.environ[env_k])
+            settings[k] = type(defaults[k])(os.environ[env_k])
+            checked.append(env_k)
+    for env_k in os.environ:
+        if env_k.startswith('PIE_') and env_k not in checked:
+            raise ValueError(
+                "Environment variable '{}' didn't match. Aborting!".format(env_k))
 
     # store the config path too:
     settings.config_path = config_path

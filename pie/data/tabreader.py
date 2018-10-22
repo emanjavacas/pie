@@ -53,7 +53,7 @@ class LineParser(object):
             if ref[-1] == self.breakline_data:
                 return True
         elif self.breakline_type == 'LENGTH':
-            if len(ref) == self.breakline_data:
+            if len(ref) == int(self.breakline_data):
                 return True
 
     def reset(self):

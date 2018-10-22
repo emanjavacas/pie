@@ -25,19 +25,23 @@ if torch.cuda.is_available():
     torch.cuda.manual_seed(seed)
 
 
-def get_fname_infix(settings):
-    # fname
-    fname = os.path.join(settings.modelpath, settings.modelname)
-
+def get_targets(settings):
     # infix
     targets = []
     for task in settings.tasks:
         if task.get('schedule', {}).get('target'):
             targets.append(task['name'])
-    if not targets and len(settings.tasks) == 1:
-        targets.append(list(settings.tasks.keys())[0])
 
+    if not targets and len(settings.tasks) == 1:
+        targets.append(settings.tasks[0])
+
+    return targets
+
+def get_fname_infix(settings):
+    # fname
+    fname = os.path.join(settings.modelpath, settings.modelname)
     timestamp = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
+    targets = get_targets(settings)
 
     if targets:
         infix = '-'.join(['+'.join(targets), timestamp])

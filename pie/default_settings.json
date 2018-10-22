@@ -14,7 +14,7 @@
   // path to test set (same format as input_path)
   "test_path": "",
   // path to dev set (same format as input_path)
-  "dev_path": null,
+  "dev_path": "",
   // proportion of instances in the dev set (ignored if dev_path is passed)
   "dev_split": 0.05,
   // breakline logic to use to detect sentence boundaries in tsv files
@@ -23,7 +23,7 @@
   // data to use as reference for breaking lines (either "input" or a task name)
   "breakline_ref": "input",
   // needed to decide for a sentence boundary (e.g. an integer for LENGTH)
-  "breakline_data": 15,
+  "breakline_data": "15",
   // safety max length to avoid too long sentences blowing up memory
   "max_sent_len": 35,
   // maximum number of sentences to process

@@ -181,8 +181,8 @@ def pad(batch, pad=0, pos='pre'):
     >>> batch = torch.tensor([[1, 1], [2, 2], [3, 3], [4, 4]])
     >>> pad(batch, pad=-1, pos='pre').tolist()
     [[-1, -1], [1, 1], [2, 2], [3, 3], [4, 4]]
-    >>> pad(batch, pad=5, pos='post).tolist()
-    [[1, 1], [2, 2], [3, 3], [5, 5]]
+    >>> pad(batch, pad=5, pos='post').tolist()
+    [[1, 1], [2, 2], [3, 3], [4, 4], [5, 5]]
     """
     if pos.lower() == 'pre':
         padding = (0, 0) * (batch.dim() - 1) + (1, 0)

@@ -6,6 +6,7 @@ import json
 import tarfile
 import gzip
 import logging
+import contextlib
 
 import tqdm
 import torch
@@ -18,15 +19,22 @@ from pie.settings import Settings
 from .scorer import Scorer
 
 
-def add_gzip_to_tar(string, subpath, tar):
+@contextlib.contextmanager
+def tmpfile(parent='/tmp/'):
     fid = str(uuid.uuid1())
-    tmppath = '/tmp/{}'.format(fid)
+    tmppath = os.path.join(parent, fid)
+    yield tmppath
+    if os.path.isdir(tmppath):
+        shutil.rmtree(tmppath)
+    else:
+        os.remove(tmppath)
 
-    with gzip.GzipFile(tmppath, 'w') as f:
-        f.write(string.encode())
 
-    tar.add(tmppath, arcname=subpath)
-    os.remove(tmppath)
+def add_gzip_to_tar(string, subpath, tar):
+    with tmpfile() as tmppath:
+        with gzip.GzipFile(tmppath, 'w') as f:
+            f.write(string.encode())
+        tar.add(tmppath, arcname=subpath)
 
 
 def get_gzip_from_tar(tar, fpath):
@@ -116,10 +124,9 @@ class BaseModel(nn.Module):
             add_gzip_to_tar(string, path, tar)
 
             # serialize weights
-            tmppath = '/tmp/{}.'.format(str(uuid.uuid1()))
-            torch.save(self.state_dict(), tmppath)
-            tar.add(tmppath, arcname='state_dict.pt')
-            os.remove(tmppath)
+            with tmpfile() as tmppath:
+                torch.save(self.state_dict(), tmppath)
+                tar.add(tmppath, arcname='state_dict.pt')
 
             # serialize current pie commit
             if pie.__commit__ is not None:
@@ -134,6 +141,16 @@ class BaseModel(nn.Module):
         return fpath
 
     @staticmethod
+    def load_settings(fpath):
+        """
+        Load settings from path
+        """
+        import pie
+
+        with tarfile.open(utils.ensure_ext(fpath, 'tar'), 'r') as tar:
+            return Settings(json.loads(get_gzip_from_tar(tar, 'settings.zip')))
+
+    @staticmethod
     def load(fpath):
         """
         Load model from path
@@ -145,35 +162,38 @@ class BaseModel(nn.Module):
             try:
                 commit = get_gzip_from_tar(tar, 'pie-commit.zip')
             except Exception:
-                # no commit in file
                 commit = None
-            if pie.__commit__ is not None and commit is not None \
-               and pie.__commit__ != commit:
+            if (pie.__commit__ and commit) and pie.__commit__ != commit:
                 logging.warn(
                     ("Model {} was serialized with a previous "
                      "version of `pie`. This might result in issues. "
                      "Model commit is {}, whereas current `pie` commit is {}."
                     ).format(fpath, commit, pie.__commit__))
+
             # load label encoder
             le = MultiLabelEncoder.load_from_string(
                 get_gzip_from_tar(tar, 'label_encoder.zip'))
+
             # load model parameters
             params = json.loads(get_gzip_from_tar(tar, 'parameters.zip'))
+
             # instantiate model
             model_type = getattr(pie.models, get_gzip_from_tar(tar, 'class.zip'))
             with utils.shutup():
                 model = model_type(le, *params['args'], **params['kwargs'])
-            # (optional) load settings
+
+            # load settings
             try:
                 settings = Settings(json.loads(get_gzip_from_tar(tar, 'settings.zip')))
                 model._settings = settings
             except:
-                pass
+                logging.warn("Couldn't load settings for model {}!".format(fpath))
+
             # load state_dict
-            tmppath = '/tmp/{}'.format(str(uuid.uuid1()))
-            tar.extract('state_dict.pt', path=tmppath)
-            model.load_state_dict(torch.load(os.path.join(tmppath, 'state_dict.pt')))
-            shutil.rmtree(tmppath)
+            with tmpfile() as tmppath:
+                tar.extract('state_dict.pt', path=tmppath)
+                dictpath = os.path.join(tmppath, 'state_dict.pt')
+                model.load_state_dict(torch.load(dictpath, map_location='cpu'))
 
         model.eval()
 

@@ -309,7 +309,7 @@ class AttentionalDecoder(nn.Module):
     context_dim : int (optional), dimensionality of additional context vectors
     """
     def __init__(self, label_encoder, in_dim, hidden_size, context_dim=0, dropout=0.0,
-                 cell='GRU', init_rnn='default'):
+                 cell='LSTM', init_rnn='default'):
         self.label_encoder = label_encoder
         self.context_dim = context_dim
         self.dropout = dropout

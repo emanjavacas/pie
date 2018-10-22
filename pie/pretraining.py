@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from pie.models import RNNEmbedding, EmbeddingConcat, RNNEncoder
+from pie.models import RNNEmbedding, CNNEmbedding
 from pie import initialization
 from pie import torch_utils
 from pie import utils
@@ -16,10 +16,9 @@ from pie.data import pack_batch, MultiLabelEncoder
 
 
 def repackage_hidden(hidden):
-    if isinstance(hidden, tuple):
-        hidden = hidden[0].detach(), hidden[1].detach()
-    else:
-        hidden = hidden.detach()
+    for l in range(len(hidden)):
+        hidden[l] = hidden[l][0].detach(), hidden[l][1].detach()
+
     return hidden
 
 
@@ -117,10 +116,12 @@ class Dataset:
 
 class LM(nn.Module):
     def __init__(self, label_encoder, wemb_dim, cemb_dim, hidden_size, num_layers=1,
-                 cell='LSTM', dropout=0.0, word_dropout=0.0, init_rnn='default'):
+                 cemb_type='RNN', cell='LSTM', dropout=0.0, word_dropout=0.0,
+                 init_rnn='default'):
 
         self.label_encoder = label_encoder
         self.hidden_size = hidden_size
+        self.num_layers = num_layers
         self.dropout = dropout
         self.word_dropout = word_dropout
         super().__init__()
@@ -135,30 +136,53 @@ class LM(nn.Module):
 
         self.cemb = None
         if cemb_dim > 0:
-            self.cemb = RNNEmbedding(len(label_encoder.char), cemb_dim,
-                                     padding_idx=label_encoder.char.get_pad(),
-                                     cell=cell, init_rnn=init_rnn)
+            if cemb_type.lower() == 'rnn':
+                self.cemb = RNNEmbedding(len(label_encoder.char), cemb_dim,
+                                         padding_idx=label_encoder.char.get_pad(),
+                                         cell=cell, init_rnn=init_rnn)
+            elif cemb_type.lower() == 'cnn':
+                self.cemb = CNNEmbedding(len(label_encoder.char), cemb_dim,
+                                         padding_idx=label_encoder.char.get_pad())
             input_size += self.cemb.embedding_dim
 
         # RNN
-        self.fwd = nn.LSTM(input_size, hidden_size, num_layers=num_layers)
-        self.bwd = nn.LSTM(input_size, hidden_size, num_layers=num_layers)
+        fwd, bwd = [], []
+        rnn_inp, rnn_hid = input_size, hidden_size
+        for layer in range(num_layers):
+
+            if wemb_dim > 0 and num_layers > 1 and layer == (num_layers - 1):
+                rnn_hid = wemb_dim
+
+            l = nn.LSTM(rnn_inp, rnn_hid)
+            self.add_module('fwd_{}'.format(layer), l)
+            fwd.append(l)
+
+            l = nn.LSTM(rnn_inp, rnn_hid)
+            self.add_module('bwd_{}'.format(layer), l)
+            bwd.append(l)
+
+            rnn_inp = hidden_size
+
+        self.fwd = fwd
+        self.bwd = bwd
 
         # Output
-        self.output = nn.Linear(hidden_size, len(label_encoder.word))
+        self.output = nn.Linear(rnn_hid, len(label_encoder.word))
+        if rnn_hid == wemb_dim:
+            print("Tying weights")
+            self.output.weight = self.wemb.weight
 
         self.init()
 
     def init(self):
         if self.wemb is not None:
             initialization.init_embeddings(self.wemb)
-            for m in self.output.children():
-                initialization.init_linear(m)
         else:
             initialization.init_linear(self.output)
 
-        initialization.init_rnn(self.fwd)
-        initialization.init_rnn(self.bwd)
+        for l in range(self.num_layers):
+            initialization.init_rnn(self.fwd[l])
+            initialization.init_rnn(self.bwd[l])
 
     def device(self):
         return next(self.parameters()).device
@@ -180,20 +204,41 @@ class LM(nn.Module):
 
         return emb
 
-    def forward(self, w, wlen, c, clen, hidden, run='fwd'):
+    def forward(self, w, wlen, c, clen, hidden=None, run='fwd'):
         emb = self.embeddings(w, wlen, c, clen)
 
         # input dropout (dropouti)
         emb = torch_utils.sequential_dropout(emb, self.dropout, self.training)
-        emb, unsort = torch_utils.pack_sort(emb, wlen)
-        outs, hidden = getattr(self, run)(emb, hidden)
+        _, sort = torch.sort(wlen, descending=True)
+        _, unsort = sort.sort()
+        emb = nn.utils.rnn.pack_padded_sequence(emb[:, sort], wlen[sort])
+
+        if hidden is None:
+            hidden = [None] * self.num_layers
+        else:
+            for l in range(self.num_layers):
+                hidden[l] = hidden[l][0][:, sort], hidden[l][1][:, sort]
+        new_hidden = []
+
+        inp = emb
+        for layer in range(self.num_layers):
+            outs, lhidden = getattr(self, "{}_{}".format(run, layer))(inp, hidden[layer])
+            # hidden dropout (dropouth)
+            if layer < (self.num_layers - 1):
+                outs, new_wlen = nn.utils.rnn.pad_packed_sequence(outs)
+                torch_utils.sequential_dropout(outs, self.dropout, self.training)
+                outs = nn.utils.rnn.pack_padded_sequence(outs, new_wlen)
+            inp = outs
+            new_hidden.append(lhidden)
+
         outs, _ = nn.utils.rnn.pad_packed_sequence(outs)
         outs = outs[:, unsort]
-        hidden = hidden[0][:, unsort], hidden[1][:, unsort]
+        for l in range(self.num_layers):
+            new_hidden[l] = new_hidden[l][0][:, unsort], new_hidden[l][1][:, unsort]
         # output dropout (dropouto)
-        outs = torch_utils.sequential_dropout(outs, self.dropout, self.training)
+        outs = F.dropout(outs, p=self.dropout, training=self.training)
 
-        return outs, hidden
+        return outs, new_hidden
 
     def loss(self, outs, targets):
         seqlen, batch, _ = outs.size()
@@ -239,6 +284,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_size', type=int, default=50000)
     parser.add_argument('--wemb_dim', type=int, default=64)
     parser.add_argument('--cemb_dim', type=int, default=100)
+    parser.add_argument('--cemb_type', default='rnn')
     parser.add_argument('--hidden_size', type=int, default=100)
     parser.add_argument('--num_layers', type=int, default=1)
     parser.add_argument('--cell', default='LSTM')
@@ -253,9 +299,12 @@ if __name__ == '__main__':
     parser.add_argument('--bptt', type=int, default=50)
     parser.add_argument('--optim', default='SGD')
     parser.add_argument('--lr', type=float, default=0.1)
+    parser.add_argument('--lr_weight', type=float, default=0.75)
     parser.add_argument('--buffer_size', type=int, default=1e+7)
+    parser.add_argument('--weight_decay', type=float, default=2e-6)
     parser.add_argument('--device', default='cpu')
-
+    parser.add_argument('--repfreq', type=int, default=100)
+    parser.add_argument('--save', action='store_true')
     args = parser.parse_args()
 
     # label encoder
@@ -276,7 +325,8 @@ if __name__ == '__main__':
     # model
     model = LM(label_encoder, args.wemb_dim, args.cemb_dim,
                args.hidden_size, num_layers=args.num_layers, cell=args.cell,
-               dropout=args.dropout, word_dropout=args.word_dropout)
+               cemb_type=args.cemb_type, dropout=args.dropout,
+               word_dropout=args.word_dropout)
     print(model)
     print(" * Number of parameters", sum(p.nelement() for p in model.parameters()))
 
@@ -284,12 +334,15 @@ if __name__ == '__main__':
     print("Starting training")
     print()
 
-    lr_weight = 0.75
-    repfreq = 50
     bwd_hidden, fwd_hidden = None, None
 
     # optim
-    optim = getattr(torch.optim, args.optim)(list(model.parameters()), lr=args.lr)
+    if args.optim.lower() == 'sgd':
+        optim = torch.optim.SGD(list(model.parameters()), lr=args.lr, # momentum=0.9,
+                                weight_decay=args.weight_decay)
+    else:
+        optim = getattr(torch.optim, args.optim)(list(model.parameters()), lr=args.lr,
+                                                 weight_decay=args.weight_decay)
 
     # report
     best_loss, best_params, fails = float('inf'), None, 0
@@ -341,10 +394,7 @@ if __name__ == '__main__':
                 ritems += sum(wlen)
                 rbatches += 1
             
-                if rbatches == 100:
-                    print(".", end="", flush=True)
-            
-                if rbatches == repfreq:
+                if rbatches == args.repfreq:
                     print('{}/{}: fwd loss=>{:.3f} bwd loss=>{:.3f} '.format(
                         epoch + 1, tbatches,
                         math.exp(rfwd_loss/rbatches),
@@ -369,8 +419,8 @@ if __name__ == '__main__':
         print("Evaluation: fwd=>{:.3f}, bwd=>{:.3f}".format(
             math.exp(dev_fwd_loss), math.exp(dev_bwd_loss)))
 
-        if (dev_fwd_loss + dev_bwd_loss) < best_loss:
-            best_loss = dev_fwd_loss + dev_bwd_loss
+        if (dev_fwd_loss + dev_bwd_loss) / 2 < best_loss:
+            best_loss = (dev_fwd_loss + dev_bwd_loss) / 2
             best_params = model.to('cpu').state_dict()
             model.to(args.device)
             fails = 0
@@ -378,10 +428,12 @@ if __name__ == '__main__':
             fails += 1
             # reduce LR
             for pgroup in optim.param_groups:
-                pgroup['lr'] = pgroup['lr'] * lr_weight
+                pgroup['lr'] = pgroup['lr'] * args.lr_weight
             print(optim)
 
         if fails == args.patience:
-            print("Stop training with best loss=>{:.3f}".format(math.exp(best_loss/2)))
-            import sys
-            sys.exit()
+            print("Stop training with best loss=>{:.3f}".format(math.exp(best_loss)))
+            break
+
+    if args.save:
+        filename = '-'.join(['pretraining', ])

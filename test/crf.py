@@ -12,7 +12,7 @@ feats = torch.randn(seq_len, batch, vocab)
 trans_ = torch.randn(vocab, vocab)
 targets = torch.Tensor(seq_len, batch).random_(vocab).long()
 mask = torch.arange(seq_len).unsqueeze(0).expand(batch, seq_len).t()
-mask = (mask < lengths.float()).float()
+mask = (mask < lengths).float()
 targets = torch.nn.functional.pad(targets, (0, 0, 1, 0))
 
 

@@ -36,7 +36,7 @@ class TaskScheduler(object):
                 tasks[task]['weight'] = 1.0
             # set initial best
             if tasks[task]['mode'] == 'max':
-                tasks[task]['best'] = 0.0
+                tasks[task]['best'] = -float('inf')
             else:
                 tasks[task]['best'] = float('inf')
 
