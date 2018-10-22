@@ -88,7 +88,7 @@ class BaseModel(nn.Module):
                     tinp, tlen = tasks[task]
                     tinp, tlen = tinp.t().tolist(), tlen.tolist()
                     if le.level == 'char':
-                        trues[task] = [''.join(le.stringify(t)) for t in tinp]
+                        trues[task] = [le.stringify(t) for t in tinp]
                     else:
                         trues[task] = [le.stringify(t, l) for t, l in zip(tinp, tlen)]
 

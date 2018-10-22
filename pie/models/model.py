@@ -58,6 +58,7 @@ class SimpleModel(BaseModel):
         self.pos_crf = pos_crf
         self.custom_cemb_cell = custom_cemb_cell
         self.lemma_context = lemma_context
+        self.lemma_scripts = lemma_scripts
         # only during training
         self.init_rnn = init_rnn
         super().__init__(label_encoder)
@@ -133,10 +134,15 @@ class SimpleModel(BaseModel):
                 elif lemma_context.lower() == 'both':
                     context_dim = hidden_size * 2 + wemb_dim
 
-                self.lemma_decoder = AttentionalDecoder(
-                    label_encoder.tasks['lemma'],
-                    self.cemb.embedding_dim, self.cemb.embedding_dim,
-                    context_dim=context_dim, dropout=dropout, init_rnn=init_rnn)
+                if self.lemma_scripts:
+                    self.lemma_decoder = LinearDecoder(
+                        label_encoder.tasks['lemma'],
+                        self.cemb.embedding_dim + context_dim)
+                else:
+                    self.lemma_decoder = AttentionalDecoder(
+                        label_encoder.tasks['lemma'],
+                        self.cemb.embedding_dim, self.cemb.embedding_dim,
+                        context_dim=context_dim, dropout=dropout, init_rnn=init_rnn)
             else:
                 self.lemma_decoder = LinearDecoder(
                     label_encoder.tasks['lemma'], hidden_size * 2)
@@ -166,6 +172,7 @@ class SimpleModel(BaseModel):
                            'include_lm': self.include_lm,
                            'pos_crf': self.pos_crf,
                            'lemma_context': self.lemma_context,
+                           'lemma_scripts': self.lemma_scripts,
                            'custom_cemb_cell': self.custom_cemb_cell}}
 
     def embedding(self, word, wlen, char, clen):
@@ -223,8 +230,15 @@ class SimpleModel(BaseModel):
             if self.lemma_sequential:
                 cemb_outs = F.dropout(cemb_outs, p=self.dropout, training=self.training)
                 lemma_context = get_lemma_context(outs, wemb, wlen, self.lemma_context)
-                lemma_logits = self.lemma_decoder(
-                    lemma, llen, cemb_outs, clen, context=lemma_context)
+                if self.lemma_scripts:
+                    if lemma_context is not None:
+                        lemma_context = lemma_context.unsqueeze(0) \
+                                                     .repeat(len(cemb_outs), 1, 1)
+                        cemb_outs = torch.cat([cemb_outs, lemma_context], dim=2)
+                    lemma_logits = self.lemma_decoder(cemb_outs)
+                else:
+                    lemma_logits = self.lemma_decoder(
+                        lemma, llen, cemb_outs, clen, context=lemma_context)
             else:
                 lemma_logits = self.lemma_decoder(outs)
             output['lemma'] = self.lemma_decoder.loss(lemma_logits, lemma)
@@ -289,9 +303,18 @@ class SimpleModel(BaseModel):
                 outs = F.dropout(enc_outs[layer], p=self.dropout, training=self.training)
             if self.lemma_sequential:
                 lemma_context = get_lemma_context(outs, wemb, wlen, self.lemma_context)
-                lemma_hyps, _ = self.lemma_decoder.predict_max(
-                    cemb_outs, clen, context=lemma_context)
-                lemma_hyps = [''.join(hyp) for hyp in lemma_hyps]
+                if self.lemma_scripts:
+                    if lemma_context is not None:
+                        lemma_context = lemma_context.unsqueeze(0) \
+                                                     .repeat(len(cemb_outs), 1, 1)
+                        cemb_outs = torch.cat([cemb_outs, lemma_context], dim=2)
+                    lemma_hyps, _ = self.lemma_decoder.predict(cemb_outs, clen)
+                    # remove <eos>, <bos>
+                    lemma_hyps = [hyp[1:-1] for hyp in lemma_hyps]
+                else:
+                    lemma_hyps, _ = self.lemma_decoder.predict_max(
+                        cemb_outs, clen, context=lemma_context)
+                    lemma_hyps = [''.join(hyp) for hyp in lemma_hyps]
             else:
                 lemma_hyps, _ = self.lemma_decoder.predict(outs, wlen)
             preds['lemma'] = lemma_hyps

@@ -127,5 +127,7 @@
   // - "sentence"
   // - "word"
   // - "both"
-  "lemma_context": "sentence"
+  "lemma_context": "sentence",
+  // whether to use edit scripts as targets for lemmatization
+  "lemma_scripts": false
 }
