@@ -45,8 +45,9 @@ class BaseModel(nn.Module):
     """
     Abstract model class defining the model interface
     """
-    def __init__(self, label_encoder, *args, **kwargs):
+    def __init__(self, label_encoder, tasks, *args, **kwargs):
         self.label_encoder = label_encoder
+        self.tasks = {task['name']: task for task in tasks}
         super().__init__()
 
     def loss(self, batch_data):
@@ -63,7 +64,7 @@ class BaseModel(nn.Module):
     def get_args_and_kwargs(self):
         """
         Return a dictionary of {'args': tuple, 'kwargs': dict} that were used
-        to instantiate the model (excluding the label_encoder)
+        to instantiate the model (excluding the label_encoder and tasks)
         """
         raise NotImplementedError
 
@@ -113,6 +114,10 @@ class BaseModel(nn.Module):
         with tarfile.open(fpath, 'w') as tar:
             # serialize label_encoder
             string, path = json.dumps(self.label_encoder.jsonify()), 'label_encoder.zip'
+            add_gzip_to_tar(string, path, tar)
+
+            # serialize tasks
+            string, path = json.dumps(self.tasks), 'tasks.zip'
             add_gzip_to_tar(string, path, tar)
 
             # serialize model class
@@ -174,13 +179,16 @@ class BaseModel(nn.Module):
             le = MultiLabelEncoder.load_from_string(
                 get_gzip_from_tar(tar, 'label_encoder.zip'))
 
+            # load tasks
+            tasks = json.loads(get_gzip_from_tar(tar, 'tasks.zip'))
+
             # load model parameters
             params = json.loads(get_gzip_from_tar(tar, 'parameters.zip'))
 
             # instantiate model
             model_type = getattr(pie.models, get_gzip_from_tar(tar, 'class.zip'))
             with utils.shutup():
-                model = model_type(le, *params['args'], **params['kwargs'])
+                model = model_type(le, tasks, *params['args'], **params['kwargs'])
 
             # load settings
             try:

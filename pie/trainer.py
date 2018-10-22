@@ -146,7 +146,10 @@ class Trainer(object):
         else:
             self.check_freq = 0  # no checks
 
-        tasks = {task['name']: task.get('schedule', {}) for task in settings.tasks}
+        tasks = {}
+        for task in settings.tasks:
+            tasks[task['name']] = task.get('schedule', {})
+            tasks[task['name']]['target'] = task.get('target', False)
         if settings.include_lm:
             tasks['fwd_lm'] = settings.lm_schedule
             tasks['bwd_lm'] = settings.lm_schedule

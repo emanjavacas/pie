@@ -27,27 +27,14 @@ if torch.cuda.is_available():
 
 def get_targets(settings):
     # infix
-    targets = []
-    for task in settings.tasks:
-        if task.get('schedule', {}).get('target'):
-            targets.append(task['name'])
+    return [task['name'] for task in settings.tasks if task.get('target')]
 
-    if not targets and len(settings.tasks) == 1:
-        targets.append(settings.tasks[0])
-
-    return targets
 
 def get_fname_infix(settings):
     # fname
     fname = os.path.join(settings.modelpath, settings.modelname)
     timestamp = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
-    targets = get_targets(settings)
-
-    if targets:
-        infix = '-'.join(['+'.join(targets), timestamp])
-    else:
-        infix = timestamp
-
+    infix = '+'.join(get_targets(settings)) + '-' + timestamp
     return fname, infix
 
 
@@ -58,6 +45,18 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     settings = settings_from_file(args.config_path)
+    # check settings
+    # - check at least and at most one target
+    has_target = False
+    for task in settings.tasks:
+        if len(settings.tasks) == 1:
+            task['target'] = True
+        if task.get('target', False):
+            if has_target:
+                raise ValueError("Got more than one target task")
+            has_target = True
+    if not has_target:
+        raise ValueError("Needs at least one target task")
 
     # datasets
     reader = Reader(settings, settings.input_path)
@@ -89,7 +88,7 @@ if __name__ == '__main__':
         tokens = '{}/{}={:.2f}'.format(*label_encoder.char.get_token_stats())
         print("- {:<15} types={:<10} tokens={:<10}".format("char", types, tokens))
         print()
-        print("::: Target tasks :::")
+        print("::: Tasks :::")
         print()
         for task, le in label_encoder.tasks.items():
             print("- {:<15} target={:<6} level={:<6} vocab={:<6}"
@@ -108,19 +107,14 @@ if __name__ == '__main__':
     else:
         logging.warning("No devset: cannot monitor/optimize training")
 
-    testset = None
-    if settings.test_path:
-        testset = Dataset(settings, Reader(settings, settings.test_path), label_encoder)
-
     # model
-    model = SimpleModel(trainset.label_encoder,
+    model = SimpleModel(label_encoder, settings.tasks,
                         settings.wemb_dim, settings.cemb_dim, settings.hidden_size,
                         settings.num_layers, dropout=settings.dropout,
                         cell=settings.cell, cemb_type=settings.cemb_type,
                         custom_cemb_cell=settings.custom_cemb_cell,
                         word_dropout=settings.word_dropout,
-                        lemma_context=settings.lemma_context,
-                        include_lm=settings.include_lm, pos_crf=settings.pos_crf)
+                        include_lm=settings.include_lm)
 
     # pretrain(/load pretrained) embeddings
     if model.wemb is not None:
@@ -168,8 +162,9 @@ if __name__ == '__main__':
     finally:
         model.eval()
 
-    if testset is not None:
+    if settings.test_path:
         print("Evaluating model on test set")
+        testset = Dataset(settings, Reader(settings, settings.test_path), label_encoder)
         for task in model.evaluate(testset.batch_generator()).values():
             task.print_summary()
 
@@ -178,10 +173,10 @@ if __name__ == '__main__':
     fpath = model.save(fpath, infix=infix, settings=settings)
     print("Saved best model to: [{}]".format(fpath))
 
-    print("Bye!")
-
     if scores is not None:
         with open('{}.txt'.format('-'.join(get_targets(settings))), 'a') as f:
             line = [infix, str(seed), datetime.now().strftime("%Y_%m_%d-%H_%M_%S")] + \
                    ['{}:{:.6f}'.format(task, score) for task, score in scores.items()]
             f.write('{}\n'.format('\t'.join(line)))
+
+    print("Bye!")
