@@ -33,7 +33,7 @@ def get_targets(settings):
             targets.append(task['name'])
 
     if not targets and len(settings.tasks) == 1:
-        targets.append(settings.tasks[0])
+        targets.append(settings.tasks[0]['name'])
 
     return targets
 
@@ -42,7 +42,6 @@ def get_fname_infix(settings):
     fname = os.path.join(settings.modelpath, settings.modelname)
     timestamp = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
     targets = get_targets(settings)
-
     if targets:
         infix = '-'.join(['+'.join(targets), timestamp])
     else:
@@ -180,8 +179,18 @@ if __name__ == '__main__':
 
     print("Bye!")
 
-    if scores is not None:
-        with open('{}.txt'.format('-'.join(get_targets(settings))), 'a') as f:
-            line = [infix, str(seed), datetime.now().strftime("%Y_%m_%d-%H_%M_%S")] + \
-                   ['{}:{:.6f}'.format(task, score) for task, score in scores.items()]
+    if devset is not None:
+        scorers = model.evaluate(devset)
+        scores = []
+        for task, scorer in scorers.items():
+            result = scorer.get_scores()
+            # accuracy
+            scores.append('{}:{:.6f}'.format(task, result['accuracy']))
+            # unknown accuracy
+            scores.append('{}-unknown:{:.6f}'.format(task, result['unknown']['accuracy']))
+        path = '{}.results.{}.csv'.format(
+            settings.modelname, '-'.join(get_targets(settings)))
+        with open(path, 'a') as f:
+            line = [infix, str(seed), datetime.now().strftime("%Y_%m_%d-%H_%M_%S")]
+            line += scores
             f.write('{}\n'.format('\t'.join(line)))
