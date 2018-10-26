@@ -67,15 +67,16 @@ class BaseModel(nn.Module):
         """
         raise NotImplementedError
 
-    def evaluate(self, dataset, total=None):
+    def evaluate(self, dataset, total=None, return_unk=False):
         """
         Get scores per task
         """
         assert not self.training, "Ooops! Inference in training mode. Call model.eval()"
 
-        scorers = {}
+        scorers, unk_scorers = {}, {}
         for task, le in self.label_encoder.tasks.items():
             scorers[task] = Scorer(le, compute_unknown=le.level == 'char')
+            uscorers[task] = Scorer(le, compute_unknown=le.level == 'char')
 
         with torch.no_grad():
             for inp, tasks in tqdm.tqdm(dataset, total=total):
@@ -92,10 +93,28 @@ class BaseModel(nn.Module):
                     else:
                         trues[task] = [le.stringify(t, l) for t, l in zip(tinp, tlen)]
 
+                # get idxs to unknown input tokens
+                uidxs = []
+                if return_unk:
+                    (w, wlen), _ = inp
+                    w, wlen = w.t().tolist(), wlen.tolist()
+                    for b in range(len(w)):
+                        for i in range(len(wlen[b])):
+                            if w[b][i] == self.label_encoder.word.get_unk():
+                                uidxs.append((b, idx))
+
                 # accumulate
                 for task, scorer in scorers.items():
                     scorer.register_batch(preds[task], trues[task])
+                    if uidxs:
+                        utrues, upreds = [], []
+                        for b, idx in uidxs:
+                            upreds.append(preds[task][b][idx])
+                            utrues.append(trues[task][b][idx])
+                        uscorers[task].register_batch([upreds], [utrues])
 
+        if return_unk:
+            return scorers, uscorers
         return scorers
 
     def save(self, fpath, infix=None, settings=None):

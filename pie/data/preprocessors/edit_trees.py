@@ -73,8 +73,11 @@ class Node:
     def children(self):
         return [self.prefix, self.suffix]
 
+    def to_class(self):
+        return get_class(self)
 
-class Leaf:
+
+class Leaf(Node):
     def __init__(self, a, b):
         self.a = a
         self.b = b
@@ -128,7 +131,7 @@ def get_class(node):
         return node.get_span(), (get_class(node.prefix), get_class(node.suffix))
 
 
-def tree_edit_scripts(a, b):
+def make_edit_tree(a, b):
     match = lcs(a, b)
 
     # check if leaf
@@ -144,7 +147,7 @@ def tree_edit_scripts(a, b):
         return node
 
 
-def apply_tree_edit_scripts(tclass, inp, prefix=False):
+def apply_edit_tree(tclass, inp, prefix=False):
     if isinstance(tclass, Rule):
         # apply leaf
         return apply_rule(tclass, inp, prefix)
@@ -152,6 +155,6 @@ def apply_tree_edit_scripts(tclass, inp, prefix=False):
         # split and recur on non-terminals
         (plen, slen), (p, s) = tclass
         infix = inp[plen:len(inp)-slen]
-        prefix = apply_tree_edit_scripts(p, inp[:plen], prefix=True)
-        suffix = apply_tree_edit_scripts(s, inp[len(inp)-slen:])
+        prefix = apply_edit_tree(p, inp[:plen], prefix=True)
+        suffix = apply_edit_tree(s, inp[len(inp)-slen:])
         return prefix + infix + suffix
