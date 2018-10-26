@@ -47,12 +47,11 @@ import re
 from os import getenv
 
 model_file = getenv("PIE_MODEL")
-LOWER = getenv("PIE_LOWER", True)
 BATCH = int(getenv("PIE_BATCH", 32))
 DEVICE = getenv("PIE_DEVICE", "cpu")
 
 app = Flask(__name__)
-tagger = Tagger(device=DEVICE, batch_size=BATCH, lower=LOWER)
+tagger = Tagger(device=DEVICE, batch_size=BATCH)
 
 
 def model_spec(inp):  # Taken from tag.py. Maybe it could be in utils to avoid such a repetition ?
@@ -81,13 +80,17 @@ for model, tasks in model_spec(model_file):
     tasks = tasks or tagger.models[-1][0].label_encoder.tasks
 
 
-def iter_data(data, lower=LOWER):
+def iter_data(data, lower=False):
     for sentence in simple_tokenizer(data, lower=lower):
         yield sentence, len(sentence)
 
 
 @app.route("/", methods=["POST", "GET"])
 def index():
+    lower = request.args.get("lower", False)
+    if lower:
+        lower = True
+
     if request.method == "GET":
         data = request.args.get("data")
     else:
@@ -98,7 +101,7 @@ def index():
 
     output = ""
     header = False
-    for chunk in chunks(iter_data(data), size=BATCH):
+    for chunk in chunks(iter_data(data, lower=lower), size=BATCH):
         sents, lengths = zip(*chunk)
 
         tagged, tasks = tagger.tag(sents=sents, lengths=lengths)
