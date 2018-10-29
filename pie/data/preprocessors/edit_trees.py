@@ -39,10 +39,11 @@ def depth_first(root):
 
 
 class Node:
-    def __init__(self, _prefix, _infix, _suffix):
+    def __init__(self, _prefix, _infix, _suffix, target):
         self._prefix = _prefix  # prefix of the string at this level
         self._infix = _infix    # current string
         self._suffix = _suffix  # suffix of the string at this level
+        self.target = target
         # children
         self.prefix = None
         self.suffix = None
@@ -75,6 +76,16 @@ class Node:
 
     def to_class(self):
         return get_class(self)
+
+    def to_tuple(self):
+        if isinstance(self, Leaf):
+            # full replacement
+            return (len(self.a), len(self.b), 0, "")
+        else:
+            plen, slen = self.get_span()
+            start = self.target.find(self._infix)
+            pstring, sstring = self.target[:start], self.target[start+len(self._infix):]
+            return (plen, pstring, slen, sstring)
 
 
 class Leaf(Node):
@@ -141,7 +152,7 @@ def make_edit_tree(a, b):
     # parent
     else:
         (pre_a, suf_a), (pre_b, suf_b) = get_segments(a, b, match)
-        node = Node(pre_a, a[match.a:match.a+match.size], suf_a)
+        node = Node(pre_a, a[match.a:match.a+match.size], suf_a, b)
         node.prefix = make_edit_tree(pre_a, pre_b)
         node.suffix = make_edit_tree(suf_a, suf_b)
         return node
@@ -158,3 +169,8 @@ def apply_edit_tree(tclass, inp, prefix=False):
         prefix = apply_edit_tree(p, inp[:plen], prefix=True)
         suffix = apply_edit_tree(s, inp[len(inp)-slen:])
         return prefix + infix + suffix
+
+
+def apply_tuple(tup, inp):
+    plen, pstring, slen, sstring = tup
+    return pstring + inp[plen:-slen] + sstring
