@@ -85,7 +85,7 @@ def iter_data(data, lower=False):
         yield sentence, len(sentence)
 
 
-@app.route("/", methods=["POST", "GET"])
+@app.route("/", methods=["POST", "GET", "OPTIONS"])
 def index():
     lower = request.args.get("lower", False)
     if lower:
@@ -112,7 +112,8 @@ def index():
                 header = True
             for token, tags in sent:
                 output += sep.join([token] + list(tags)) + '\r\n'
-    return Response(
-        output,
-        mimetype="text/plain"
-    )
+
+    return output, 200, {
+        'Content-Type': 'text/plain',
+        'Access-Control-Allow-Origin': '*'
+    }
