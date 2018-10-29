@@ -73,7 +73,7 @@ class BaseModel(nn.Module):
         """
         assert not self.training, "Ooops! Inference in training mode. Call model.eval()"
 
-        scorers, unk_scorers = {}, {}
+        scorers, uscorers = {}, {}
         for task, le in self.label_encoder.tasks.items():
             scorers[task] = Scorer(le, compute_unknown=le.level == 'char')
             uscorers[task] = Scorer(le, compute_unknown=le.level == 'char')
