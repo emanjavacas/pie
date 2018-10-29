@@ -1,12 +1,8 @@
 
 import os
-import shutil
-import uuid
 import json
 import tarfile
-import gzip
 import logging
-import contextlib
 
 import tqdm
 import torch
@@ -17,28 +13,6 @@ from pie.data import MultiLabelEncoder
 from pie.settings import Settings
 
 from .scorer import Scorer
-
-
-@contextlib.contextmanager
-def tmpfile(parent='/tmp/'):
-    fid = str(uuid.uuid1())
-    tmppath = os.path.join(parent, fid)
-    yield tmppath
-    if os.path.isdir(tmppath):
-        shutil.rmtree(tmppath)
-    else:
-        os.remove(tmppath)
-
-
-def add_gzip_to_tar(string, subpath, tar):
-    with tmpfile() as tmppath:
-        with gzip.GzipFile(tmppath, 'w') as f:
-            f.write(string.encode())
-        tar.add(tmppath, arcname=subpath)
-
-
-def get_gzip_from_tar(tar, fpath):
-    return gzip.open(tar.extractfile(fpath)).read().decode().strip()
 
 
 class BaseModel(nn.Module):
@@ -132,30 +106,30 @@ class BaseModel(nn.Module):
         with tarfile.open(fpath, 'w') as tar:
             # serialize label_encoder
             string, path = json.dumps(self.label_encoder.jsonify()), 'label_encoder.zip'
-            add_gzip_to_tar(string, path, tar)
+            utils.add_gzip_to_tar(string, path, tar)
 
             # serialize model class
             string, path = str(type(self).__name__), 'class.zip'
-            add_gzip_to_tar(string, path, tar)
+            utils.add_gzip_to_tar(string, path, tar)
 
             # serialize parameters
             string, path = json.dumps(self.get_args_and_kwargs()), 'parameters.zip'
-            add_gzip_to_tar(string, path, tar)
+            utils.add_gzip_to_tar(string, path, tar)
 
             # serialize weights
-            with tmpfile() as tmppath:
+            with utils.tmpfile() as tmppath:
                 torch.save(self.state_dict(), tmppath)
                 tar.add(tmppath, arcname='state_dict.pt')
 
             # serialize current pie commit
             if pie.__commit__ is not None:
                 string, path = pie.__commit__, 'pie-commit.zip'
-                add_gzip_to_tar(string, path, tar)
+                utils.add_gzip_to_tar(string, path, tar)
 
             # if passed, serialize settings
             if settings is not None:
                 string, path = json.dumps(settings), 'settings.zip'
-                add_gzip_to_tar(string, path, tar)
+                utils.add_gzip_to_tar(string, path, tar)
 
         return fpath
 
@@ -167,7 +141,7 @@ class BaseModel(nn.Module):
         import pie
 
         with tarfile.open(utils.ensure_ext(fpath, 'tar'), 'r') as tar:
-            return Settings(json.loads(get_gzip_from_tar(tar, 'settings.zip')))
+            return Settings(json.loads(utils.get_gzip_from_tar(tar, 'settings.zip')))
 
     @staticmethod
     def load(fpath):
@@ -179,7 +153,7 @@ class BaseModel(nn.Module):
         with tarfile.open(utils.ensure_ext(fpath, 'tar'), 'r') as tar:
             # check commit
             try:
-                commit = get_gzip_from_tar(tar, 'pie-commit.zip')
+                commit = utils.get_gzip_from_tar(tar, 'pie-commit.zip')
             except Exception:
                 commit = None
             if (pie.__commit__ and commit) and pie.__commit__ != commit:
@@ -191,25 +165,26 @@ class BaseModel(nn.Module):
 
             # load label encoder
             le = MultiLabelEncoder.load_from_string(
-                get_gzip_from_tar(tar, 'label_encoder.zip'))
+                utils.get_gzip_from_tar(tar, 'label_encoder.zip'))
 
             # load model parameters
-            params = json.loads(get_gzip_from_tar(tar, 'parameters.zip'))
+            params = json.loads(utils.get_gzip_from_tar(tar, 'parameters.zip'))
 
             # instantiate model
-            model_type = getattr(pie.models, get_gzip_from_tar(tar, 'class.zip'))
+            model_type = getattr(pie.models, utils.get_gzip_from_tar(tar, 'class.zip'))
             with utils.shutup():
                 model = model_type(le, *params['args'], **params['kwargs'])
 
             # load settings
             try:
-                settings = Settings(json.loads(get_gzip_from_tar(tar, 'settings.zip')))
+                settings = Settings(
+                    json.loads(utils.get_gzip_from_tar(tar, 'settings.zip')))
                 model._settings = settings
             except:
                 logging.warn("Couldn't load settings for model {}!".format(fpath))
 
             # load state_dict
-            with tmpfile() as tmppath:
+            with utils.tmpfile() as tmppath:
                 tar.extract('state_dict.pt', path=tmppath)
                 dictpath = os.path.join(tmppath, 'state_dict.pt')
                 model.load_state_dict(torch.load(dictpath, map_location='cpu'))

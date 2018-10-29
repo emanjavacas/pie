@@ -1,5 +1,8 @@
 
 import os
+import shutil
+import uuid
+import gzip
 import logging
 import sys
 import glob
@@ -109,6 +112,28 @@ def shutup():
         finally:
             sys.stdout = old_out
             sys.stderr = old_err
+
+
+@contextmanager
+def tmpfile(parent='/tmp/'):
+    fid = str(uuid.uuid1())
+    tmppath = os.path.join(parent, fid)
+    yield tmppath
+    if os.path.isdir(tmppath):
+        shutil.rmtree(tmppath)
+    else:
+        os.remove(tmppath)
+
+
+def add_gzip_to_tar(string, subpath, tar):
+    with tmpfile() as tmppath:
+        with gzip.GzipFile(tmppath, 'w') as f:
+            f.write(string.encode())
+        tar.add(tmppath, arcname=subpath)
+
+
+def get_gzip_from_tar(tar, fpath):
+    return gzip.open(tar.extractfile(fpath)).read().decode().strip()
 
 
 class GitInfo():
