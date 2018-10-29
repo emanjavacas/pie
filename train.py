@@ -174,12 +174,11 @@ if __name__ == '__main__':
 
     # save model
     fpath, infix = get_fname_infix(settings)
-    fpath = model.save(fpath, infix=infix, settings=settings)
-    print("Saved best model to: [{}]".format(fpath))
+    if not settings.run_test:
+        fpath = model.save(fpath, infix=infix, settings=settings)
+        print("Saved best model to: [{}]".format(fpath))
 
-    print("Bye!")
-
-    if devset is not None:
+    if devset is not None and not settings.run_test:
         scorers = model.evaluate(devset)
         scores = []
         for task, scorer in scorers.items():
@@ -194,3 +193,5 @@ if __name__ == '__main__':
             line = [infix, str(seed), datetime.now().strftime("%Y_%m_%d-%H_%M_%S")]
             line += scores
             f.write('{}\n'.format('\t'.join(line)))
+
+    print("Bye!")

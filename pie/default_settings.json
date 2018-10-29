@@ -6,6 +6,8 @@
   "modelname": "model",
   // model path to be used for saving
   "modelpath": "./",
+  // run test (no serialization)
+  "run_test": false,
 
   // * Data
   // path or unix-like expression to file(s)/dir with training data:
