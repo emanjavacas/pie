@@ -2,7 +2,8 @@
 import math
 
 import torch
-from torch import nn
+import torch.nn as nn
+from pie import torch_utils
 
 
 class CustomLSTMCell(nn.Module):
@@ -101,24 +102,47 @@ class CustomLSTM(nn.Module):
 
 
 class CustomBiLSTM(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers=1):
+    def __init__(self, input_size, hidden_size, num_layers=1, dropout=0.0):
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
         super().__init__()
-        self.fwd = CustomLSTM(input_size, hidden_size)
-        self.bwd = CustomLSTM(input_size, hidden_size)
+
+        layers = []
+        rnn_inp = input_size
+        for layer in range(num_layers):
+            fwd = CustomLSTM(rnn_inp, hidden_size)
+            bwd = CustomLSTM(rnn_inp, hidden_size)
+            layers.append((fwd, bwd))
+            self.add_module('fwd_{}'.format(layer), fwd)
+            self.add_module('bwd_{}'.format(layer), bwd)
+            rnn_inp = hidden_size * 2
+        self.layers = layers
 
     def forward(self, inputs, hidden=None, lengths=None):
-        fwd_hidden, bwd_hidden = None, None
         if hidden is not None:
             h0, c0 = hidden
-            (fwd_h0, bwd_h0), (fwd_c0, bwd_c0) = h0.split(1, dim=0), c0.split(1, dim=0)
-            fwd_hidden, bwd_hidden = (fwd_h0, fwd_c0), (bwd_h0, bwd_c0)
+            h0, c0 = h0.view(len(self.layers), 2, -1), c0.view(len(self.layers), 2, -1)
+            (fwd_h0, bwd_h0), (fwd_c0, bwd_c0) = h0.split(1, dim=1), c0.split(1, dim=1)
+            fwd_hidden = tuple(zip(fwd_h0, fwd_c0))
+            bwd_hidden = tuple(zip(fwd_h0, fwd_c0))
+        else:
+            fwd_hidden = bwd_hidden = [None] * len(self.layers)
 
-        fwd_outs, (fwd_h, fwd_c) = self.fwd(
-            inputs, fwd_hidden, lengths=lengths)
-        bwd_outs, (bwd_h, bwd_c) = self.bwd(
-            inputs, bwd_hidden, lengths=lengths, backward=True)
+        hn, cn = [], []
+        for layer, (fwd, bwd) in enumerate(self.layers):
+            fwd_outs, (fwd_h1, fwd_c1) = fwd(
+                inputs, fwd_hidden[layer], lengths=lengths)
+            bwd_outs, (bwd_h1, bwd_c1) = bwd(
+                inputs, bwd_hidden[layer], lengths=lengths, backward=True)
+            # compute new input (seq_len x batch x 2 * hidden_size)
+            inputs = torch.cat([fwd_outs, bwd_outs], dim=2)
+            # apply dropout
+            if layer < self.num_layers - 1:
+                inputs = torch_utils.sequential_dropout(
+                    inputs, self.dropout, self.training)
+            # store hidden
+            hn.append(torch.cat([fwd_h1, bwd_h1], dim=0))
+            cn.append(torch.cat([fwd_c1, bwd_c1], dim=0))
 
-        outs = torch.cat([fwd_outs, bwd_outs], dim=2)
-        h, c = (torch.cat([fwd_h, bwd_h], dim=0), torch.cat([fwd_c, bwd_c], dim=0))
-
-        return outs, (h, c)
+        return inputs, (torch.cat(hn, dim=0), torch.cat(cn, dim=0))

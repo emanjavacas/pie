@@ -41,8 +41,9 @@ class SimpleModel(BaseModel):
     """
     def __init__(self, label_encoder, wemb_dim, cemb_dim, hidden_size, num_layers,
                  dropout=0.0, word_dropout=0.0, merge_type='concat', cemb_type='RNN',
-                 cell='LSTM', custom_cemb_cell=False, lemma_context="sentence",
-                 include_lm=True, pos_crf=True, init_rnn='xavier_uniform'):
+                 cemb_layers=1, cell='LSTM', custom_cemb_cell=False,
+                 lemma_context="sentence", include_lm=True, pos_crf=True,
+                 init_rnn='xavier_uniform'):
         # args
         self.wemb_dim = wemb_dim
         self.cemb_dim = cemb_dim
@@ -54,6 +55,7 @@ class SimpleModel(BaseModel):
         self.word_dropout = word_dropout
         self.merge_type = merge_type
         self.cemb_type = cemb_type
+        self.cemb_layers = cemb_layers
         self.include_lm = include_lm
         self.pos_crf = pos_crf
         self.custom_cemb_cell = custom_cemb_cell
@@ -74,13 +76,15 @@ class SimpleModel(BaseModel):
 
         self.cemb = None
         if cemb_type.upper() == 'RNN':
-            self.cemb = RNNEmbedding(len(label_encoder.char), cemb_dim,
-                                     padding_idx=label_encoder.char.get_pad(),
-                                     custom_lstm=custom_cemb_cell,
-                                     cell=cell, init_rnn=init_rnn)
+            self.cemb = RNNEmbedding(
+                len(label_encoder.char), cemb_dim,
+                padding_idx=label_encoder.char.get_pad(),
+                custom_lstm=custom_cemb_cell, dropout=dropout,
+                num_layers=cemb_layers, cell=cell, init_rnn=init_rnn)
         elif cemb_type.upper() == 'CNN':
-            self.cemb = CNNEmbedding(len(label_encoder.char), cemb_dim,
-                                     padding_idx=label_encoder.char.get_pad())
+            self.cemb = CNNEmbedding(
+                len(label_encoder.char), cemb_dim,
+                padding_idx=label_encoder.char.get_pad())
 
         self.merger = None
         if self.cemb is not None and self.wemb is not None:
@@ -136,6 +140,7 @@ class SimpleModel(BaseModel):
                 self.lemma_decoder = AttentionalDecoder(
                     label_encoder.tasks['lemma'],
                     self.cemb.embedding_dim, self.cemb.embedding_dim,
+                    num_layers=cemb_layers,
                     context_dim=context_dim, dropout=dropout, init_rnn=init_rnn)
             else:
                 self.lemma_decoder = LinearDecoder(
@@ -163,6 +168,7 @@ class SimpleModel(BaseModel):
                            'cell': self.cell,
                            'merge_type': self.merge_type,
                            'cemb_type': self.cemb_type,
+                           'cemb_layers': self.cemb_layers,
                            'include_lm': self.include_lm,
                            'pos_crf': self.pos_crf,
                            'lemma_context': self.lemma_context,
