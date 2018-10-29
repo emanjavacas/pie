@@ -1,10 +1,10 @@
 
 import collections
 
-from .base_reader import BaseReader
+from .base_reader import BaseReader, LineParseException
 
 
-MORPHMAPPER = {
+PROIELMORPH = {
     "CASE": "case",
     "DEGR": "degree",
     "GEND": "gender",
@@ -18,41 +18,56 @@ MORPHMAPPER = {
 }
 
 
-def parse_morph(morph):
-    """
-    Parse morphology field into a dictionary
-    """
-    vals = morph.split('|')
-    output = {}
-    for val in vals:
-        key, val = val[:-1], val[-1]
-        if MORPHMAPPER.get(key, None) is not None:
-            output[MORPHMAPPER[key]] = val
-
-    return output
-
-
-def get_lines(fpath):
-    """
-    Get lines from a conll file
-    """
+def get_lines(fpath, _parse_morph):
     with open(fpath) as f:
-        for line in f:
-            line, tasks = line.strip().split(), {}
+        for line_num, line in enumerate(f):
+            line = line.strip()
+            if not line:
+                continue
+            elif line.startswith('#'):
+                continue
+            else:
+                num, form, lemma, pos, ppos, morph, *_ = line.split('\t')
+                tasks = {'lemma': lemma, 'pos': pos, 'ppos': ppos}
+                for task, val in _parse_morph(morph).items():
+                    tasks[task] = val
+                yield form, tasks
 
-            if len(line) == 0:
-                yield None
+
+def get_sents(fpath, parse_morph_):
+    lines = 0
+    with open(fpath) as f:
+        sent, prev, tasks = [], 0, collections.defaultdict(list)
+        for line in f:
+            line = line.strip()
+
+            if not line:
+                # new line
+                yield sent, dict(tasks)
+                sent, prev, tasks = [], 0, collections.defaultdict(list)
+                lines += 1
+
+            elif line.startswith('#'):
+                # skip metadata
+                continue
 
             else:
-                _, form, lemma, pos, ppos, morph, head, dep, *_ = line
-                tasks['lemma'] = lemma
-                tasks['pos'] = pos
-                for key, val in parse_morph(morph).items():
-                    tasks[key] = val
-                tasks['head'] = head
-                tasks['dep'] = dep
+                num, form, lemma, pos, ppos, morph, *_ = line.split('\t')
+                try:
+                    num = int(num)
+                    assert num == prev + 1, (num, prev)
+                    prev = num
 
-                yield form, tasks
+                    sent.append(form)
+                    tasks['lemma'].append(lemma)
+                    tasks['pos'].append(pos)
+                    tasks['ppos'].append(ppos)
+                    for key, val in parse_morph_(morph).items():
+                        tasks[key] = val
+                    
+                except ValueError:
+                    # 20-22	"průběžná_inventarizace"
+                    continue
 
 
 class CONLLReader(BaseReader):
@@ -67,9 +82,25 @@ class CONLLReader(BaseReader):
     """
     def __init__(self, settings, fpath):
         super(CONLLReader, self).__init__(settings, fpath)
-
         self.max_sent_len = settings.max_sent_len
-        self.fields = ('lemma', 'pos', 'ppos', 'morph', 'head', 'dep')
+
+    def _parse_morph(self, morph):
+        if morph == '_':
+            return output
+        output = {}
+        for val in morph.split("|"):
+            task, val = val[:-1], val[-1]
+            if PROIELMORPH.get(task):
+                output[PROIELMORPH[task]] = val
+        return output
+
+    def parse_morph_(self, morph):
+        morph = self._parse_morph(morph)
+        output = {}
+        for task in self.tasks:
+            if task not in ('lemma', 'pos', 'ppos'):
+                output[task] = morph.get(task, '_')
+        return output
 
     def parselines(self):
         """
@@ -77,41 +108,31 @@ class CONLLReader(BaseReader):
         """
         inp, tasks_data = [], collections.defaultdict(list)
 
-        for line_num, line in enumerate(get_lines(self.fpath)):
-
-            if line is None:
-                if len(inp) > 0:
-                    # TODO: parse dependency graph
-                    yield inp, dict(tasks_data)
-                    inp, tasks_data = [], collections.defaultdict(list)
-            else:
-                form, tasks = line
-                inp.append(form)
-                for task in self.tasks:
-                    tasks_data[task].append(tasks.get(task, '_'))
-                tasks_data['head'].append(tasks['head'])
-                tasks_data['dep'].append(tasks['dep'])
-
-                if len(inp) >= self.max_sent_len:
-                    # TODO: parse dependency graph
-                    yield inp, dict(tasks_data)
-                    inp, tasks_data = [], collections.defaultdict(list)
-
-        if len(inp) > 0:
-            # TODO: parse dependency graph
-            yield inp, dict(tasks_data)
-            inp, tasks_data = [], collections.defaultdict(list)
+        for inp, tasks in get_sents(self.fpath, self.parse_morph_):
+            if len(inp) > self.max_sent_len:
+                inp = inp[:self.max_sent_len]
+                for task in tasks:
+                    tasks[task] = tasks[task][:self.max_sent_len]
+            yield inp, tasks
 
     def get_tasks(self):
         """
         All conll tasks (as in proiel files) in expected order
         """
         output = set()
-        for line in get_lines(self.fpath):
-            if line is not None:
-                _, tasks = line
-                for task in tasks:
-                    if task not in ('head', 'dep'):
-                        output.add(task)
+        for _, tasks in get_lines(self.fpath, self._parse_morph):
+            for task in tasks:
+                output.add(task)
 
         return tuple(output)
+
+
+class CONLLUReader(CONLLReader):
+    def _parse_morph(self, morph):
+        if morph == '_':
+            return {}
+        output = {}
+        for val in morph.split("|"):
+            key, val = val.split("=")
+            output[key] = val
+        return output

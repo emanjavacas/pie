@@ -5,7 +5,7 @@ import random
 from pie.utils import get_filenames
 
 from .tabreader import TabReader
-from .conll_reader import CONLLReader
+from .conll_reader import CONLLReader, CONLLUReader
 from .tei_reader import TEIReader
 
 
@@ -50,6 +50,9 @@ class Reader(object):
 
         elif fpath.endswith('conll'):
             return CONLLReader
+
+        elif fpath.endswith('conllu'):
+            return CONLLUReader
 
         elif fpath.endswith('xml'):
             return TEIReader
