@@ -109,10 +109,15 @@ class CONLLReader(BaseReader):
         inp, tasks_data = [], collections.defaultdict(list)
 
         for inp, tasks in get_sents(self.fpath, self.parse_morph_):
-            if len(inp) > self.max_sent_len:
-                inp = inp[:self.max_sent_len]
+            while len(inp) > self.max_sent_len:
+                inp_ = inp[:self.max_sent_len]
+                tasks_ = {}
                 for task in tasks:
-                    tasks[task] = tasks[task][:self.max_sent_len]
+                    tasks_[task] = tasks[task][:self.max_sent_len]
+                yield inp_, tasks_
+                inp = inp[self.max_sent_len:]
+                for task in tasks:
+                    tasks[task] = tasks[task][self.max_sent_len:]
             yield inp, tasks
 
     def get_tasks(self):
