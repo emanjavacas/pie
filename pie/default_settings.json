@@ -25,21 +25,21 @@
   // data to use as reference for breaking lines (either "input" or a task name)
   "breakline_ref": "input",
   // needed to decide for a sentence boundary (e.g. an integer for LENGTH)
-  "breakline_data": "15",
+  "breakline_data": "20",
   // safety max length to avoid too long sentences blowing up memory
   "max_sent_len": 35,
   // maximum number of sentences to process
   "max_sents": 1000000,
   // maximum vocabulary size
-  "char_max_size": 100,
+  "char_max_size": 500,
   "word_max_size": 20000,
   // min freq per item to be incorporated in the vocabulary (only used if *_max_size is 0)
   "char_min_freq": 1,
   "word_min_freq": 1,
-  // header
+  // tab-format only:
   "header": true,
-  // expected order of tasks for tabreader
-  "tasks_order": ["lemma", "pos"], // only for TabReader
+  "tasks_order": ["lemma", "pos"],
+
   // task-related config
   "tasks": [
     // each task's name refers to the corresponding data field
@@ -60,7 +60,7 @@
       "context": "none",
       // at what sentence encoder layer do we do this task?
       "layer": -1,
-      // encoder settings ("max_size", "min_freq", "preprocessor")
+      // encoder settings ("max_size", "min_freq", "preprocessor", "eos", "bos")
       "settings": {
 	"bos": true, "eos": true
       },
@@ -79,9 +79,6 @@
       // while processing the files if the field is missing use this instead
       // e.g. "copy": copy over the token form; "UNK": use "UNK"
       "default": "copy"
-    },
-    {
-      "name": "pos", "default": "UNK"
     }
   ],
 

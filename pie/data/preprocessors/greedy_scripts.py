@@ -1,5 +1,12 @@
 
 import difflib
+import collections
+
+
+Keep = collections.namedtuple('Keep', [])
+Replace = collections.namedtuple('Replace', ['source', 'target'])
+Insert = collections.namedtuple('Insert', ['string', 'pos'])
+Delete = collections.namedtuple('Delete', ['string'])
 
 
 def get_edit_scripts_(s1, s2):
@@ -95,5 +102,9 @@ def get_edit_scripts_(s1, s2):
             i += len(adds) + len(deletes)
 
 
-def greedy_scripts(tok, lem):
+def transform(lem, tok):
     return tuple(get_edit_scripts_(tok, lem))
+
+
+def inverse_transform(pred, tok):
+    return None

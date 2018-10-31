@@ -252,7 +252,7 @@ class Trainer(object):
 
         for b, batch in enumerate(self.dataset.batch_generator()):
             # get loss
-            loss = self.model.loss(batch)
+            loss = self.model.loss(batch, "pos", "lemma")  # sample task
 
             if not loss:
                 raise ValueError("Got empty loss, no tasks defined?")
@@ -278,8 +278,7 @@ class Trainer(object):
 
             if self.check_freq > 0 and b > 0 and b % self.check_freq == 0:
                 if dev is not None:
-                    scores = self.run_check(dev)
-                    return scores
+                    return self.run_check(dev)
 
     def train_epochs(self, epochs, dev=None):
         """

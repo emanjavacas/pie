@@ -13,12 +13,12 @@ from .encoder import RNNEncoder
 from .base_model import BaseModel
 
 
-def get_context(outs, wemb, wlen, lemma_context):
-    if lemma_context.lower() == 'sentence':
+def get_context(outs, wemb, wlen, context_type):
+    if context_type.lower() == 'sentence':
         return torch_utils.flatten_padded_batch(outs, wlen)
-    elif lemma_context.lower() == 'word':
+    elif context_type.lower() == 'word':
         return torch_utils.flatten_padded_batch(wemb, wlen)
-    elif lemma_context.lower() == 'both':
+    elif context_type.lower() == 'both':
         outs = torch_utils.flatten_padded_batch(outs, wlen)
         wemb = torch_utils.flatten_padded_batch(wemb, wlen)
         return torch.cat([outs, wemb], -1)
@@ -42,8 +42,8 @@ class SimpleModel(BaseModel):
     """
     def __init__(self, label_encoder, tasks, wemb_dim, cemb_dim, hidden_size, num_layers,
                  dropout=0.0, word_dropout=0.0, merge_type='concat', cemb_type='RNN',
-                 cell='LSTM', custom_cemb_cell=False, init_rnn='xavier_uniform',
-                 include_lm=True):
+                 cemb_layers=1, cell='LSTM', custom_cemb_cell=False,
+                 init_rnn='xavier_uniform', include_lm=True):
         # args
         self.wemb_dim = wemb_dim
         self.cemb_dim = cemb_dim
@@ -103,7 +103,7 @@ class SimpleModel(BaseModel):
         # Encoder
         self.encoder = None
         needs_encoder = False
-        for task in self.tasks:
+        for task in self.tasks.values():
             if task['level'] == 'token':
                 needs_encoder = True
                 break
@@ -118,15 +118,15 @@ class SimpleModel(BaseModel):
                 init_rnn=init_rnn)
 
         # Decoders
-        decoders = OrderedDict()
+        decoders = {}
         for tname, task in self.tasks.items():
             # linear
             if task['decoder'].lower() == 'linear':
-                decoders[task] = LinearDecoder(
+                decoder = LinearDecoder(
                     label_encoder.tasks[tname], hidden_size * 2)
             # crf
             elif task['decoder'].lower() == 'crf':
-                decoders[task] = CRFDecoder(
+                decoder = CRFDecoder(
                     label_encoder.tasks[tname], hidden_size * 2)
             # attentional
             elif task['decoder'].lower() == 'attentional':
@@ -146,16 +146,19 @@ class SimpleModel(BaseModel):
                 elif task['context'].lower() == 'both':
                     context_dim = hidden_size * 2 + wemb_dim
 
-                decoders[task] = AttentionalDecoder(
-                    label_encoder.tasks[task], self.cemb.embedding_dim,
+                decoder = AttentionalDecoder(
+                    label_encoder.tasks[tname], self.cemb.embedding_dim,
                     self.cemb.embedding_dim, context_dim=context_dim, dropout=dropout,
-                    num_layers=cemb_layers, dropout=dropout, init_rnn=init_rnn)
+                    num_layers=cemb_layers, init_rnn=init_rnn)
 
             else:
                 raise ValueError(
                     "Unknown decoder type {}. Task: {}".format(task['decoder'], tname))
 
-        self.decoders = nn.Sequential(decoders)
+            self.add_module('{}_decoder'.format(tname), decoder)
+            decoders[tname] = decoder
+
+        self.decoders = decoders
 
         # - LM
         if self.include_lm:
@@ -223,10 +226,10 @@ class SimpleModel(BaseModel):
             elif isinstance(decoder, CRFDecoder):
                 logits = decoder(outs)
                 output[task] = decoder.loss(logits, target, length)
-            else:
+            elif isinstance(decoder, AttentionalDecoder):
                 cemb_outs = F.dropout(cemb_outs, p=self.dropout, training=self.training)
                 context = get_context(outs, wemb, wlen, self.tasks[task]['context'])
-                logits = decoder(inp, length, cemb_outs, clen, context)
+                logits = decoder(target, length, cemb_outs, clen, context)
                 output[task] = decoder.loss(logits, target)
 
         # (LM)

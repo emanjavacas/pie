@@ -124,11 +124,11 @@ class LabelEncoder(object):
         self.table = {sym: idx for idx, sym in enumerate(self.inverse_table)}
         self.fitted = True
 
-    def preprocess(self, seq, seq2):
+    def preprocess(self, tseq, rseq):
         if not self.preprocessor_fn:
-            return seq
+            return tseq
 
-        return [self.preprocessor_fn(a, b) for a, b in zip(seq, seq2)]
+        return [self.preprocessor_fn.transform(t, r) for t, r in zip(tseq, rseq)]
 
     def transform(self, seq):
         if not self.fitted:
@@ -272,13 +272,14 @@ class MultiLabelEncoder(object):
 
         for task in settings.tasks:
             task_settings = task.get("settings", {})
-            task_target = task_settings.get('target', task['name'])  # default to name
-            task_settings['target'] = task_target
-            if tasks is not None and task_target not in tasks:
+            task_settings['target'] = task_settings.get('target', task['name'])
+            if tasks is not None and task_settings['target'] not in tasks:
                 logging.warning(
-                    "Ignoring task [{}]: no available data".format(task_target))
+                    "Ignoring task [{}]: no available data".format(
+                        task_settings['target']))
                 continue
-            le.add_task(task['name'], **task_settings)
+            task_level = task.get("level", "token")
+            le.add_task(task['name'], level=task_level, **task_settings)
 
         return le
 
