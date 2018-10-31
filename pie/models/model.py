@@ -55,6 +55,7 @@ class SimpleModel(BaseModel):
         self.word_dropout = word_dropout
         self.merge_type = merge_type
         self.cemb_type = cemb_type
+        self.cemb_layers = cemb_layers
         self.include_lm = include_lm
         self.custom_cemb_cell = custom_cemb_cell
         # only during training
@@ -72,13 +73,15 @@ class SimpleModel(BaseModel):
 
         self.cemb = None
         if cemb_type.upper() == 'RNN':
-            self.cemb = RNNEmbedding(len(label_encoder.char), cemb_dim,
-                                     padding_idx=label_encoder.char.get_pad(),
-                                     custom_lstm=custom_cemb_cell,
-                                     cell=cell, init_rnn=init_rnn)
+            self.cemb = RNNEmbedding(
+                len(label_encoder.char), cemb_dim,
+                padding_idx=label_encoder.char.get_pad(),
+                custom_lstm=custom_cemb_cell, dropout=dropout,
+                num_layers=cemb_layers, cell=cell, init_rnn=init_rnn)
         elif cemb_type.upper() == 'CNN':
-            self.cemb = CNNEmbedding(len(label_encoder.char), cemb_dim,
-                                     padding_idx=label_encoder.char.get_pad())
+            self.cemb = CNNEmbedding(
+                len(label_encoder.char), cemb_dim,
+                padding_idx=label_encoder.char.get_pad())
 
         self.merger = None
         if self.cemb is not None and self.wemb is not None:
@@ -146,7 +149,7 @@ class SimpleModel(BaseModel):
                 decoders[task] = AttentionalDecoder(
                     label_encoder.tasks[task], self.cemb.embedding_dim,
                     self.cemb.embedding_dim, context_dim=context_dim, dropout=dropout,
-                    init_rnn=init_rnn)
+                    num_layers=cemb_layers, dropout=dropout, init_rnn=init_rnn)
 
             else:
                 raise ValueError(
@@ -166,6 +169,7 @@ class SimpleModel(BaseModel):
                            'cell': self.cell,
                            'merge_type': self.merge_type,
                            'cemb_type': self.cemb_type,
+                           'cemb_layers': self.cemb_layers,
                            'include_lm': self.include_lm,
                            'custom_cemb_cell': self.custom_cemb_cell}}
 

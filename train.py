@@ -26,7 +26,6 @@ if torch.cuda.is_available():
 
 
 def get_targets(settings):
-    # infix
     return [task['name'] for task in settings.tasks if task.get('target')]
 
 
@@ -170,8 +169,25 @@ if __name__ == '__main__':
 
     # save model
     fpath, infix = get_fname_infix(settings)
-    fpath = model.save(fpath, infix=infix, settings=settings)
-    print("Saved best model to: [{}]".format(fpath))
+    if not settings.run_test:
+        fpath = model.save(fpath, infix=infix, settings=settings)
+        print("Saved best model to: [{}]".format(fpath))
+
+    if devset is not None and not settings.run_test:
+        scorers = model.evaluate(devset)
+        scores = []
+        for task, scorer in scorers.items():
+            result = scorer.get_scores()
+            # accuracy
+            scores.append('{}:{:.6f}'.format(task, result['accuracy']))
+            # unknown accuracy
+            scores.append('{}-unknown:{:.6f}'.format(task, result['unknown']['accuracy']))
+        path = '{}.results.{}.csv'.format(
+            settings.modelname, '-'.join(get_targets(settings)))
+        with open(path, 'a') as f:
+            line = [infix, str(seed), datetime.now().strftime("%Y_%m_%d-%H_%M_%S")]
+            line += scores
+            f.write('{}\n'.format('\t'.join(line)))
 
     if scores is not None:
         with open('{}.txt'.format('-'.join(get_targets(settings))), 'a') as f:

@@ -71,7 +71,8 @@ class RNNEmbedding(nn.Module):
     Character-level Embeddings with BiRNNs.
     """
     def __init__(self, num_embeddings, embedding_dim, padding_idx=None,
-                 custom_lstm=False, cell='LSTM', init_rnn='default'):
+                 custom_lstm=False, cell='LSTM', init_rnn='default',
+                 num_layers=1, dropout=0.0):
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim * 2  # bidirectional
         super().__init__()
@@ -80,10 +81,12 @@ class RNNEmbedding(nn.Module):
         initialization.init_embeddings(self.emb)
 
         if custom_lstm:
-            self.rnn = CustomBiLSTM(embedding_dim, embedding_dim)
+            self.rnn = CustomBiLSTM(
+                embedding_dim, embedding_dim, num_layers=num_layers, dropout=dropout)
         else:
             self.rnn = getattr(nn, cell)(
-                embedding_dim, embedding_dim, bidirectional=True)
+                embedding_dim, embedding_dim, bidirectional=True,
+                num_layers=num_layers, dropout=dropout if num_layers > 1 else 0)
             initialization.init_rnn(self.rnn, scheme=init_rnn)
 
     def forward(self, char, nchars, nwords):

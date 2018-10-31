@@ -1,6 +1,6 @@
 
 from .greedy_scripts import greedy_scripts
-from .tree_edit_scripts import tree_edit_scripts, apply_tree_edit_scripts
+from .edit_trees import make_edit_tree, apply_edit_tree
 
 
 def identity(s1, s2):
