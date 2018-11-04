@@ -38,6 +38,8 @@ class Reader(object):
         # settings
         self.shuffle = settings.shuffle
         self.max_sents = settings.max_sents
+        # cache
+        self.nsents = None
 
     def get_reader(self, fpath):
         """
@@ -46,7 +48,7 @@ class Reader(object):
         # imports
 
         if fpath.endswith('tab') or fpath.endswith('tsv') or fpath.endswith('csv'):
-           return TabReader
+            return TabReader
 
         elif fpath.endswith('conll'):
             return CONLLReader
@@ -92,6 +94,19 @@ class Reader(object):
                 total += 1
 
                 yield data
+        self.nsents = total
+
+    def get_nsents(self):
+        """
+        Number of sents in Reader
+        """
+        if self.nsents is not None:
+            return self.nsents
+        nsents = 0
+        for _ in self.readsents():
+            nsents += 1
+        self.nsents = nsents
+        return nsents
 
     def get_token_iterator(self):
         """

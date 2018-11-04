@@ -1,6 +1,4 @@
 
-from collections import OrderedDict
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -62,7 +60,6 @@ class SimpleModel(BaseModel):
         self.init_rnn = init_rnn
         super().__init__(label_encoder, tasks)
 
-
         # Embeddings
         self.wemb = None
         if self.wemb_dim > 0:
@@ -120,36 +117,41 @@ class SimpleModel(BaseModel):
         # Decoders
         decoders = {}
         for tname, task in self.tasks.items():
-            # linear
-            if task['decoder'].lower() == 'linear':
-                decoder = LinearDecoder(
-                    label_encoder.tasks[tname], hidden_size * 2)
-            # crf
-            elif task['decoder'].lower() == 'crf':
-                decoder = CRFDecoder(
-                    label_encoder.tasks[tname], hidden_size * 2)
-            # attentional
-            elif task['decoder'].lower() == 'attentional':
-                # checks
-                if task['level'].lower() != 'char':
-                    raise ValueError(
-                        "Got task {} with token-level attentional decoder".format(tname))
+            if task['level'].lower() == 'char':
                 if self.cemb is None:
-                    raise ValueError(
-                        "Attentional decoder requires char embeddings. Task", tname)
-                # get context size
-                context_dim = 0
-                if task['context'].lower() == 'sentence':
-                    context_dim = hidden_size * 2  # bidirectional encoder
-                elif task['context'].lower() == 'word':
-                    context_dim = wemb_dim
-                elif task['context'].lower() == 'both':
-                    context_dim = hidden_size * 2 + wemb_dim
+                    raise ValueError("Char-level decoder requires char embeddings")
 
-                decoder = AttentionalDecoder(
-                    label_encoder.tasks[tname], self.cemb.embedding_dim,
-                    self.cemb.embedding_dim, context_dim=context_dim, dropout=dropout,
-                    num_layers=cemb_layers, init_rnn=init_rnn)
+                # TODO: add sentence context to decoder
+                if task['decoder'].lower() == 'linear':
+                    decoder = LinearDecoder(
+                        label_encoder.tasks[tname], self.cemb.embedding_dim)
+                elif task['decoder'].lower() == 'crf':
+                    decoder = CRFDecoder(
+                        label_encoder.tasks[tname], self.cemb.embedding_dim)
+                else:
+                    # get context size
+                    context_dim = 0
+                    if task['context'].lower() == 'sentence':
+                        context_dim = hidden_size * 2  # bidirectional encoder
+                    elif task['context'].lower() == 'word':
+                        context_dim = wemb_dim
+                    elif task['context'].lower() == 'both':
+                        context_dim = hidden_size * 2 + wemb_dim
+
+                    decoder = AttentionalDecoder(
+                        label_encoder.tasks[tname], self.cemb.embedding_dim,
+                        self.cemb.embedding_dim, context_dim=context_dim, dropout=dropout,
+                        num_layers=cemb_layers, init_rnn=init_rnn)
+
+            elif task['level'].lower() == 'token':
+                # linear
+                if task['decoder'].lower() == 'linear':
+                    decoder = LinearDecoder(
+                        label_encoder.tasks[tname], hidden_size * 2)
+                # crf
+                elif task['decoder'].lower() == 'crf':
+                    decoder = CRFDecoder(
+                        label_encoder.tasks[tname], hidden_size * 2)
 
             else:
                 raise ValueError(
@@ -162,8 +164,8 @@ class SimpleModel(BaseModel):
 
         # - LM
         if self.include_lm:
-            self.lm_decoder_fwd = LinearDecoder(label_encoder.word, hidden_size)
-            self.lm_decoder_bwd = LinearDecoder(label_encoder.word, hidden_size)
+            self.lm_fwd_decoder = LinearDecoder(label_encoder.word, hidden_size)
+            self.lm_bwd_decoder = LinearDecoder(label_encoder.word, hidden_size)
 
     def get_args_and_kwargs(self):
         return {'args': (self.wemb_dim, self.cemb_dim, self.hidden_size, self.num_layers),
@@ -219,18 +221,26 @@ class SimpleModel(BaseModel):
 
             decoder = self.decoders[task]
 
-            # prepare logits
-            if isinstance(decoder, LinearDecoder):
-                logits = decoder(outs)
-                output[task] = decoder.loss(logits, target)
-            elif isinstance(decoder, CRFDecoder):
-                logits = decoder(outs)
-                output[task] = decoder.loss(logits, target, length)
-            elif isinstance(decoder, AttentionalDecoder):
-                cemb_outs = F.dropout(cemb_outs, p=self.dropout, training=self.training)
-                context = get_context(outs, wemb, wlen, self.tasks[task]['context'])
-                logits = decoder(target, length, cemb_outs, clen, context)
-                output[task] = decoder.loss(logits, target)
+            if self.tasks[task]['level'].lower() == 'char':
+                if isinstance(decoder, LinearDecoder):
+                    logits = decoder(cemb_outs)
+                    output[task] = decoder.loss(logits, target)
+                elif isinstance(decoder, CRFDecoder):
+                    logits = decoder(cemb_outs)
+                    output[task] = decoder.loss(logits, target, length)
+                elif isinstance(decoder, AttentionalDecoder):
+                    cemb_outs = F.dropout(
+                        cemb_outs, p=self.dropout, training=self.training)
+                    context = get_context(outs, wemb, wlen, self.tasks[task]['context'])
+                    logits = decoder(target, length, cemb_outs, clen, context)
+                    output[task] = decoder.loss(logits, target)
+            else:
+                if isinstance(decoder, LinearDecoder):
+                    logits = decoder(outs)
+                    output[task] = decoder.loss(logits, target)
+                elif isinstance(decoder, CRFDecoder):
+                    logits = decoder(outs)
+                    output[task] = decoder.loss(logits, target, length)
 
         # (LM)
         if self.include_lm:
@@ -240,11 +250,11 @@ class SimpleModel(BaseModel):
                     enc_outs[0], p=0, training=self.training
                 ).chunk(2, dim=2)
                 # forward logits
-                logits = self.lm_decoder_fwd(torch_utils.pad(fwd[:-1], pos='pre'))
-                output['fwd_lm'] = self.lm_decoder_fwd.loss(logits, word)
+                logits = self.lm_fwd_decoder(torch_utils.pad(fwd[:-1], pos='pre'))
+                output['fwd_lm'] = self.lm_fwd_decoder.loss(logits, word)
                 # backward logits
-                logits = self.lm_decoder_fwd(torch_utils.pad(bwd[1:], pos='post'))
-                output['bwd_lm'] = self.lm_decoder_bwd.loss(logits, word)
+                logits = self.lm_fwd_decoder(torch_utils.pad(bwd[1:], pos='post'))
+                output['bwd_lm'] = self.lm_bwd_decoder.loss(logits, word)
 
         return output
 
@@ -276,13 +286,23 @@ class SimpleModel(BaseModel):
             if enc_outs is not None:
                 outs = enc_outs[at_layer]
 
-            if isinstance(decoder, LinearDecoder):
-                hyps, _ = decoder.predict(outs, wlen)
-            elif isinstance(decoder, CRFDecoder):
-                hyps, _ = decoder.predict(outs, wlen)
+            if self.label_encoder.tasks[task].level.lower() == 'char':
+                if isinstance(decoder, LinearDecoder):
+                    hyps, _ = decoder.predict(cemb_outs, clen)
+                elif isinstance(decoder, CRFDecoder):
+                    hyps, _ = decoder.predict(cemb_outs, clen)
+                else:
+                    context = get_context(outs, wemb, wlen, self.tasks[task]['context'])
+                    hyps, _ = decoder.predict_max(cemb_outs, clen, context=context)
+                    if self.label_encoder.tasks[task].preprocessor_fn is None:
+                        hyps = [''.join(hyp) for hyp in hyps]
             else:
-                context = get_context(outs, wemb, wlen, self.tasks[task]['context'])
-                hyps, _ = decoder.predict_max(cemb_outs, clen, context=context)
+                if isinstance(decoder, LinearDecoder):
+                    hyps, _ = decoder.predict(outs, wlen)
+                elif isinstance(decoder, CRFDecoder):
+                    hyps, _ = decoder.predict(outs, wlen)
+                else:
+                    raise ValueError()
 
             preds[task] = hyps
 

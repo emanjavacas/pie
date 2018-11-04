@@ -21,7 +21,8 @@ class TestModelSerialization(unittest.TestCase):
     def setUp(self):
         emb_dim, hidden_size, num_layers = 64, 100, 1
         self.model = SimpleModel(
-            label_encoder, emb_dim, emb_dim, hidden_size, num_layers)
+            label_encoder, settings.tasks,
+            emb_dim, emb_dim, hidden_size, num_layers)
 
     def test_serialization(self):
         model = self.model

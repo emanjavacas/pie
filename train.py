@@ -1,9 +1,9 @@
 
 import os
-import time
 import logging
 from datetime import datetime
 
+import pie
 from pie.settings import settings_from_file
 from pie.trainer import Trainer
 from pie import initialization
@@ -44,6 +44,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     settings = settings_from_file(args.config_path)
+
     # check settings
     # - check at least and at most one target
     has_target = False
@@ -60,7 +61,6 @@ if __name__ == '__main__':
     # datasets
     reader = Reader(settings, settings.input_path)
     tasks = reader.check_tasks(expected=None)
-    label_encoder = MultiLabelEncoder.from_settings(settings, tasks=tasks)
     if settings.verbose:
         print("::: Available tasks :::")
         print()
@@ -68,15 +68,20 @@ if __name__ == '__main__':
             print("- {}".format(task))
         print()
 
-    # fit
-    start = time.time()
+    # label encoder
+    if settings.load_pretrained_encoder:
+        if settings.verbose:
+            print("::: Loading encoder from pretrained model :::")
+        label_encoder = MultiLabelEncoder.load_from_pretrained_model(
+            settings.load_pretrained_encoder)
+    else:
+        label_encoder = MultiLabelEncoder.from_settings(settings, tasks=tasks)
+        if settings.verbose:
+            print("::: Fitting data :::")
+            print()
+        label_encoder.fit_reader(reader)
+
     if settings.verbose:
-        print("::: Fitting data :::")
-        print()
-    ninsts = label_encoder.fit_reader(reader)
-    if settings.verbose:
-        print("Found {} total instances in training set in {:g} secs".format(
-            ninsts, time.time() - start))
         print()
         print("::: Vocabulary :::")
         print()
@@ -99,10 +104,6 @@ if __name__ == '__main__':
     devset = None
     if settings.dev_path:
         devset = Dataset(settings, Reader(settings, settings.dev_path), label_encoder)
-        devset = devset.get_batches()
-    elif settings.dev_split > 0:
-        devset = trainset.get_dev_split(ninsts, split=settings.dev_split)
-        ninsts = ninsts - (len(devset) * settings.batch_size)
     else:
         logging.warning("No devset: cannot monitor/optimize training")
 
@@ -129,13 +130,19 @@ if __name__ == '__main__':
         elif settings.load_pretrained_embeddings:
             print("Loading pretrained embeddings")
             if not os.path.isfile(settings.load_pretrained_embeddings):
-                print("Couldn't find pretrained embeddings in: {}. Skipping...".format(
+                print("Couldn't find pretrained eembeddings in: {}".format(
                     settings.load_pretrained_embeddings))
             initialization.init_pretrained_embeddings(
                 settings.load_pretrained_embeddings, label_encoder.word, model.wemb)
 
-        if settings.freeze_embeddings:
-            model.wemb.weight.requires_grad = False
+    # load pretrained weights
+    if settings.load_pretrained_encoder:
+        model.init_from_pretrained_model(
+            pie.pretrained_encoder.Encoder.load(settings.load_pretrained_encoder))
+
+    # freeze embeddings
+    if settings.freeze_embeddings:
+        model.wemb.weight.requires_grad = False
 
     model.to(settings.device)
 
@@ -152,7 +159,7 @@ if __name__ == '__main__':
 
     # training
     print("Starting training")
-    trainer = Trainer(settings, model, trainset, ninsts)
+    trainer = Trainer(settings, model, trainset, reader.get_nsents())
     scores = None
     try:
         scores = trainer.train_epochs(settings.epochs, dev=devset)
@@ -180,8 +187,13 @@ if __name__ == '__main__':
             result = scorer.get_scores()
             # accuracy
             scores.append('{}:{:.6f}'.format(task, result['accuracy']))
-            # unknown accuracy
-            scores.append('{}-unknown:{:.6f}'.format(task, result['unknown']['accuracy']))
+            # unknown tokens accuracy
+            scores.append('{}-unknown-tokens:{:.6f}'.format(
+                task, result['unknown-tokens']['accuracy']))
+            # unknown target accuracy
+            if 'unknown-targets' in result:
+                scores.append('{}-unknown-targets:{:.6f}'.format(
+                    task, result['unknown-targets']['accuracy']))
         path = '{}.results.{}.csv'.format(
             settings.modelname, '-'.join(get_targets(settings)))
         with open(path, 'a') as f:

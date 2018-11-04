@@ -17,8 +17,6 @@
   "test_path": "",
   // path to dev set (same format as input_path)
   "dev_path": "",
-  // proportion of instances in the dev set (ignored if dev_path is passed)
-  "dev_split": 0.05,
   // breakline logic to use to detect sentence boundaries in tsv files
   // either "LENGTH" (break after n tokens) or "FULLSTOP" (break after a fullstop symbol)
   "breakline_type": "LENGTH",
@@ -36,6 +34,9 @@
   // min freq per item to be incorporated in the vocabulary (only used if *_max_size is 0)
   "char_min_freq": 1,
   "word_min_freq": 1,
+  // char-level encoding
+  "char_eos": true,
+  "char_bos": true,
   // tab-format only:
   "header": true,
   "tasks_order": ["lemma", "pos"],
@@ -82,6 +83,10 @@
     }
   ],
 
+  "task_defaults": {
+    "level": "token", "layer": -1, "decoder": "linear", "context": "sentence"
+  },
+
   // general task schedule params (can be overwritten in the "settings" entry of each)
   "patience": 1000000, // default to very large value
   "factor": 1, // decrease the loss weight by this amount (0, 1)
@@ -117,6 +122,8 @@
   "pretrain_embeddings": false,
   // path to file with word2vec pretrained embeddings
   "load_pretrained_embeddings": "",
+  // path to file with pretrained sentence encoder
+  "load_pretrained_encoder": "",
 
   // * Model
   "wemb_dim": 150,

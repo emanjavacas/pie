@@ -80,7 +80,7 @@ class Node:
     def to_tuple(self):
         if isinstance(self, Leaf):
             # full replacement
-            return (len(self.a), len(self.b), 0, "")
+            return (len(self.a), self.b, 0, "")
         else:
             plen, slen = self.get_span()
             start = self.target.find(self._infix)

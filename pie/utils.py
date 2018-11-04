@@ -7,7 +7,6 @@ import logging
 import sys
 import glob
 import itertools
-import re
 from contextlib import contextmanager
 from subprocess import check_output, CalledProcessError
 

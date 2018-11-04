@@ -14,7 +14,7 @@ def get_edit_scripts_(s1, s2):
 
     # no need to compare
     if len(s1) == 1:
-        yield '<replace string="{}" with="{}">'.format(s1, s2)
+        yield Replace(source=s1, target=s2)
         return
 
     # diff edits
@@ -36,13 +36,13 @@ def get_edit_scripts_(s1, s2):
                     else:
                         break
                 if all_adds:
-                    yield '<insert string="{}" post>'.format(cs)
+                    yield Insert(string=cs, pos='post')
                     i += len(cs) + 1
                 else:
-                    yield '<keep>'
+                    yield Keep()
                     i += 1
             else:
-                yield '<keep>'
+                yield Keep()
                 i += 1
 
         else:
@@ -73,31 +73,31 @@ def get_edit_scripts_(s1, s2):
             if len(deletes) > len(adds):
                 # zip and delete the remaining items
                 for (_, c_b), (_, c_a) in zip(deletes, adds):
-                    yield '<replace string="{}" with="{}">'.format(c_b, c_a)
+                    yield Replace(source=c_b, target=c_a)
                 for (a, c) in deletes[len(adds):]:
-                    yield '<delete string="{}">'.format(c)
+                    yield Delete(string=c)
 
             elif len(adds) > len(deletes):
                 # zip as many as possible and merge the remaining additions
                 if deletes:
                     for idx in range(len(deletes) - 1):
                         (_, c_a), (_, c_b) = adds[idx], deletes[idx]
-                        yield '<replace string="{}" with="{}">'.format(c_b, c_a)
+                        yield Replace(source=c_b, target=c_a)
                     _, c_b = deletes[-1]
                     c_a = ''.join([c for _, c in adds[len(deletes)-1:]])
-                    yield '<replace string="{}" with="{}">'.format(c_b, c_a)
+                    yield Replace(source=c_b, target=c_a)
                 else:
                     # this must mean that the additions are followed by a keep
                     if acts[i+len(adds)][0] == ' ':
                         c_a = ''.join([c for _, c in adds])
-                        yield '<insert string="{}" pre>'.format(c_a)
+                        yield Insert(string=c_a, pos="pre")
                         i += 1
                     else:
                         raise ValueError("Expected a bunch of additions followed by keep")
             else:
                 # same size, just zip them into replacements
                 for (_, c_b), (_, c_a) in zip(deletes, adds):
-                    yield '<replace string="{}" with="{}">'.format(c_b, c_a)
+                    yield Replace(source=c_b, target=c_a)
 
             i += len(adds) + len(deletes)
 
@@ -107,4 +107,20 @@ def transform(lem, tok):
 
 
 def inverse_transform(pred, tok):
-    return None
+    output, idx = "", 0
+    for rule in pred:
+        if isinstance(rule, Keep):
+            output += tok[idx]
+            idx += 1
+        elif isinstance(rule, Replace):
+            output += rule.target
+            idx += len(rule.source)
+        elif isinstance(rule, Insert):
+            if rule.pos == 'pre':
+                output += rule.string + tok[idx]
+            else:
+                output += tok[idx] + rule.string
+            idx += 1
+        else:
+            idx += len(rule.string)
+    return output

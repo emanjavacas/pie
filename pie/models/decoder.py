@@ -348,7 +348,7 @@ class AttentionalDecoder(nn.Module):
             targets = torch_utils.pad(
                 targets, pad=self.label_encoder.get_eos(), pos='pre')
             lengths += 1
-            
+
         embs = self.embs(targets)
 
         if self.context_dim > 0:
