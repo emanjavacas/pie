@@ -456,7 +456,7 @@ class Dataset(object):
         """
         return pack_batch(self.label_encoder, batch, device or self.device)
 
-    def prepare_buffer(self, buf, **kwargs):
+    def prepare_buffer(self, buf, return_raw=False, **kwargs):
         "Transform buffer into batch generator"
 
         def key(data):
@@ -474,42 +474,14 @@ class Dataset(object):
             random.shuffle(batches)
 
         for batch in batches:
-            yield self.pack_batch(batch, **kwargs)
+            packed = self.pack_batch(batch, **kwargs)
+            if return_raw:
+                inp, tasks = zip(*batch)
+                yield packed, (inp, tasks)
+            else:
+                yield packed
 
-    def get_dev_split(self, ninsts, split=0.05):
-        "Grab a dev split from the dataset"
-        if len(self.dev_sents) > 0:
-            raise RuntimeError("A dev-split has already been created!")
-
-        buf = []
-        split_size = ninsts * split
-        split_prop = split_size / ninsts
-
-        for sent in self.reader.readsents():
-            if len(buf) >= split_size:
-                break
-
-            if random.random() > split_prop:
-                continue
-
-            (fpath, line_num), data = sent
-            buf.append(data)
-            self.dev_sents[fpath].add(line_num)
-
-        # get batches on cpu
-        batches = list(self.prepare_buffer(buf, device='cpu'))
-
-        return device_wrapper(batches, device=self.device)
-
-    def get_batches(self):
-        """
-        Put batches on memory (for dev/test sets)
-        """
-        batches = list(data for (_, data) in self.reader.readsents())
-        batches = list(self.prepare_buffer(batches, device='cpu'))
-        return device_wrapper(batches, device=self.device)
-
-    def batch_generator(self):
+    def batch_generator(self, return_raw=False):
         """
         Generator over dataset batches. Each batch is a tuple of (input, tasks):
             * (word, char)
@@ -529,11 +501,11 @@ class Dataset(object):
 
             # check if buffer is full and yield
             if len(buf) == self.buffer_size:
-                yield from self.prepare_buffer(buf)
+                yield from self.prepare_buffer(buf, return_raw=return_raw)
                 buf = []
 
         if len(buf) > 0:
-            yield from self.prepare_buffer(buf)
+            yield from self.prepare_buffer(buf, return_raw=return_raw)
 
 
 def pack_batch(label_encoder, batch, device=None):

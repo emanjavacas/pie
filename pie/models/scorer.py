@@ -1,4 +1,5 @@
 
+import itertools
 import yaml
 import difflib
 from termcolor import colored
@@ -25,27 +26,27 @@ class Scorer(object):
     """
     Accumulate predictions over batches and compute evaluation scores
     """
-    def __init__(self, label_encoder, compute_unknown=False):
+    def __init__(self, label_encoder, known_tokens):
         self.label_encoder = label_encoder
-        self.compute_unknown = compute_unknown
+        self.known_tokens = known_tokens
         self.preds = []
         self.trues = []
+        self.tokens = []
 
-    def register_batch(self, hyps, targets):
+    def register_batch(self, hyps, targets, tokens):
         """
-        hyps : list(batch, seq_len)
-        targets : list(batch, seq_len)
+        hyps : list
+        targets : list
+        tokens : list
         """
-        for hyp, target in zip(hyps, targets):
-            if isinstance(hyp, (list, tuple)):
-                if len(hyp) != len(target):
-                    raise ValueError("Unequal hyp {} and target {} lengths"
-                                     .format(len(hyp), len(target)))
-                self.preds.extend(hyp)
-                self.trues.extend(target)
-            else:
-                self.preds.append(hyp)
-                self.trues.append(target)
+        if len(hyps) != len(targets) or len(targets) != len(tokens):
+            raise ValueError("Unequal input lengths. Hyps {}, targets {}, tokens {}"
+                             .format(len(hyps), len(targets), len(tokens)))
+
+        for pred, true, token in zip(hyps, targets, tokens):
+            self.preds.append(pred)
+            self.trues.append(true)
+            self.tokens.append(token)
 
     def get_scores(self):
         """
@@ -53,17 +54,27 @@ class Scorer(object):
         """
         output = compute_scores(self.trues, self.preds)
 
-        # compute scores for unknown tokens
-        if self.compute_unknown:
-            unk_preds, unk_trues = [], []
-            for i, true in enumerate(self.trues):
+        # compute scores for unknown input tokens
+        unk_trues, unk_preds = [], []
+        for true, pred, token in zip(self.trues, self.preds, self.tokens):
+            if token not in self.known_tokens:
+                unk_trues.append(true)
+                unk_preds.append(pred)
+        support = len(unk_trues)
+        if support > 0:
+            output['unknown-tokens'] = compute_scores(unk_trues, unk_preds)
+
+        # compute scores for unknown targets
+        if self.label_encoder.known_tokens:
+            # token-level encoding doesn't have unknown targets (only OOV)
+            unk_trues, unk_preds = [], []
+            for true, pred in zip(self.trues, self.preds):
                 if true not in self.label_encoder.known_tokens:
                     unk_trues.append(true)
-                    unk_preds.append(self.preds[i])
-
+                    unk_preds.append(pred)
             support = len(unk_trues)
             if support > 0:
-                output['unknown'] = compute_scores(unk_trues, unk_preds)
+                output['unknown-targets'] = compute_scores(unk_trues, unk_preds)
 
         return output
 
@@ -119,22 +130,35 @@ class Scorer(object):
                 for pred, pcount in preds.items())
             return summary
 
-        known, unknown = defaultdict(Counter), defaultdict(Counter)
-        for true, pred in zip(self.trues, self.preds):
-            if true != pred:
-                if self.compute_unknown and true not in self.label_encoder.known_tokens:
-                    unknown[true][pred] += 1
-                else:
-                    known[true][pred] += 1
+        known = defaultdict(Counter)
+        unk_targets = defaultdict(Counter)
+        unk_tokens = defaultdict(Counter),
+        tokens = self.tokens or itertools.repeat(None)
+        for true, pred, token in zip(self.trues, self.preds, tokens):
+            if true == pred:
+                continue
+
+            unk_target = true not in self.label_encoder.known_tokens
+            unk_token = token and self.known_tokens and token not in self.known_tokens
+            if not unk_target and not unk_token:
+                known[true][pred] += 1
+            else:
+                if unk_target:
+                    unk_targets[true][pred] += 1
+                if unk_token:
+                    unk_tokens[true][pred] += 1
 
         known_summary = '::: Known tokens :::\n\n'
         for true, count, preds in self.get_most_common(known, most_common):
             known_summary += '{}\n'.format(error_summary(true, count, preds))
-        unknown_summary = '::: Unknown tokens :::\n\n'
-        for true, count, preds in self.get_most_common(unknown, most_common):
-            unknown_summary += '{}\n'.format(error_summary(true, count, preds))
+        unk_target_summary = '::: Unknown targets :::\n\n'
+        for true, count, preds in self.get_most_common(unk_targets, most_common):
+            unk_target_summary += '{}\n'.format(error_summary(true, count, preds))
+        unk_tokens_summary = '::: Unknown tokens :::\n\n'
+        for true, count, preds in self.get_most_common(unk_tokens, most_common):
+            unk_tokens_summary += '{}\n'.format(error_summary(true, count, preds))
 
-        return '{}\n\n{}'.format(known_summary, unknown_summary)
+        return '{}\n{}\n{}'.format(known_summary, unk_target_summary, unk_tokens_summary)
 
     def print_summary(self, full=False, most_common=100):
         """
@@ -155,4 +179,3 @@ class Scorer(object):
                 print(self.get_transduction_summary(most_common=most_common))
             else:
                 print(self.get_classification_summary(most_common=most_common))
-

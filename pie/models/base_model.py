@@ -41,54 +41,38 @@ class BaseModel(nn.Module):
         """
         raise NotImplementedError
 
-    def evaluate(self, dataset, total=None, return_unk=False):
+    def evaluate(self, dataset, total=None):
         """
         Get scores per task
         """
         assert not self.training, "Ooops! Inference in training mode. Call model.eval()"
 
-        scorers, uscorers = {}, {}
+        scorers = {}
         for task, le in self.label_encoder.tasks.items():
-            scorers[task] = Scorer(le, compute_unknown=le.level == 'char')
-            uscorers[task] = Scorer(le, compute_unknown=le.level == 'char')
+            scorers[task] = Scorer(le, known_tokens=set(self.label_encoder.word.table))
 
         with torch.no_grad():
-            for inp, tasks in tqdm.tqdm(dataset, total=total):
-                # get preds
+            for (inp, tasks), (rinp, rtasks) in tqdm.tqdm(
+                    dataset.batch_generator(return_raw=True)):
                 preds = self.predict(inp)
 
-                # get trues
-                trues = {}
-                for task, le in self.label_encoder.tasks.items():
-                    tinp, tlen = tasks[task]
-                    tinp, tlen = tinp.t().tolist(), tlen.tolist()
-                    if le.level == 'char':
-                        trues[task] = [''.join(le.stringify(t)) for t in tinp]
-                    else:
-                        trues[task] = [le.stringify(t, l) for t, l in zip(tinp, tlen)]
+                # - get input tokens
+                tokens = [w for line in rinp for w in line]
 
-                # get idxs to unknown input tokens
-                uidxs = []
-                if return_unk:
-                    (w, wlen), _ = inp
-                    w, wlen = w.t().tolist(), wlen.tolist()
-                    for b in range(len(w)):
-                        for i in range(len(wlen[b])):
-                            if w[b][i] == self.label_encoder.word.get_unk():
-                                uidxs.append((b, idx))
+                # - get trues
+                trues = {}
+                for task in preds:
+                    trues[task] = [w for line in rtasks for w in line[task]]
+                    le = self.label_encoder.tasks[task]
+
+                    # - flatten token level predictions
+                    if le.level == 'token':
+                        preds[task] = [pred for batch in preds[task] for pred in batch]
 
                 # accumulate
                 for task, scorer in scorers.items():
-                    scorer.register_batch(preds[task], trues[task])
-                    if uidxs:
-                        utrues, upreds = [], []
-                        for b, idx in uidxs:
-                            upreds.append(preds[task][b][idx])
-                            utrues.append(trues[task][b][idx])
-                        uscorers[task].register_batch([upreds], [utrues])
+                    scorer.register_batch(preds[task], trues[task], tokens)
 
-        if return_unk:
-            return scorers, uscorers
         return scorers
 
     def save(self, fpath, infix=None, settings=None):

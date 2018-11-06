@@ -100,10 +100,6 @@ if __name__ == '__main__':
     devset = None
     if settings.dev_path:
         devset = Dataset(settings, Reader(settings, settings.dev_path), label_encoder)
-        devset = devset.get_batches()
-    elif settings.dev_split > 0:
-        devset = trainset.get_dev_split(ninsts, split=settings.dev_split)
-        ninsts = ninsts - (len(devset) * settings.batch_size)
     else:
         logging.warning("No devset: cannot monitor/optimize training")
 
@@ -181,12 +177,18 @@ if __name__ == '__main__':
     if devset is not None and not settings.run_test:
         scorers = model.evaluate(devset)
         scores = []
-        for task, scorer in scorers.items():
+        for task in sorted(scorers):
+            scorer = scorers[task]
             result = scorer.get_scores()
             # accuracy
             scores.append('{}:{:.6f}'.format(task, result['accuracy']))
-            # unknown accuracy
-            scores.append('{}-unknown:{:.6f}'.format(task, result['unknown']['accuracy']))
+            # unknown tokens accuracy
+            scores.append('{}-unknown-tokens:{:.6f}'.format(
+                task, result['unknown-tokens']['accuracy']))
+            # unknown target accuracy
+            if 'unknown-targets' in result:
+                scores.append('{}-unknown-targets:{:.6f}'.format(
+                    task, result['unknown-targets']['accuracy']))
         path = '{}.results.{}.csv'.format(
             settings.modelname, '-'.join(get_targets(settings)))
         with open(path, 'a') as f:
