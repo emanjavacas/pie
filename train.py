@@ -183,7 +183,8 @@ if __name__ == '__main__':
     if devset is not None and not settings.run_test:
         scorers = model.evaluate(devset)
         scores = []
-        for task, scorer in scorers.items():
+        for task in sorted(scorers):
+            scorer = scorers[task]
             result = scorer.get_scores()
             # accuracy
             scores.append('{}:{:.6f}'.format(task, result['accuracy']))
@@ -199,12 +200,6 @@ if __name__ == '__main__':
         with open(path, 'a') as f:
             line = [infix, str(seed), datetime.now().strftime("%Y_%m_%d-%H_%M_%S")]
             line += scores
-            f.write('{}\n'.format('\t'.join(line)))
-
-    if scores is not None:
-        with open('{}.txt'.format('-'.join(get_targets(settings))), 'a') as f:
-            line = [infix, str(seed), datetime.now().strftime("%Y_%m_%d-%H_%M_%S")] + \
-                   ['{}:{:.6f}'.format(task, score) for task, score in scores.items()]
             f.write('{}\n'.format('\t'.join(line)))
 
     print("Bye!")

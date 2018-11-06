@@ -251,15 +251,6 @@ class Trainer(object):
 
         return dev_scores
 
-    def monitor_batch(self, batch, items, start, nbatches, loss, sep=' '*3):
-        """
-        Print the report for monitoring
-        """
-        rep = sep.join('{}:{:.3f}'.format(k, v / nbatches) for k, v in loss.items())
-        speed = items / (time.time() - start)
-        formatter = "Batch [{}/{}] || {} || {:.0f} w/s"
-        logging.info(formatter.format(batch, self.num_batches, rep, speed))
-
     def train_epoch(self, dev):
         rep_loss = collections.defaultdict(float)
         rep_batches = collections.defaultdict(int)
