@@ -69,17 +69,11 @@ if __name__ == '__main__':
         print()
 
     # label encoder
-    if settings.load_pretrained_encoder:
-        if settings.verbose:
-            print("::: Loading encoder from pretrained model :::")
-        label_encoder = MultiLabelEncoder.load_from_pretrained_model(
-            settings.load_pretrained_encoder)
-    else:
-        label_encoder = MultiLabelEncoder.from_settings(settings, tasks=tasks)
-        if settings.verbose:
-            print("::: Fitting data :::")
-            print()
-        label_encoder.fit_reader(reader)
+    label_encoder = MultiLabelEncoder.from_settings(settings, tasks=tasks)
+    if settings.verbose:
+        print("::: Fitting data :::")
+        print()
+    label_encoder.fit_reader(reader)
 
     if settings.verbose:
         print()
@@ -137,8 +131,7 @@ if __name__ == '__main__':
 
     # load pretrained weights
     if settings.load_pretrained_encoder:
-        model.init_from_pretrained_model(
-            pie.pretrained_encoder.Encoder.load(settings.load_pretrained_encoder))
+        model.init_from_encoder(pie.Encoder.load(settings.load_pretrained_encoder))
 
     # freeze embeddings
     if settings.freeze_embeddings:

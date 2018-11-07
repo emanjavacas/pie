@@ -191,6 +191,31 @@ class SimpleModel(BaseModel):
 
         return wemb, cemb, cemb_outs
 
+    def init_from_encoder(self, encoder):
+        # wemb
+        total = 0
+        for w, idx in encoder.label_encoder.word.table.items():
+            if w in self.label_encoder.word.table:
+                self.wemb.weight.data[self.label_encoder.word.table[w]].copy_(
+                    encoder.wemb.weight.data[idx])
+                total += 1
+        print("Initialized {}/{} word embs".format(total, len(self.wemb.weight)))
+        # cemb
+        total = 0
+        for w, idx in encoder.label_encoder.char.table.items():
+            if w in self.label_encoder.char.table:
+                self.cemb.emb.weight.data[self.label_encoder.char.table[w]].copy_(
+                    encoder.cemb.emb.weight.data[idx])
+                total += 1
+        print("Initialized {}/{} char embs".format(total, len(self.cemb.emb.weight)))
+        # cemb rnn
+        self.cemb.rnn.load_state_dict(encoder.cemb.rnn.state_dict())
+        # sentence rnn
+        self.encoder.load_state_dict(encoder.encoder.state_dict())
+
+        if self.include_lm:
+            pass
+
     def loss(self, batch_data, *target_tasks):
         ((word, wlen), (char, clen)), tasks = batch_data
         output = {}

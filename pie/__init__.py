@@ -14,3 +14,4 @@ from . import tagger
 from . import initialization
 from .data import *
 from .models import *
+from .pretrain_encoder import Encoder
