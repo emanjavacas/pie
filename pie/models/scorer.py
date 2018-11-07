@@ -54,15 +54,26 @@ class Scorer(object):
         """
         output = compute_scores(self.trues, self.preds)
 
+        # compute scores for ambiguous tokens
+        tok2class = defaultdict(Counter)
+        for tok, true in zip(self.tokens, self.trues):
+            tok2class[tok][true] += 1
+
         # compute scores for unknown input tokens
-        unk_trues, unk_preds = [], []
+        unk_trues, unk_preds, amb_trues, amb_preds = [], [], [], []
         for true, pred, token in zip(self.trues, self.preds, self.tokens):
             if token not in self.known_tokens:
                 unk_trues.append(true)
                 unk_preds.append(pred)
+            if len(tok2class[token]) > 1:
+                amb_trues.append(true)
+                amb_preds.append(pred)
         support = len(unk_trues)
         if support > 0:
             output['unknown-tokens'] = compute_scores(unk_trues, unk_preds)
+        support = len(amb_trues)
+        if support > 0:
+            output['ambiguous-tokens'] = compute_scores(amb_trues, amb_preds)
 
         # compute scores for unknown targets
         if self.label_encoder.known_tokens:
