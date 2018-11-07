@@ -54,7 +54,7 @@ class LinearDecoder(nn.Module):
     """
     def __init__(self, label_encoder, in_features, highway_layers=0, highway_act='relu'):
         self.label_encoder = label_encoder
-        super(LinearDecoder, self).__init__()
+        super().__init__()
 
         # nll weight
         nll_weight = torch.ones(len(label_encoder))
@@ -245,7 +245,7 @@ class Attention(nn.Module):
     hidden_size : int, size of both the encoder output/attention
     """
     def __init__(self, hidden_size):
-        super(Attention, self).__init__()
+        super().__init__()
         self.linear_in = nn.Linear(hidden_size, hidden_size)
         self.linear_out = nn.Linear(hidden_size * 2, hidden_size)
         self.init()
@@ -314,7 +314,7 @@ class AttentionalDecoder(nn.Module):
         self.context_dim = context_dim
         self.dropout = dropout
         self.init_rnn = init_rnn
-        super(AttentionalDecoder, self).__init__()
+        super().__init__()
 
         if label_encoder.get_eos() is None and label_encoder.get_bos() is None:
             raise ValueError("AttentionalDecoder needs at least one of <eos> or <bos>")

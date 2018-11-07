@@ -20,7 +20,7 @@ class LabelEncoder(object):
                  pad=True, eos=False, bos=False, **meta):
 
         if level.lower() not in ('token', 'char'):
-            raise ValueError("`level` must be 'token' or 'char'")
+            raise ValueError("`level` must be 'token' or 'char'. Got ", level)
 
         self.meta = meta  # dictionary with other task-relevant information
         self.eos = constants.EOS if eos else None
@@ -226,7 +226,7 @@ class LabelEncoder(object):
         inst = cls(pad=obj['pad'], eos=obj['eos'], bos=obj['bos'],
                    level=obj['level'], target=obj['target'],
                    max_size=obj['max_size'], min_freq=['min_freq'],
-                   preprocessor=obj['preprocessor'],
+                   preprocessor=obj.get('preprocessor'),
                    name=obj['name'], meta=obj.get('meta', {}))
         inst.freqs = Counter(obj['freqs'])
         inst.table = dict(obj['table'])

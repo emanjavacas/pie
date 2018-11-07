@@ -41,7 +41,7 @@ class SimpleModel(BaseModel):
     def __init__(self, label_encoder, tasks, wemb_dim, cemb_dim, hidden_size, num_layers,
                  dropout=0.0, word_dropout=0.0, merge_type='concat', cemb_type='RNN',
                  cemb_layers=1, cell='LSTM', custom_cemb_cell=False,
-                 init_rnn='xavier_uniform', include_lm=True):
+                 init_rnn='xavier_uniform', include_lm=True, **kwargs):  # for compat
         # args
         self.wemb_dim = wemb_dim
         self.cemb_dim = cemb_dim
