@@ -6,8 +6,9 @@ class LineParser(object):
     """
     Inner class to handle sentence breaks
     """
-    def __init__(self, tasks, breakline_type, breakline_ref, breakline_data, reader):
+    def __init__(self, tasks, sep, breakline_type, breakline_ref, breakline_data, reader):
         self.reader = reader
+        self.sep = sep
         # breakline info
         self.breakline_type = breakline_type
         self.breakline_ref = breakline_ref
@@ -20,7 +21,7 @@ class LineParser(object):
         """
         Adds line to current sentence.
         """
-        inp, *tasks = line.split()
+        inp, *tasks = line.split(self.sep)
 
         if len(tasks) < len(self.tasks):
             try:
@@ -92,6 +93,7 @@ class TabReader(BaseReader):
     def __init__(self, settings, fpath, line_parser=LineParser):
         self.header = settings.header  # needed for get_tasks
         self.tasks_order = settings.tasks_order
+        self.sep = settings.sep
         super(TabReader, self).__init__(settings, fpath)
 
         self.line_parser = line_parser
@@ -109,7 +111,7 @@ class TabReader(BaseReader):
                 next(f)
 
             parser = self.line_parser(
-                self.tasks, self.breakline_type,
+                self.tasks, self.sep, self.breakline_type,
                 self.breakline_ref, self.breakline_data, self)
 
             for line_num, line in enumerate(f):
@@ -135,7 +137,7 @@ class TabReader(BaseReader):
 
             if self.header:
                 # TODO: this assumes text is first field
-                _, *header = next(f).strip().split()
+                _, *header = next(f).strip().split(self.sep)
                 return tuple(header)
 
             else:
@@ -144,7 +146,7 @@ class TabReader(BaseReader):
                 while not line:
                     line = next(f).strip()
 
-                _, *tasks = line.split()
+                _, *tasks = line.split(self.sep)
                 if len(tasks) == 0:
                     raise ValueError("Not enough input tasks: [{}]".format(self.fpath))
 

@@ -31,13 +31,15 @@
   // maximum number of sentences to process
   "max_sents": 1000000,
   // maximum vocabulary size
-  "char_max_size": 100,
+  "char_max_size": 300,
   "word_max_size": 20000,
   // min freq per item to be incorporated in the vocabulary (only used if *_max_size is 0)
   "char_min_freq": 1,
   "word_min_freq": 1,
   // header
   "header": true,
+  // separator for csv-like files
+  "sep": "\t",
   // expected order of tasks for tabreader
   "tasks_order": ["lemma", "pos"], // only for TabReader
   // task-related config
