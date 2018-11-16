@@ -70,14 +70,11 @@ if __name__ == '__main__':
         print()
 
     # fit
-    start = time.time()
     if settings.verbose:
         print("::: Fitting data :::")
         print()
     ninsts = label_encoder.fit_reader(reader)
     if settings.verbose:
-        print("Found {} total instances in training set in {:g} secs".format(
-            ninsts, time.time() - start))
         print()
         print("::: Vocabulary :::")
         print()
@@ -154,6 +151,7 @@ if __name__ == '__main__':
 
     # training
     print("Starting training")
+    running_time = time.time()
     trainer = Trainer(settings, model, trainset, ninsts)
     scores = None
     try:
@@ -162,6 +160,7 @@ if __name__ == '__main__':
         print("Stopping training")
     finally:
         model.eval()
+    running_time = time.time() - running_time
 
     if testset is not None:
         print("Evaluating model on test set")
@@ -182,17 +181,29 @@ if __name__ == '__main__':
             result = scorer.get_scores()
             # accuracy
             scores.append('{}:{:.6f}'.format(task, result['accuracy']))
+            scores.append('{}-support:{}'.format(task, result['support']))
             # unknown tokens accuracy
-            scores.append('{}-unknown-tokens:{:.6f}'.format(
-                task, result['unknown-tokens']['accuracy']))
+            if 'unknown-tokens' in result:
+                scores.append('{}-unknown-tokens:{:.6f}'.format(
+                    task, result['unknown-tokens']['accuracy']))
+                scores.append('{}-unknown-tokens-support:{:.6f}'.format(
+                    task, result['unknown-tokens']['support']))
+            # unknown tokens accuracy
+            if 'ambiguous-tokens' in result:
+                scores.append('{}-ambiguous-tokens:{:.6f}'.format(
+                    task, result['ambiguous-tokens']['accuracy']))
+                scores.append('{}-ambiguous-tokens-support:{:.6f}'.format(
+                    task, result['ambiguous-tokens']['support']))
             # unknown target accuracy
             if 'unknown-targets' in result:
                 scores.append('{}-unknown-targets:{:.6f}'.format(
                     task, result['unknown-targets']['accuracy']))
+                scores.append('{}-unknown-targets:{:.6f}'.format(
+                    task, result['unknown-targets']['support']))
         path = '{}.results.{}.csv'.format(
             settings.modelname, '-'.join(get_targets(settings)))
         with open(path, 'a') as f:
-            line = [infix, str(seed), datetime.now().strftime("%Y_%m_%d-%H_%M_%S")]
+            line = [infix, str(seed), str(running_time)]
             line += scores
             f.write('{}\n'.format('\t'.join(line)))
 

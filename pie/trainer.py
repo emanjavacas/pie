@@ -178,13 +178,7 @@ class Trainer(object):
         """
         total_losses, total_batches = collections.defaultdict(float), 0
 
-        # get total number of batches
-        if isinstance(dataset, collections.Sized):
-            total = len(dataset)
-        elif num_batches is not None:
-            total = num_batches
-
-        for batch in tqdm.tqdm(dataset, total=total):
+        for batch in tqdm.tqdm(dataset.batch_generator()):
             total_batches += 1
             for k, v in self.model.loss(batch).items():
                 total_losses[k] += v.item()

@@ -33,6 +33,14 @@ class Scorer(object):
         self.trues = []
         self.tokens = []
 
+    def serialize_preds(self, path):
+        """
+        write predictions to file
+        """
+        with open(path, 'w') as f:
+            for tok, true, pred in zip(self.tokens, self.trues, self.preds):
+                f.write('{}\t{}\t{}\n'.format(tok, true, pred))
+
     def register_batch(self, hyps, targets, tokens):
         """
         hyps : list

@@ -43,7 +43,7 @@ class SimpleModel(BaseModel):
                  dropout=0.0, word_dropout=0.0, merge_type='concat', cemb_type='RNN',
                  cemb_layers=1, cell='LSTM', custom_cemb_cell=False,
                  lemma_context="sentence", include_lm=True, pos_crf=True,
-                 init_rnn='xavier_uniform'):
+                 init_rnn='xavier_uniform', **kwargs):
         # args
         self.wemb_dim = wemb_dim
         self.cemb_dim = cemb_dim
