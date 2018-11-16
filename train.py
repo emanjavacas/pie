@@ -106,6 +106,7 @@ if __name__ == '__main__':
                         settings.wemb_dim, settings.cemb_dim, settings.hidden_size,
                         settings.num_layers, dropout=settings.dropout,
                         cell=settings.cell, cemb_type=settings.cemb_type,
+                        cemb_layers=settings.cemb_layers,
                         custom_cemb_cell=settings.custom_cemb_cell,
                         word_dropout=settings.word_dropout,
                         include_lm=settings.include_lm)
