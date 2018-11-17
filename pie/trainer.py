@@ -25,7 +25,8 @@ class TaskScheduler(object):
     """
     Track scores
     """
-    def __init__(self, tasks, patience, factor, threshold, min_weight):
+    def __init__(self, tasks, patience, factor, threshold, min_weight,
+                 optimizer=None, lr_factor=1, lr_patience=100):
         for task, values in tasks.items():
             tasks[task] = {'steps': 0, **values}
             # set task mode
@@ -40,6 +41,13 @@ class TaskScheduler(object):
             else:
                 tasks[task]['best'] = float('inf')
 
+        # lr schedule
+        self.optimizer = optimizer
+        self.lr_factor = lr_factor
+        self.lr_patience = lr_patience
+        self.lr_steps = 0
+
+        # task schedule
         self.tasks = tasks
         self.patience = patience
         self.factor = factor
@@ -47,10 +55,18 @@ class TaskScheduler(object):
         self.min_weight = min_weight
         self.fid = '/tmp/{}'.format(str(uuid.uuid1()))
 
+    def get_lr(self):
+        # assumes single param group
+        return float(self.optimizer.param_groups[0]['lr'])
+
+    def set_lr(self, new_lr):
+        self.optimizer.param_groups[0]['lr'] = new_lr
+
     def __repr__(self):
+        # task scheduler
         output = (
-            "<TaskScheduler patience=\"{}\" factor=\"{}\" " +
-            "threshold=\"{}\" min_weight=\"{}\">").format(
+            '<TaskScheduler patience="{}" factor="{}" ' +
+            'threshold="{}" min_weight="{}">').format(
                 self.patience, self.factor, self.threshold, self.min_weight)
 
         for task, values in self.tasks.items():
@@ -58,6 +74,13 @@ class TaskScheduler(object):
             output += ' '.join('{}="{}"'.format(key, val) for key, val in values.items())
             output += '/>'
         output += '\n</TaskScheduler>'
+
+        # lr scheduler
+        if self.optimizer is not None:
+            output += '\n'
+            output += '<LrScheduler lr="{}" lr_steps="{}" lr_patience="{}"/>'.format(
+                round(self.get_lr(), 5), self.lr_steps, self.lr_patience)
+
         return output
 
     def is_best(self, task, value):
@@ -79,21 +102,28 @@ class TaskScheduler(object):
                 # ignore
                 continue
 
+            is_target = self.tasks[task].get('target', False)
+
             # check if we improve
             if self.is_best(task, score):
                 self.tasks[task]['best'] = score
                 self.tasks[task]['steps'] = 0
-                if self.tasks[task].get('target', False):
+                if is_target:
                     # serialize model params
                     torch.save(model.state_dict(), self.fid)
+                    # lr schedule
+                    self.lr_steps = 0
             else:
                 self.tasks[task]['steps'] += 1
+                # lr schedule
+                if is_target:
+                    self.lr_steps += 1
 
             # check if we need to stop globally or downweight a task loss
             patience = self.tasks[task].get('patience', self.patience)
             if self.tasks[task]['steps'] >= patience:
                 # maybe stop entire training
-                if self.tasks[task].get('target', False):
+                if is_target:
                     state_dict = torch.load(self.fid)
                     os.remove(self.fid)
                     raise EarlyStopException(task, self.tasks[task]['best'], state_dict)
@@ -103,6 +133,10 @@ class TaskScheduler(object):
                     new_weight = self.tasks[task]['weight'] * factor
                     min_weight = self.tasks[task].get('min_weight', self.min_weight)
                     self.tasks[task]['weight'] = max(new_weight, min_weight)
+
+            # lr schedule
+            if is_target and self.lr_steps >= self.lr_patience:
+                self.set_lr(self.get_lr() * self.lr_factor)
 
     def get_weights(self):
         return {task: self.tasks[task]['weight'] for task in self.tasks}
@@ -126,13 +160,8 @@ class Trainer(object):
         self.verbose = settings.verbose
         self.dataset = dataset
         self.model = model
-        self.optim = getattr(optim, settings.optimizer)(
+        self.optimizer = getattr(optim, settings.optimizer)(
             model.parameters(), lr=settings.lr)
-        self.lr_scheduler = None
-        if settings.lr_factor < 1.0:
-            self.lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-                self.optim, patience=settings.lr_patience, factor=settings.lr_factor,
-                verbose=settings.verbose)
         self.clip_norm = settings.clip_norm
 
         self.report_freq = settings.report_freq
@@ -151,8 +180,12 @@ class Trainer(object):
             tasks['fwd_lm'] = settings.lm_schedule
             tasks['bwd_lm'] = settings.lm_schedule
         self.task_scheduler = TaskScheduler(
+            # task schedule
             tasks, settings.patience, settings.factor, settings.threshold,
-            settings.min_weight)
+            settings.min_weight,
+            # lr schedule
+            optimizer=self.optimizer,
+            lr_factor=settings.lr_factor, lr_patience=settings.lr_patience)
 
         if settings.verbose:
             print()
@@ -231,9 +264,6 @@ class Trainer(object):
             print(self.task_scheduler)
             print()
 
-        if self.lr_scheduler is not None:
-            self.lr_scheduler.step(self.weight_loss(dev_loss))
-
         return dev_scores
 
     def train_epoch(self, dev):
@@ -249,11 +279,11 @@ class Trainer(object):
                 raise ValueError("Got empty loss, no tasks defined?")
 
             # optimize
-            self.optim.zero_grad()
+            self.optimizer.zero_grad()
             self.weight_loss(loss).backward()
             if self.clip_norm > 0:
                 clip_grad_norm_(self.model.parameters(), self.clip_norm)
-            self.optim.step()
+            self.optimizer.step()
 
             # accumulate
             rep_items += type(self.dataset).get_nelement(batch)
