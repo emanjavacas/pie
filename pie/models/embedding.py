@@ -74,6 +74,7 @@ class RNNEmbedding(nn.Module):
                  custom_lstm=False, cell='LSTM', init_rnn='default',
                  num_layers=1, dropout=0.0):
         self.num_embeddings = num_embeddings
+        self.num_layers = num_layers
         self.embedding_dim = embedding_dim * 2  # bidirectional
         super().__init__()
 
@@ -114,7 +115,11 @@ class RNNEmbedding(nn.Module):
             outs, (emb, _) = self.rnn(char, hidden, nchars)
         # (max_seq_len x batch * nwords x emb_dim)
         outs, emb = outs[:, unsort], emb[:, unsort]
-        # (2 x batch x hidden) -> (batch x 2 * hidden)
+        # (layers * 2 x batch x hidden) -> (layers x 2 x batch x hidden)
+        emb = emb.view(self.num_layers, 2, len(nchars), -1)
+        # use only last layer
+        emb = emb[-1]
+        # (2 x batch x hidden) - > (batch x 2 * hidden)
         emb = emb.transpose(0, 1).contiguous().view(len(nchars), -1)
         # (batch x 2 * hidden) -> (nwords x batch x 2 * hidden)
         emb = torch_utils.pad_flat_batch(emb, nwords, maxlen=max(nwords).item())
