@@ -41,7 +41,7 @@ class SimpleModel(BaseModel):
     """
     def __init__(self, label_encoder, wemb_dim, cemb_dim, hidden_size, num_layers,
                  dropout=0.0, word_dropout=0.0, merge_type='concat', cemb_type='RNN',
-                 cemb_layers=1, cell='LSTM', custom_cemb_cell=False,
+                 cemb_layers=1, cell='LSTM', custom_cemb_cell=False, scorer='general',
                  lemma_context="sentence", include_lm=True, pos_crf=True,
                  init_rnn='xavier_uniform', **kwargs):
         # args
@@ -56,6 +56,7 @@ class SimpleModel(BaseModel):
         self.merge_type = merge_type
         self.cemb_type = cemb_type
         self.cemb_layers = cemb_layers
+        self.scorer = scorer
         self.include_lm = include_lm
         self.pos_crf = pos_crf
         self.custom_cemb_cell = custom_cemb_cell
@@ -140,7 +141,7 @@ class SimpleModel(BaseModel):
                 self.lemma_decoder = AttentionalDecoder(
                     label_encoder.tasks['lemma'],
                     self.cemb.embedding_dim, self.cemb.embedding_dim,
-                    num_layers=cemb_layers,
+                    num_layers=cemb_layers, scorer=scorer, cell=cell,
                     context_dim=context_dim, dropout=dropout, init_rnn=init_rnn)
             else:
                 self.lemma_decoder = LinearDecoder(
@@ -172,6 +173,7 @@ class SimpleModel(BaseModel):
                            'include_lm': self.include_lm,
                            'pos_crf': self.pos_crf,
                            'lemma_context': self.lemma_context,
+                           'scorer': self.scorer,
                            'custom_cemb_cell': self.custom_cemb_cell}}
 
     def embedding(self, word, wlen, char, clen):

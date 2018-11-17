@@ -9,6 +9,7 @@ from pie import torch_utils
 from pie.constants import TINY
 
 from .beam_search import Beam
+from .attention import Attention
 
 
 class Highway(nn.Module):
@@ -236,65 +237,6 @@ class CRFDecoder(nn.Module):
         return hyps, scores
 
 
-class Attention(nn.Module):
-    """
-    Attention module.
-
-    Parameters
-    ===========
-    hidden_size : int, size of both the encoder output/attention
-    """
-    def __init__(self, hidden_size):
-        super(Attention, self).__init__()
-        self.linear_in = nn.Linear(hidden_size, hidden_size)
-        self.linear_out = nn.Linear(hidden_size * 2, hidden_size)
-        self.init()
-
-    def init(self):
-        initialization.init_linear(self.linear_in)
-        initialization.init_linear(self.linear_out)
-
-    def forward(self, dec_outs, enc_outs, lengths):
-        """
-        Parameters
-        ===========
-        dec_outs : (out_seq_len x batch x hidden_size)
-            Output of the rnn decoder.
-        enc_outs : (inp_seq_len x batch x hidden_size)
-            Output of the encoder over the entire sequence.
-
-        Returns
-        ========
-        context : (out_seq_len x batch x hidden_size)
-            Context vector combining current rnn output and the entire
-            encoded sequence.
-        weights : (out_seq_len x batch x inp_seq_len)
-            Weights computed by the attentional module over the input seq.
-        """
-        out_seq, batch, hidden_size = dec_outs.size()
-        # (out_seq_len x batch x hidden_size)
-        att_proj = self.linear_in(dec_outs)
-        # (batch x out_seq_len x hidden) * (batch x hidden x inp_seq_len)
-        # -> (batch x out_seq_len x inp_seq_len)
-        weights = torch.bmm(
-            att_proj.transpose(0, 1),
-            enc_outs.transpose(0, 1).transpose(1, 2))
-        # downweight scores for source padding (mask) (batch x inp_seq_len)
-        mask = torch_utils.make_length_mask(lengths)
-        weights.masked_fill_(1 - mask.unsqueeze(1).expand_as(weights), -float('inf'))
-        # apply softmax
-        weights = F.softmax(weights, dim=2)
-        # (batch x out_seq_len x inp_seq_len) * (batch x inp_seq_len x hidden)
-        # -> (batch x out_seq_len x hidden_size)
-        weighted = torch.bmm(weights, enc_outs.transpose(0, 1))
-        # (out_seq_len x batch x hidden * 2)
-        context = torch.cat([weighted.transpose(0, 1), dec_outs], 2)
-        # (out_seq_len x batch x hidden)
-        context = torch.tanh(self.linear_out(context))
-
-        return context, weights
-
-
 class AttentionalDecoder(nn.Module):
     """
     Decoder using attention over the entire input sequence
@@ -308,8 +250,9 @@ class AttentionalDecoder(nn.Module):
     hidden_size : int, hidden size of the encoder, decoder and attention modules.
     context_dim : int (optional), dimensionality of additional context vectors
     """
-    def __init__(self, label_encoder, in_dim, hidden_size, context_dim=0, dropout=0.0,
-                 num_layers=1, cell='LSTM', init_rnn='default'):
+    def __init__(self, label_encoder, in_dim, hidden_size, scorer='general',
+                 context_dim=0, dropout=0.0, num_layers=1, cell='LSTM',
+                 init_rnn='default'):
         self.label_encoder = label_encoder
         self.context_dim = context_dim
         self.dropout = dropout
@@ -323,7 +266,8 @@ class AttentionalDecoder(nn.Module):
         nll_weight[label_encoder.get_pad()] = 0.
         self.register_buffer('nll_weight', nll_weight)
         self.embs = nn.Embedding(len(label_encoder), in_dim)
-        self.rnn = getattr(nn, cell)(in_dim + context_dim, hidden_size, num_layers=1,
+        self.rnn = getattr(nn, cell)(in_dim + context_dim, hidden_size,
+                                     num_layers=num_layers,
                                      dropout=dropout if num_layers > 1 else 0)
         self.attn = Attention(hidden_size)
         self.proj = nn.Linear(hidden_size, len(label_encoder))

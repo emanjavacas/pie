@@ -110,6 +110,7 @@ if __name__ == '__main__':
                         settings.num_layers, dropout=settings.dropout,
                         cell=settings.cell, cemb_type=settings.cemb_type,
                         custom_cemb_cell=settings.custom_cemb_cell,
+                        cemb_layers=settings.cemb_layers, scorer=settings.scorer,
                         word_dropout=settings.word_dropout,
                         lemma_context=settings.lemma_context,
                         include_lm=settings.include_lm, pos_crf=settings.pos_crf)

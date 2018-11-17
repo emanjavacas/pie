@@ -124,6 +124,8 @@
   "custom_cemb_cell": false,
   // number of layers for the rnn-embeddings and the attentional decoder
   "cemb_layers": 1,
+  // attention type
+  "scorer": "general",
   // how to merge word-level and char-level embeddings (mixer or concat)
   "merge_type": "concat",
   "hidden_size": 300,
