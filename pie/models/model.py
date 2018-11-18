@@ -140,8 +140,8 @@ class SimpleModel(BaseModel):
                     context_dim = hidden_size * 2 + wemb_dim
 
                 self.lemma_decoder = AttentionalDecoder(
-                    label_encoder.tasks['lemma'],
-                    self.cemb.embedding_dim, self.cemb.embedding_dim,
+                    label_encoder.tasks['lemma'], cemb_dim,
+                    self.cemb.embedding_dim,
                     num_layers=cemb_layers, scorer=scorer, cell=cell,
                     context_dim=context_dim, dropout=dropout, init_rnn=init_rnn)
             else:
