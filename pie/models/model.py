@@ -281,11 +281,11 @@ class SimpleModel(BaseModel):
                     enc_outs[0], p=0, training=self.training
                 ).chunk(2, dim=2)
                 # forward logits
-                logits = self.lm_fwd_decoder(torch_utils.pad(fwd[:-1], pos='pre'))
-                output['fwd_lm'] = self.lm_fwd_decoder.loss(logits, word)
+                logits = self.lm_decoder_fwd(torch_utils.pad(fwd[:-1], pos='pre'))
+                output['fwd_lm'] = self.lm_decoder_fwd.loss(logits, word)
                 # backward logits
-                logits = self.lm_fwd_decoder(torch_utils.pad(bwd[1:], pos='post'))
-                output['bwd_lm'] = self.lm_bwd_decoder.loss(logits, word)
+                logits = self.lm_decoder_bwd(torch_utils.pad(bwd[1:], pos='post'))
+                output['bwd_lm'] = self.lm_decoder_bwd.loss(logits, word)
 
         return output
 
