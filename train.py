@@ -113,6 +113,7 @@ if __name__ == '__main__':
                         cemb_layers=settings.cemb_layers, scorer=settings.scorer,
                         word_dropout=settings.word_dropout,
                         lemma_context=settings.lemma_context,
+                        lm_shared_softmax=settings.lm_shared_softmax,
                         include_lm=settings.include_lm, pos_crf=settings.pos_crf)
 
     # pretrain(/load pretrained) embeddings

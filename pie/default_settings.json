@@ -79,6 +79,8 @@
 
   // whether to include autoregressive loss
   "include_lm": false,
+  // whether to share the output layer for both fwd and bwd lm
+  "lm_shared_softmax": false,
   // lm settings in case it's included as an extra task
   "lm_schedule": {
     "patience": 100, "factor": 0.5, "weight": 0.2, "mode": "min"

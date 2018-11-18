@@ -42,8 +42,8 @@ class SimpleModel(BaseModel):
     def __init__(self, label_encoder, wemb_dim, cemb_dim, hidden_size, num_layers,
                  dropout=0.0, word_dropout=0.0, merge_type='concat', cemb_type='RNN',
                  cemb_layers=1, cell='LSTM', custom_cemb_cell=False, scorer='general',
-                 lemma_context="sentence", include_lm=True, pos_crf=True,
-                 init_rnn='xavier_uniform', **kwargs):
+                 lemma_context="sentence", include_lm=True, lm_shared_softmax=True,
+                 pos_crf=True, init_rnn='xavier_uniform', **kwargs):
         # args
         self.wemb_dim = wemb_dim
         self.cemb_dim = cemb_dim
@@ -59,6 +59,7 @@ class SimpleModel(BaseModel):
         self.scorer = scorer
         self.include_lm = include_lm
         self.pos_crf = pos_crf
+        self.lm_shared_softmax = lm_shared_softmax
         self.custom_cemb_cell = custom_cemb_cell
         self.lemma_context = lemma_context
         # only during training
@@ -160,7 +161,10 @@ class SimpleModel(BaseModel):
         # - LM
         if self.include_lm:
             self.lm_decoder_fwd = LinearDecoder(label_encoder.word, hidden_size)
-            self.lm_decoder_bwd = LinearDecoder(label_encoder.word, hidden_size)
+            if lm_shared_softmax:
+                self.lm_decoder_bwd = self.lm_decoder_fwd
+            else:
+                self.lm_decoder_bwd = LinearDecoder(label_encoder.word, hidden_size)
 
     def get_args_and_kwargs(self):
         return {'args': (self.wemb_dim, self.cemb_dim, self.hidden_size, self.num_layers),
