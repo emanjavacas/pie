@@ -1,9 +1,9 @@
 
 import os
-import time
 import logging
 from datetime import datetime
 
+import pie
 from pie.settings import settings_from_file
 from pie.trainer import Trainer
 from pie import initialization
@@ -26,27 +26,14 @@ if torch.cuda.is_available():
 
 
 def get_targets(settings):
-    # infix
-    targets = []
-    for task in settings.tasks:
-        if task.get('schedule', {}).get('target'):
-            targets.append(task['name'])
+    return [task['name'] for task in settings.tasks if task.get('target')]
 
-    if not targets and len(settings.tasks) == 1:
-        targets.append(settings.tasks[0]['name'])
-
-    return targets
 
 def get_fname_infix(settings):
     # fname
     fname = os.path.join(settings.modelpath, settings.modelname)
     timestamp = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
-    targets = get_targets(settings)
-    if targets:
-        infix = '-'.join(['+'.join(targets), timestamp])
-    else:
-        infix = timestamp
-
+    infix = '+'.join(get_targets(settings)) + '-' + timestamp
     return fname, infix
 
 
@@ -58,10 +45,22 @@ if __name__ == '__main__':
 
     settings = settings_from_file(args.config_path)
 
+    # check settings
+    # - check at least and at most one target
+    has_target = False
+    for task in settings.tasks:
+        if len(settings.tasks) == 1:
+            task['target'] = True
+        if task.get('target', False):
+            if has_target:
+                raise ValueError("Got more than one target task")
+            has_target = True
+    if not has_target:
+        raise ValueError("Needs at least one target task")
+
     # datasets
     reader = Reader(settings, settings.input_path)
     tasks = reader.check_tasks(expected=None)
-    label_encoder = MultiLabelEncoder.from_settings(settings, tasks=tasks)
     if settings.verbose:
         print("::: Available tasks :::")
         print()
@@ -69,11 +68,13 @@ if __name__ == '__main__':
             print("- {}".format(task))
         print()
 
-    # fit
+    # label encoder
+    label_encoder = MultiLabelEncoder.from_settings(settings, tasks=tasks)
     if settings.verbose:
         print("::: Fitting data :::")
         print()
-    ninsts = label_encoder.fit_reader(reader)
+    label_encoder.fit_reader(reader)
+
     if settings.verbose:
         print()
         print("::: Vocabulary :::")
@@ -85,7 +86,7 @@ if __name__ == '__main__':
         tokens = '{}/{}={:.2f}'.format(*label_encoder.char.get_token_stats())
         print("- {:<15} types={:<10} tokens={:<10}".format("char", types, tokens))
         print()
-        print("::: Target tasks :::")
+        print("::: Tasks :::")
         print()
         for task, le in label_encoder.tasks.items():
             print("- {:<15} target={:<6} level={:<6} vocab={:<6}"
@@ -100,21 +101,17 @@ if __name__ == '__main__':
     else:
         logging.warning("No devset: cannot monitor/optimize training")
 
-    testset = None
-    if settings.test_path:
-        testset = Dataset(settings, Reader(settings, settings.test_path), label_encoder)
-
     # model
-    model = SimpleModel(trainset.label_encoder,
+    model = SimpleModel(label_encoder, settings.tasks,
                         settings.wemb_dim, settings.cemb_dim, settings.hidden_size,
                         settings.num_layers, dropout=settings.dropout,
                         cell=settings.cell, cemb_type=settings.cemb_type,
+                        cemb_layers=settings.cemb_layers,
                         custom_cemb_cell=settings.custom_cemb_cell,
                         cemb_layers=settings.cemb_layers, scorer=settings.scorer,
                         word_dropout=settings.word_dropout,
-                        lemma_context=settings.lemma_context,
                         lm_shared_softmax=settings.lm_shared_softmax,
-                        include_lm=settings.include_lm, pos_crf=settings.pos_crf)
+                        include_lm=settings.include_lm)
 
     # pretrain(/load pretrained) embeddings
     if model.wemb is not None:
@@ -130,13 +127,18 @@ if __name__ == '__main__':
         elif settings.load_pretrained_embeddings:
             print("Loading pretrained embeddings")
             if not os.path.isfile(settings.load_pretrained_embeddings):
-                print("Couldn't find pretrained embeddings in: {}. Skipping...".format(
+                print("Couldn't find pretrained eembeddings in: {}".format(
                     settings.load_pretrained_embeddings))
             initialization.init_pretrained_embeddings(
                 settings.load_pretrained_embeddings, label_encoder.word, model.wemb)
 
-        if settings.freeze_embeddings:
-            model.wemb.weight.requires_grad = False
+    # load pretrained weights
+    if settings.load_pretrained_encoder:
+        model.init_from_encoder(pie.Encoder.load(settings.load_pretrained_encoder))
+
+    # freeze embeddings
+    if settings.freeze_embeddings:
+        model.wemb.weight.requires_grad = False
 
     model.to(settings.device)
 
@@ -153,8 +155,9 @@ if __name__ == '__main__':
 
     # training
     print("Starting training")
+
     running_time = time.time()
-    trainer = Trainer(settings, model, trainset, ninsts)
+    trainer = Trainer(settings, model, trainset, reader.get_nsents())
     scores = None
     try:
         scores = trainer.train_epochs(settings.epochs, dev=devset)
@@ -164,8 +167,9 @@ if __name__ == '__main__':
         model.eval()
     running_time = time.time() - running_time
 
-    if testset is not None:
+    if settings.test_path:
         print("Evaluating model on test set")
+        testset = Dataset(settings, Reader(settings, settings.test_path), label_encoder)
         for task in model.evaluate(testset.batch_generator()).values():
             task.print_summary()
 
@@ -181,27 +185,9 @@ if __name__ == '__main__':
         for task in sorted(scorers):
             scorer = scorers[task]
             result = scorer.get_scores()
-            # accuracy
-            scores.append('{}:{:.6f}'.format(task, result['accuracy']))
-            scores.append('{}-support:{}'.format(task, result['support']))
-            # unknown tokens accuracy
-            if 'unknown-tokens' in result:
-                scores.append('{}-unknown-tokens:{:.6f}'.format(
-                    task, result['unknown-tokens']['accuracy']))
-                scores.append('{}-unknown-tokens-support:{:.6f}'.format(
-                    task, result['unknown-tokens']['support']))
-            # unknown tokens accuracy
-            if 'ambiguous-tokens' in result:
-                scores.append('{}-ambiguous-tokens:{:.6f}'.format(
-                    task, result['ambiguous-tokens']['accuracy']))
-                scores.append('{}-ambiguous-tokens-support:{:.6f}'.format(
-                    task, result['ambiguous-tokens']['support']))
-            # unknown target accuracy
-            if 'unknown-targets' in result:
-                scores.append('{}-unknown-targets:{:.6f}'.format(
-                    task, result['unknown-targets']['accuracy']))
-                scores.append('{}-unknown-targets:{:.6f}'.format(
-                    task, result['unknown-targets']['support']))
+            for acc in result:
+                scores.append('{}:{:6.f}'.format(task, result[acc]['accuracy']))
+                scores.append('{}-support:{}'.format(task, result[acc]['support']))
         path = '{}.results.{}.csv'.format(
             settings.modelname, '-'.join(get_targets(settings)))
         with open(path, 'a') as f:

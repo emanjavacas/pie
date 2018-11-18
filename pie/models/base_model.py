@@ -19,8 +19,12 @@ class BaseModel(nn.Module):
     """
     Abstract model class defining the model interface
     """
-    def __init__(self, label_encoder, *args, **kwargs):
+    def __init__(self, label_encoder, tasks, *args, **kwargs):
         self.label_encoder = label_encoder
+        # prepare input task data from task settings
+        if isinstance(tasks, list):
+            tasks = {task['name']: task for task in tasks}
+        self.tasks = tasks
         super().__init__()
 
     def loss(self, batch_data):
@@ -37,11 +41,11 @@ class BaseModel(nn.Module):
     def get_args_and_kwargs(self):
         """
         Return a dictionary of {'args': tuple, 'kwargs': dict} that were used
-        to instantiate the model (excluding the label_encoder)
+        to instantiate the model (excluding the label_encoder and tasks)
         """
         raise NotImplementedError
 
-    def evaluate(self, dataset, total=None):
+    def evaluate(self, dataset):
         """
         Get scores per task
         """
@@ -69,6 +73,11 @@ class BaseModel(nn.Module):
                     if le.level == 'token':
                         preds[task] = [pred for batch in preds[task] for pred in batch]
 
+                    # - postprocessing if needed
+                    if le.preprocessor_fn is not None:
+                        preds[task] = [le.preprocessor_fn.inverse_transform(pred, tok)
+                                       for pred, tok in zip(preds[task], tokens)]
+
                 # accumulate
                 for task, scorer in scorers.items():
                     scorer.register_batch(preds[task], trues[task], tokens)
@@ -79,7 +88,7 @@ class BaseModel(nn.Module):
         """
         Serialize model to path
         """
-        import pie # to handle git commits
+        import pie
         fpath = utils.ensure_ext(fpath, 'tar', infix)
 
         # create dir if necessary
@@ -90,6 +99,10 @@ class BaseModel(nn.Module):
         with tarfile.open(fpath, 'w') as tar:
             # serialize label_encoder
             string, path = json.dumps(self.label_encoder.jsonify()), 'label_encoder.zip'
+            utils.add_gzip_to_tar(string, path, tar)
+
+            # serialize tasks
+            string, path = json.dumps(self.tasks), 'tasks.zip'
             utils.add_gzip_to_tar(string, path, tar)
 
             # serialize model class
@@ -122,8 +135,6 @@ class BaseModel(nn.Module):
         """
         Load settings from path
         """
-        import pie
-
         with tarfile.open(utils.ensure_ext(fpath, 'tar'), 'r') as tar:
             return Settings(json.loads(utils.get_gzip_from_tar(tar, 'settings.zip')))
 
@@ -144,12 +155,15 @@ class BaseModel(nn.Module):
                 logging.warn(
                     ("Model {} was serialized with a previous "
                      "version of `pie`. This might result in issues. "
-                     "Model commit is {}, whereas current `pie` commit is {}."
-                    ).format(fpath, commit, pie.__commit__))
+                     "Model commit is {}, whereas current `pie` commit is {}.").format(
+                         fpath, commit, pie.__commit__))
 
             # load label encoder
             le = MultiLabelEncoder.load_from_string(
                 utils.get_gzip_from_tar(tar, 'label_encoder.zip'))
+
+            # load tasks
+            tasks = json.loads(utils.get_gzip_from_tar(tar, 'tasks.zip'))
 
             # load model parameters
             params = json.loads(utils.get_gzip_from_tar(tar, 'parameters.zip'))
@@ -157,14 +171,14 @@ class BaseModel(nn.Module):
             # instantiate model
             model_type = getattr(pie.models, utils.get_gzip_from_tar(tar, 'class.zip'))
             with utils.shutup():
-                model = model_type(le, *params['args'], **params['kwargs'])
+                model = model_type(le, tasks, *params['args'], **params['kwargs'])
 
             # load settings
             try:
                 settings = Settings(
                     json.loads(utils.get_gzip_from_tar(tar, 'settings.zip')))
                 model._settings = settings
-            except:
+            except Exception:
                 logging.warn("Couldn't load settings for model {}!".format(fpath))
 
             # load state_dict

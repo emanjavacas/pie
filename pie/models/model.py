@@ -1,6 +1,4 @@
 
-from collections import OrderedDict
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -13,12 +11,12 @@ from .encoder import RNNEncoder
 from .base_model import BaseModel
 
 
-def get_lemma_context(outs, wemb, wlen, lemma_context):
-    if lemma_context.lower() == 'sentence':
+def get_context(outs, wemb, wlen, context_type):
+    if context_type.lower() == 'sentence':
         return torch_utils.flatten_padded_batch(outs, wlen)
-    elif lemma_context.lower() == 'word':
+    elif context_type.lower() == 'word':
         return torch_utils.flatten_padded_batch(wemb, wlen)
-    elif lemma_context.lower() == 'both':
+    elif context_type.lower() == 'both':
         outs = torch_utils.flatten_padded_batch(outs, wlen)
         wemb = torch_utils.flatten_padded_batch(wemb, wlen)
         return torch.cat([outs, wemb], -1)
@@ -31,6 +29,7 @@ class SimpleModel(BaseModel):
     Parameters
     ==========
     label_encoder : MultiLabelEncoder
+    tasks : settings.tasks
     wemb_dim : int, embedding dimension for word-level embedding layer
     cemb_dim : int, embedding dimension for char-level embedding layer
     hidden_size : int, hidden_size for all hidden layers
@@ -39,11 +38,10 @@ class SimpleModel(BaseModel):
         char-level embeddings
     cemb_type : str, one of "RNN", "CNN", layer to use for char-level embeddings
     """
-    def __init__(self, label_encoder, wemb_dim, cemb_dim, hidden_size, num_layers,
+    def __init__(self, label_encoder, tasks, wemb_dim, cemb_dim, hidden_size, num_layers,
                  dropout=0.0, word_dropout=0.0, merge_type='concat', cemb_type='RNN',
-                 cemb_layers=1, cell='LSTM', custom_cemb_cell=False, scorer='general',
-                 lemma_context="sentence", include_lm=True, lm_shared_softmax=True,
-                 pos_crf=True, init_rnn='xavier_uniform', **kwargs):
+                 scorer='general', include_lm=True, lm_shared_softmax=True,
+                 init_rnn='xavier_uniform', **kwargs):
         # args
         self.wemb_dim = wemb_dim
         self.cemb_dim = cemb_dim
@@ -58,15 +56,11 @@ class SimpleModel(BaseModel):
         self.cemb_layers = cemb_layers
         self.scorer = scorer
         self.include_lm = include_lm
-        self.pos_crf = pos_crf
         self.lm_shared_softmax = lm_shared_softmax
         self.custom_cemb_cell = custom_cemb_cell
-        self.lemma_context = lemma_context
         # only during training
         self.init_rnn = init_rnn
-        super().__init__(label_encoder)
-
-        lemma_only = len(label_encoder.tasks) == 1 and 'lemma' in label_encoder.tasks
+        super().__init__(label_encoder, tasks)
 
         # Embeddings
         self.wemb = None
@@ -107,7 +101,15 @@ class SimpleModel(BaseModel):
 
         # Encoder
         self.encoder = None
-        if lemma_only and self.lemma_context.lower() not in ('sentence', 'both'):
+        needs_encoder = False
+        for task in self.tasks.values():
+            if task['level'] == 'token':
+                needs_encoder = True
+                break
+            elif task.get('context', '').lower() in ('sentence', 'both'):
+                needs_encoder = True
+                break
+        if not needs_encoder:
             print("Model doesn't need sentence encoder, leaving uninitialized")
         else:
             self.encoder = RNNEncoder(
@@ -115,48 +117,52 @@ class SimpleModel(BaseModel):
                 init_rnn=init_rnn)
 
         # Decoders
-        # - POS
-        if 'pos' in label_encoder.tasks:
-            if self.pos_crf:
-                self.pos_decoder = CRFDecoder(
-                    label_encoder.tasks['pos'], hidden_size * 2)
-            else:
-                self.pos_decoder = LinearDecoder(
-                    label_encoder.tasks['pos'], hidden_size * 2)
-
-        # - lemma
-        if 'lemma' in label_encoder.tasks:
-            self.lemma_sequential = label_encoder.tasks['lemma'].level == 'char'
-            if self.lemma_sequential:
+        decoders = {}
+        for tname, task in self.tasks.items():
+            if task['level'].lower() == 'char':
                 if self.cemb is None:
-                    raise ValueError("Sequential lemmatizer requires char embeddings")
+                    raise ValueError("Char-level decoder requires char embeddings")
 
-                context_dim = 0
-                if lemma_context.lower() == 'sentence':
-                    context_dim = hidden_size * 2  # bidirectional encoder
-                elif lemma_context.lower() == 'word':
-                    context_dim = wemb_dim
-                elif lemma_context.lower() == 'both':
-                    context_dim = hidden_size * 2 + wemb_dim
+                # TODO: add sentence context to decoder
+                if task['decoder'].lower() == 'linear':
+                    decoder = LinearDecoder(
+                        label_encoder.tasks[tname], self.cemb.embedding_dim)
+                elif task['decoder'].lower() == 'crf':
+                    decoder = CRFDecoder(
+                        label_encoder.tasks[tname], self.cemb.embedding_dim)
+                else:
+                    # get context size
+                    context_dim = 0
+                    if task['context'].lower() == 'sentence':
+                        context_dim = hidden_size * 2  # bidirectional encoder
+                    elif task['context'].lower() == 'word':
+                        context_dim = wemb_dim
+                    elif task['context'].lower() == 'both':
+                        context_dim = hidden_size * 2 + wemb_dim
 
-                self.lemma_decoder = AttentionalDecoder(
-                    label_encoder.tasks['lemma'], cemb_dim,
-                    self.cemb.embedding_dim,
-                    num_layers=cemb_layers, scorer=scorer, cell=cell,
-                    context_dim=context_dim, dropout=dropout, init_rnn=init_rnn)
+                    decoder = AttentionalDecoder(
+                        label_encoder.tasks[tname], cemb_dim, self.cemb.embedding_dim,
+                        context_dim=context_dim, scorer=scorer,num_layers=cemb_layers,
+                        dropout=dropout, init_rnn=init_rnn)
+
+            elif task['level'].lower() == 'token':
+                # linear
+                if task['decoder'].lower() == 'linear':
+                    decoder = LinearDecoder(
+                        label_encoder.tasks[tname], hidden_size * 2)
+                # crf
+                elif task['decoder'].lower() == 'crf':
+                    decoder = CRFDecoder(
+                        label_encoder.tasks[tname], hidden_size * 2)
+
             else:
-                self.lemma_decoder = LinearDecoder(
-                    label_encoder.tasks['lemma'], hidden_size * 2)
+                raise ValueError(
+                    "Unknown decoder type {}. Task: {}".format(task['decoder'], tname))
 
-        # - other linear tasks
-        self.linear_tasks, linear_tasks = None, OrderedDict()
-        for task in label_encoder.tasks:
-            if task in ('pos', 'lemma'):
-                continue
-            linear_tasks[task] = LinearDecoder(
-                label_encoder.tasks[task], hidden_size * 2)
-        if len(linear_tasks) > 0:
-            self.linear_tasks = nn.Sequential(linear_tasks)
+            self.add_module('{}_decoder'.format(tname), decoder)
+            decoders[tname] = decoder
+
+        self.decoders = decoders
 
         # - LM
         if self.include_lm:
@@ -175,8 +181,6 @@ class SimpleModel(BaseModel):
                            'cemb_type': self.cemb_type,
                            'cemb_layers': self.cemb_layers,
                            'include_lm': self.include_lm,
-                           'pos_crf': self.pos_crf,
-                           'lemma_context': self.lemma_context,
                            'scorer': self.scorer,
                            'custom_cemb_cell': self.custom_cemb_cell}}
 
@@ -193,7 +197,32 @@ class SimpleModel(BaseModel):
 
         return wemb, cemb, cemb_outs
 
-    def loss(self, batch_data):
+    def init_from_encoder(self, encoder):
+        # wemb
+        total = 0
+        for w, idx in encoder.label_encoder.word.table.items():
+            if w in self.label_encoder.word.table:
+                self.wemb.weight.data[self.label_encoder.word.table[w]].copy_(
+                    encoder.wemb.weight.data[idx])
+                total += 1
+        print("Initialized {}/{} word embs".format(total, len(self.wemb.weight)))
+        # cemb
+        total = 0
+        for w, idx in encoder.label_encoder.char.table.items():
+            if w in self.label_encoder.char.table:
+                self.cemb.emb.weight.data[self.label_encoder.char.table[w]].copy_(
+                    encoder.cemb.emb.weight.data[idx])
+                total += 1
+        print("Initialized {}/{} char embs".format(total, len(self.cemb.emb.weight)))
+        # cemb rnn
+        self.cemb.rnn.load_state_dict(encoder.cemb.rnn.state_dict())
+        # sentence rnn
+        self.encoder.load_state_dict(encoder.encoder.state_dict())
+
+        if self.include_lm:
+            pass
+
+    def loss(self, batch_data, *target_tasks):
         ((word, wlen), (char, clen)), tasks = batch_data
         output = {}
 
@@ -210,47 +239,41 @@ class SimpleModel(BaseModel):
         emb = F.dropout(emb, p=self.dropout, training=self.training)
         enc_outs = None
         if self.encoder is not None:
+            # TODO: check if we need encoder for this particular batch
             enc_outs = self.encoder(emb, wlen)
 
-        # Decoders
-        # - POS
-        if 'pos' in tasks:
-            pos, plen = tasks['pos']
-            layer = self.label_encoder.tasks['pos'].meta.get('layer', -1)
-            outs = F.dropout(enc_outs[layer], p=0, training=self.training)
-            pos_logits = self.pos_decoder(outs)
-            if self.pos_crf:
-                pos_loss = self.pos_decoder.loss(pos_logits, pos, plen)
-            else:
-                pos_loss = self.pos_decoder.loss(pos_logits, pos)
-            output['pos'] = pos_loss
-
-        # - lemma
-        if 'lemma' in tasks:
-            lemma, llen = tasks['lemma']
-            layer = self.label_encoder.tasks['lemma'].meta.get('layer', -1)
+        # Decoder
+        for task in target_tasks:
+            (target, length), at_layer = tasks[task], self.tasks[task]['layer']
+            # prepare input layer
             outs = None
             if enc_outs is not None:
-                outs = F.dropout(enc_outs[layer], p=0, training=self.training)
-            if self.lemma_sequential:
-                cemb_outs = F.dropout(cemb_outs, p=self.dropout, training=self.training)
-                lemma_context = get_lemma_context(outs, wemb, wlen, self.lemma_context)
-                lemma_logits = self.lemma_decoder(
-                    lemma, llen, cemb_outs, clen, context=lemma_context)
+                outs = F.dropout(enc_outs[at_layer], p=0, training=self.training)
+
+            decoder = self.decoders[task]
+
+            if self.tasks[task]['level'].lower() == 'char':
+                if isinstance(decoder, LinearDecoder):
+                    logits = decoder(cemb_outs)
+                    output[task] = decoder.loss(logits, target)
+                elif isinstance(decoder, CRFDecoder):
+                    logits = decoder(cemb_outs)
+                    output[task] = decoder.loss(logits, target, length)
+                elif isinstance(decoder, AttentionalDecoder):
+                    cemb_outs = F.dropout(
+                        cemb_outs, p=self.dropout, training=self.training)
+                    context = get_context(outs, wemb, wlen, self.tasks[task]['context'])
+                    logits = decoder(target, length, cemb_outs, clen, context)
+                    output[task] = decoder.loss(logits, target)
             else:
-                lemma_logits = self.lemma_decoder(outs)
-            output['lemma'] = self.lemma_decoder.loss(lemma_logits, lemma)
+                if isinstance(decoder, LinearDecoder):
+                    logits = decoder(outs)
+                    output[task] = decoder.loss(logits, target)
+                elif isinstance(decoder, CRFDecoder):
+                    logits = decoder(outs)
+                    output[task] = decoder.loss(logits, target, length)
 
-        # - other linear tasks
-        if self.linear_tasks is not None:
-            for task, decoder in self.linear_tasks._modules.items():
-                layer = self.label_encoder.tasks[task].meta.get('layer', -1)
-                outs = F.dropout(enc_outs[layer], p=0, training=self.training)
-                logits = decoder(outs)
-                tinp, tlen = tasks[task]
-                output[task] = decoder.loss(logits, tinp)
-
-        # - LM
+        # (LM)
         if self.include_lm:
             if len(emb) > 1:  # can't compute loss for 1-length batches
                 # always at first layer
@@ -258,11 +281,11 @@ class SimpleModel(BaseModel):
                     enc_outs[0], p=0, training=self.training
                 ).chunk(2, dim=2)
                 # forward logits
-                logits = self.lm_decoder_fwd(torch_utils.pad(fwd[:-1], pos='pre'))
-                output['fwd_lm'] = self.lm_decoder_fwd.loss(logits, word)
+                logits = self.lm_fwd_decoder(torch_utils.pad(fwd[:-1], pos='pre'))
+                output['fwd_lm'] = self.lm_fwd_decoder.loss(logits, word)
                 # backward logits
-                logits = self.lm_decoder_fwd(torch_utils.pad(bwd[1:], pos='post'))
-                output['bwd_lm'] = self.lm_decoder_bwd.loss(logits, word)
+                logits = self.lm_fwd_decoder(torch_utils.pad(bwd[1:], pos='post'))
+                output['bwd_lm'] = self.lm_bwd_decoder.loss(logits, word)
 
         return output
 
@@ -283,39 +306,36 @@ class SimpleModel(BaseModel):
         # Encoder
         enc_outs = None
         if self.encoder is not None:
+            # TODO: check if we need encoder for this particular batch
             enc_outs = self.encoder(emb, wlen)
 
         # Decoders
-        # - pos
-        if 'pos' in self.label_encoder.tasks and 'pos' in tasks:
-            layer = self.label_encoder.tasks['pos'].meta.get('layer', -1)
-            outs = F.dropout(enc_outs[layer], p=self.dropout, training=self.training)
-            pos_hyps, _ = self.pos_decoder.predict(outs, wlen)
-            preds['pos'] = pos_hyps
+        for task in tasks:
 
-        # - lemma
-        if 'lemma' in self.label_encoder.tasks and 'lemma' in tasks:
-            layer = self.label_encoder.tasks['lemma'].meta.get('layer', -1)
+            decoder, at_layer = self.decoders[task], self.tasks[task]['layer']
             outs = None
             if enc_outs is not None:
-                outs = F.dropout(enc_outs[layer], p=self.dropout, training=self.training)
-            if self.lemma_sequential:
-                lemma_context = get_lemma_context(outs, wemb, wlen, self.lemma_context)
-                lemma_hyps, _ = self.lemma_decoder.predict_max(
-                    cemb_outs, clen, context=lemma_context)
-                lemma_hyps = [''.join(hyp) for hyp in lemma_hyps]
-            else:
-                lemma_hyps, _ = self.lemma_decoder.predict(outs, wlen)
-            preds['lemma'] = lemma_hyps
+                outs = enc_outs[at_layer]
 
-        # - other linear tasks
-        if self.linear_tasks is not None:
-            for task, decoder in self.linear_tasks._modules.items():
-                if task in tasks:
-                    layer = self.label_encoder.tasks[task].meta.get('layer', -1)
-                    outs = F.dropout(enc_outs[layer], p=0, training=self.training)
+            if self.label_encoder.tasks[task].level.lower() == 'char':
+                if isinstance(decoder, LinearDecoder):
+                    hyps, _ = decoder.predict(cemb_outs, clen)
+                elif isinstance(decoder, CRFDecoder):
+                    hyps, _ = decoder.predict(cemb_outs, clen)
+                else:
+                    context = get_context(outs, wemb, wlen, self.tasks[task]['context'])
+                    hyps, _ = decoder.predict_max(cemb_outs, clen, context=context)
+                    if self.label_encoder.tasks[task].preprocessor_fn is None:
+                        hyps = [''.join(hyp) for hyp in hyps]
+            else:
+                if isinstance(decoder, LinearDecoder):
                     hyps, _ = decoder.predict(outs, wlen)
-                    preds[task] = hyps
+                elif isinstance(decoder, CRFDecoder):
+                    hyps, _ = decoder.predict(outs, wlen)
+                else:
+                    raise ValueError()
+
+            preds[task] = hyps
 
         return preds
 
@@ -329,7 +349,8 @@ if __name__ == '__main__':
     label_encoder = MultiLabelEncoder.from_settings(settings)
     label_encoder.fit_reader(reader)
     data = Dataset(settings, reader, label_encoder)
-    model = SimpleModel(data.label_encoder, settings.wemb_dim, settings.cemb_dim,
+    model = SimpleModel(data.label_encoder, settings.tasks,
+                        settings.wemb_dim, settings.cemb_dim,
                         settings.hidden_size, settings.num_layers)
     model.to(settings.device)
 
@@ -337,13 +358,10 @@ if __name__ == '__main__':
         model.loss(batch)
         break
     ((word, wlen), (char, clen)), tasks = next(data.batch_generator())
-
     wemb, (cemb, cemb_outs) = model.wemb(word), model.cemb(char, clen, wlen)
     emb = model.merger(wemb, cemb)
     enc_outs = model.encoder(emb, wlen)
     model.pos_decoder.predict(enc_outs, wlen)
-    lemma_hyps, _ = model.lemma_decoder.predict_max(
+    lemma_hyps, _ = model.decoders['lemma'].predict_max(
         cemb_outs, clen, context=torch_utils.flatten_padded_batch(enc_outs, wlen))
     print(lemma_hyps)
-
-    model.evaluate(data.get_dev_split())

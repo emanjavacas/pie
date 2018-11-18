@@ -60,7 +60,8 @@ class Scorer(object):
         """
         Return a dictionary of scores
         """
-        output = compute_scores(self.trues, self.preds)
+        output = {}
+        output['all'] = compute_scores(self.trues, self.preds)
 
         # compute scores for ambiguous tokens
         tok2class = defaultdict(Counter)

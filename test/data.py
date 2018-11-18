@@ -7,7 +7,6 @@ from pie.settings import settings_from_file
 
 
 testpath = os.path.join(os.path.dirname(__file__), 'testconfig.json')
-delta = 5                       # FIXME
 
 
 class TestLabelEncoderSerialization(unittest.TestCase):
@@ -15,7 +14,7 @@ class TestLabelEncoderSerialization(unittest.TestCase):
         settings = settings_from_file(testpath)
         reader = Reader(settings, settings.input_path)
         label_encoder = MultiLabelEncoder.from_settings(settings)
-        label_encoder.fit(line for _, line in reader.readsents())
+        label_encoder.fit_reader(reader)
         self.data = Dataset(settings, reader, label_encoder)
 
     def test_serialization(self):
@@ -40,7 +39,7 @@ class TestWordCharEncoding(unittest.TestCase):
         settings = settings_from_file(testpath)
         reader = Reader(settings, settings.input_path)
         label_encoder = MultiLabelEncoder.from_settings(settings)
-        label_encoder.fit(line for _, line in reader.readsents())
+        label_encoder.fit_reader(reader)
         self.data = Dataset(settings, reader, label_encoder)
 
     def test_lengths(self):
@@ -67,64 +66,67 @@ class TestWordCharEncoding(unittest.TestCase):
             self.assertEqual(idx, total_words, "Checked all words")
 
 
-class TestDevSplit(unittest.TestCase):
+def _test_conversion(settings, level='token'):
+    reader = Reader(settings, settings.input_path)
+    label_encoder = MultiLabelEncoder.from_settings(settings)
+    label_encoder.fit_reader(reader)
+    data = Dataset(settings, reader, label_encoder)
+
+    le = label_encoder.tasks['lemma']
+    for (inp, tasks), (rinp, rtasks) in data.batch_generator(return_raw=True):
+        # preds
+        tinp, tlen = tasks['lemma']
+        preds = [le.stringify(t, l) for t, l in zip(tinp.t().tolist(), tlen.tolist())]
+        if level == 'token':
+            preds = [w for line in preds for w in line]
+        # tokens
+        tokens = [tok for line in rinp for tok in line]
+        # trues
+        trues = [w for line in rtasks for w in line['lemma']]
+
+        # check
+        for pred, token, true in zip(preds, tokens, trues):
+            rec = le.preprocessor_fn.inverse_transform(pred, token)
+            assert rec == true, (pred, token, true, rec)
+
+
+class TestGreedyScripts(unittest.TestCase):
     def setUp(self):
         settings = settings_from_file(testpath)
-        settings['batch_size'] = 1
-        reader = Reader(settings, settings.input_path)
-        label_encoder = MultiLabelEncoder.from_settings(settings)
-        insts = label_encoder.fit(line for _, line in reader.readsents())
-        self.insts = insts
-        self.num_batches = insts // settings.batch_size
-        self.data = Dataset(settings, reader, label_encoder)
+        settings.tasks = [
+            {"name": "lemma", "level": "char", "decoder": "linear",
+             "settings": {"preprocessor": "greedy_scripts", "target": "lemma"}}
+        ]
+        settings.char_eos = False
+        settings.char_bos = False
+        settings.char_max_size = 10000
+        self.settings = settings
 
-    def test_split_length(self):
-        total_batches = 0
-        for batch in self.data.batch_generator():
-            total_batches += 1
+    def testConversion(self):
+        _test_conversion(self.settings, level="char")
 
-        dev_batches = 0
-        for batch in self.data.get_dev_split(self.insts, split=0.05):
-            dev_batches += 1
 
-        self.assertAlmostEqual(dev_batches, total_batches * 0.05, delta=delta)
-
-    def test_remaining(self):
-        pre_batches = 0
-        for batch in self.data.batch_generator():
-            pre_batches += 1
-
-        self.assertEqual(pre_batches, self.insts)  # batch size is 1
-        self.assertEqual(pre_batches, self.num_batches)
-
-        devset = self.data.get_dev_split(self.insts, split=0.05)
-
-        post_batches = 0
-        for batch in self.data.batch_generator():
-            post_batches += 1
-
-        # FIXME
-        self.assertAlmostEqual(len(devset) + post_batches, pre_batches, delta=delta*5)
-        self.assertAlmostEqual(pre_batches * 0.95, post_batches, delta=delta*5)
-
-    def test_batch_level(self):
+class TestEditTrees(unittest.TestCase):
+    def setUp(self):
         settings = settings_from_file(testpath)
-        settings['batch_size'] = 20
-        reader = Reader(settings, settings.input_path)
-        label_encoder = MultiLabelEncoder.from_settings(settings)
-        label_encoder.fit(line for _, line in reader.readsents())
-        data = Dataset(settings, reader, label_encoder)
+        settings.tasks = [
+            {"name": "lemma", "level": "token", "decoder": "linear",
+             "settings": {"preprocessor": "edit_trees", "target": "lemma"}}
+        ]
+        self.settings = settings
 
-        pre_batches = 0
-        for batch in data.batch_generator():
-            pre_batches += 1
+    def testConversion(self):
+        _test_conversion(self.settings, level="token")
 
-        self.assertAlmostEqual(pre_batches, self.insts // 20, delta=delta)
 
-        devset = data.get_dev_split(self.insts, split=0.05)
+class TestEditTreeTuples(unittest.TestCase):
+    def setUp(self):
+        settings = settings_from_file(testpath)
+        settings.tasks = [
+            {"name": "lemma", "level": "char", "decoder": "attentional",
+             "settings": {"preprocessor": "edit_tree_tuples", "target": "lemma"}}
+        ]
+        self.settings = settings
 
-        post_batches = 0
-        for batch in data.batch_generator():
-            post_batches += 1
-
-        self.assertAlmostEqual(pre_batches * 0.95, post_batches, delta=delta)
+    def testConversion(self):
+        _test_conversion(self.settings, level="char")

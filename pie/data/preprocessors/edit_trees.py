@@ -80,7 +80,7 @@ class Node:
     def to_tuple(self):
         if isinstance(self, Leaf):
             # full replacement
-            return (len(self.a), len(self.b), 0, "")
+            return (len(self.a), self.b, 0, "")
         else:
             plen, slen = self.get_span()
             start = self.target.find(self._infix)
@@ -174,3 +174,11 @@ def apply_edit_tree(tclass, inp, prefix=False):
 def apply_tuple(tup, inp):
     plen, pstring, slen, sstring = tup
     return pstring + inp[plen:-slen] + sstring
+
+
+def transform(lem, tok):
+    return make_edit_tree(tok, lem).to_class()
+
+
+def inverse_transform(pred, tok):
+    return apply_edit_tree(pred, tok)

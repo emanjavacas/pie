@@ -4,6 +4,7 @@ import uuid
 import logging
 import time
 import collections
+import random
 
 import tqdm
 
@@ -12,6 +13,23 @@ from torch import optim
 from torch.nn.utils import clip_grad_norm_
 
 logging.basicConfig(format='%(asctime)s : %(message)s', level=logging.INFO)
+
+
+def get_batch_task(tasks, **kwargs):
+    tnames, target = [], None
+    for task in tasks:
+        tnames.append(task['name'])
+        if task.get('target'):
+            target = task['name']
+    return sample_task(target, tnames, **kwargs)
+
+
+def sample_task(target, tasks, factor=2):
+    # sample target task factor times as many as any other task
+    aux = (1 / (len(tasks) - 1)) / factor if len(tasks) > 1 else 0
+    trg = 1 - (aux * (len(tasks) - 1))
+    weights = [aux if task != target else trg for task in tasks]
+    return random.choices(tasks, weights)[0]
 
 
 class EarlyStopException(Exception):
@@ -156,7 +174,7 @@ class Trainer(object):
     checks_per_epoch
     """
     def __init__(self, settings, model, dataset, num_instances):
-
+        self.tasks = settings.tasks
         self.verbose = settings.verbose
         self.dataset = dataset
         self.model = model
@@ -175,7 +193,10 @@ class Trainer(object):
         else:
             self.check_freq = 0  # no checks
 
-        tasks = {task['name']: task.get('schedule', {}) for task in settings.tasks}
+        tasks = {}
+        for task in settings.tasks:
+            tasks[task['name']] = task.get('schedule', {})
+            tasks[task['name']]['target'] = task.get('target', False)
         if settings.include_lm:
             tasks['fwd_lm'] = settings.lm_schedule
             tasks['bwd_lm'] = settings.lm_schedule
@@ -205,30 +226,24 @@ class Trainer(object):
 
         return sum(weights.get(k, 1) * loss[k] for k in loss)
 
-    def evaluate(self, dataset, num_batches=None):
+    def evaluate(self, dataset):
         """
         Evaluate objective on held-out data
         """
         total_losses, total_batches = collections.defaultdict(float), 0
 
+        # get all tasks
+        tasks = list(self.model.label_encoder.tasks)
+
         for batch in tqdm.tqdm(dataset.batch_generator()):
             total_batches += 1
-            for k, v in self.model.loss(batch).items():
+            for k, v in self.model.loss(batch, *tasks).items():
                 total_losses[k] += v.item()
 
         for k, v in total_losses.items():
             total_losses[k] = v / total_batches
 
         return dict(total_losses)
-
-    def monitor_batch(self, batch, items, start, nbatches, loss, sep=' '*3):
-        """
-        Print the report for monitoring
-        """
-        rep = sep.join('{}:{:.3f}'.format(k, v / nbatches) for k, v in loss.items())
-        speed = items / (time.time() - start)
-        formatter = "Batch [{}/{}] || {} || {:.0f} w/s"
-        logging.info(formatter.format(batch, self.num_batches, rep, speed))
 
     def run_check(self, dev):
         """
@@ -266,14 +281,15 @@ class Trainer(object):
 
         return dev_scores
 
-    def train_epoch(self, dev, epoch):
-        rep_loss, rep_items, rep_batches = collections.defaultdict(float), 0, 0
-        rep_start = time.time()
+    def train_epoch(self, dev):
+        rep_loss = collections.defaultdict(float)
+        rep_batches = collections.defaultdict(int)
+        rep_items, rep_start = 0, time.time()
         scores = None
 
         for b, batch in enumerate(self.dataset.batch_generator()):
             # get loss
-            loss = self.model.loss(batch)
+            loss = self.model.loss(batch, get_batch_task(self.tasks))
 
             if not loss:
                 raise ValueError("Got empty loss, no tasks defined?")
@@ -287,15 +303,20 @@ class Trainer(object):
 
             # accumulate
             rep_items += type(self.dataset).get_nelement(batch)
-            rep_batches += 1
             for k, v in loss.items():
+                rep_batches[k] += 1
                 rep_loss[k] += v.item()
 
             # report
             if b > 0 and b % self.report_freq == 0:
-                self.monitor_batch(b, rep_items, rep_start, rep_batches, rep_loss)
-                rep_loss, rep_items, rep_batches = collections.defaultdict(float), 0, 0
-                rep_start = time.time()
+                rep = ""
+                for t in sorted(rep_loss):
+                    rep += '{}:{:.3f}  '.format(t, rep_loss[t] / rep_batches[t])
+                logging.info("Batch [{}/{}] || {} || {:.0f} w/s".format(
+                    b, self.num_batches, rep, rep_items / (time.time() - rep_start)))
+                rep_loss = collections.defaultdict(float)
+                rep_batches = collections.defaultdict(int)
+                rep_items, rep_start = 0, time.time()
 
             if self.check_freq > 0 and b > 0 and b % self.check_freq == 0:
                 if dev is not None:

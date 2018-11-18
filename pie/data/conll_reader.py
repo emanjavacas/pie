@@ -86,7 +86,7 @@ class CONLLReader(BaseReader):
 
     def _parse_morph(self, morph):
         if morph == '_':
-            return output
+            return morph
         output = {}
         for val in morph.split("|"):
             task, val = val[:-1], val[-1]
@@ -106,7 +106,7 @@ class CONLLReader(BaseReader):
         """
         Generator over sentences in a single file
         """
-        inp, tasks_data = [], collections.defaultdict(list)
+        inp = []
 
         for inp, tasks in get_sents(self.fpath, self.parse_morph_):
             while len(inp) > self.max_sent_len:
