@@ -266,7 +266,7 @@ class Trainer(object):
 
         return dev_scores
 
-    def train_epoch(self, dev):
+    def train_epoch(self, dev, epoch):
         rep_loss, rep_items, rep_batches = collections.defaultdict(float), 0, 0
         rep_start = time.time()
         scores = None
@@ -300,7 +300,8 @@ class Trainer(object):
             if self.check_freq > 0 and b > 0 and b % self.check_freq == 0:
                 if dev is not None:
                     scores = self.run_check(dev)
-                    return scores
+
+        return scores
 
     def train_epochs(self, epochs, dev=None):
         """
@@ -310,17 +311,18 @@ class Trainer(object):
         scores = None
 
         try:
-            for e in range(1, epochs + 1):
+            for epoch in range(1, epochs + 1):
                 # train epoch
                 epoch_start = time.time()
-                logging.info("Starting epoch [{}]".format(e))
-                self.train_epoch(dev)
+                logging.info("Starting epoch [{}]".format(epoch))
+                self.train_epoch(dev, epoch)
                 epoch_total = time.time() - epoch_start
-                logging.info("Finished epoch [{}] in [{:g}] secs".format(e, epoch_total))
+                logging.info("Finished epoch [{}] in [{:g}] secs".format(
+                    epoch, epoch_total))
 
         except EarlyStopException as e:
             logging.info("Early stopping training: "
-                         "task [{}] with best score {:.3f}".format(e.task, e.loss))
+                         "task [{}] with best score {:.5f}".format(e.task, e.loss))
 
             self.model.load_state_dict(e.best_state_dict)
             scores = {e.task: e.loss}
