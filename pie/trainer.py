@@ -281,7 +281,7 @@ class Trainer(object):
 
         return dev_scores
 
-    def train_epoch(self, dev):
+    def train_epoch(self, dev, epoch):
         rep_loss = collections.defaultdict(float)
         rep_batches = collections.defaultdict(int)
         rep_items, rep_start = 0, time.time()
