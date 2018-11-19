@@ -423,8 +423,7 @@ class AttentionalDecoder(nn.Module):
 
         return hyps, scores
 
-    def predict_beam(self, enc_outs, lengths, context=None,
-                     max_seq_len=50, beam_width=12):
+    def predict_beam(self, enc_outs, lengths, context=None, max_seq_len=50, width=12):
         """
         Decoding routine for inference with beam search
 
@@ -435,17 +434,17 @@ class AttentionalDecoder(nn.Module):
         """
         hidden = None
         (seq_len, batch, _), device = enc_outs.size(), enc_outs.device
-        beams = [Beam(beam_width, eos=self.label_encoder.get_eos(),
+        beams = [Beam(width, eos=self.label_encoder.get_eos(),
                       bos=self.label_encoder.get_bos(), device=device)
                  for _ in range(batch)]
 
         # expand data along beam width
         # (seq_len x beam * batch x hidden_size)
-        enc_outs = enc_outs.repeat(1, beam_width, 1)
-        lengths = lengths.repeat(beam_width)
+        enc_outs = enc_outs.repeat(1, width, 1)
+        lengths = lengths.repeat(width)
         if context is not None:
             # (beam * batch x context_dim)
-            context = context.repeat(beam_width, 1)
+            context = context.repeat(width, 1)
 
         for _ in range(max_seq_len):
             if all(not beam.active for beam in beams):
@@ -470,14 +469,14 @@ class AttentionalDecoder(nn.Module):
             # (beam * batch x vocab)
             probs = F.log_softmax(outs, dim=1)
             # (beam x batch x vocab)
-            probs = probs.view(beam_width, batch, -1)
+            probs = probs.view(width, batch, -1)
 
             # expose beam dim for swaping
             if isinstance(hidden, tuple):
-                hidden = hidden[0].view(self.num_layers, beam_width, batch, -1), \
-                         hidden[0].view(self.num_layers, beam_width, batch, -1)
+                hidden = hidden[0].view(self.num_layers, width, batch, -1), \
+                         hidden[0].view(self.num_layers, width, batch, -1)
             else:
-                hidden = hidden.view(self.num_layers, beam_width, batch, -1)
+                hidden = hidden.view(self.num_layers, width, batch, -1)
 
             # advance and swap
             for i, beam in enumerate(beams):
@@ -494,7 +493,7 @@ class AttentionalDecoder(nn.Module):
                     hidden[:, :, i].copy_(hidden[:, :, i].index_select(1, sbeam))
 
             # collapse beam and batch
-            hidden = hidden.view(self.num_layers, beam_width * batch, -1)
+            hidden = hidden.view(self.num_layers, width * batch, -1)
 
         scores, hyps = [], []
         for beam in beams:

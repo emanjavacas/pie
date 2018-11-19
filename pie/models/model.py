@@ -326,8 +326,8 @@ class SimpleModel(BaseModel):
                 else:
                     context = get_context(outs, wemb, wlen, self.tasks[task]['context'])
                     if use_beam:
-                        hyps, _ = decoder.predict_beam(
-                            cemb_outs, clen, context=context, beam_width=beam_width)
+                        hyps, _ = decoder.predict_beam(cemb_outs, clen,
+                                                       context=context, width=beam_width)
                     else:
                         hyps, _ = decoder.predict_max(cemb_outs, clen, context=context)
                     if self.label_encoder.tasks[task].preprocessor_fn is None:
