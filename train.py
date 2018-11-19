@@ -161,7 +161,7 @@ if __name__ == '__main__':
     trainer = Trainer(settings, model, trainset, reader.get_nsents())
     scores = None
     try:
-        scores = trainer.train_epochs(settings.epochs, dev=devset)
+        scores = trainer.train_epochs(settings.epochs, devset=devset)
     except KeyboardInterrupt:
         print("Stopping training")
     finally:
@@ -171,7 +171,7 @@ if __name__ == '__main__':
     if settings.test_path:
         print("Evaluating model on test set")
         testset = Dataset(settings, Reader(settings, settings.test_path), label_encoder)
-        for task in model.evaluate(testset.batch_generator()).values():
+        for task in model.evaluate(testset, trainset).values():
             task.print_summary()
 
     # save model

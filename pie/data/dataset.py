@@ -111,10 +111,9 @@ class LabelEncoder(object):
             postseq = self.preprocess(seq, rseq)
 
         if self.level == 'token':
-            self.freqs.update(tok.lower() if self.lower else tok for tok in postseq)
+            self.freqs.update(postseq)
         else:
-            self.freqs.update(
-                c.lower() if self.lower else c for tok in postseq for c in tok)
+            self.freqs.update(c for tok in postseq for c in tok)
             # always use original sequence for known tokens
             self.known_tokens.update(seq)
 
@@ -138,6 +137,10 @@ class LabelEncoder(object):
         self.fitted = True
 
     def preprocess(self, tseq, rseq):
+        "gets always called before transform"
+        if self.lower:
+            tseq = [tok.lower() for tok in tseq]
+
         if not self.preprocessor_fn:
             return tseq
 
@@ -152,7 +155,6 @@ class LabelEncoder(object):
             output.append(self.get_bos())
 
         for tok in seq:
-            tok = tok.lower() if self.lower else tok
             output.append(self.table.get(tok, self.table[constants.UNK]))
 
         if self.eos:

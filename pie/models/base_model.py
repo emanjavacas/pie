@@ -67,17 +67,13 @@ class BaseModel(nn.Module):
                 trues = {}
                 for task in preds:
                     le = self.label_encoder.tasks[task]
-                    trues[task] = [w.lower() if le.lower else w
-                                   for line in rtasks for w in line[task]]
+                    # - transform targets
+                    trues[task] = le.preprocess(
+                        [t for line in rtasks for t in line[task]], tokens)
 
                     # - flatten token level predictions
                     if le.level == 'token':
                         preds[task] = [pred for batch in preds[task] for pred in batch]
-
-                    # - postprocessing if needed
-                    if le.preprocessor_fn is not None:
-                        preds[task] = [le.preprocessor_fn.inverse_transform(pred, tok)
-                                       for pred, tok in zip(preds[task], tokens)]
 
                 # accumulate
                 for task, scorer in scorers.items():

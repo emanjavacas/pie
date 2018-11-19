@@ -245,7 +245,7 @@ class Trainer(object):
 
         return dict(total_losses)
 
-    def run_check(self, dev):
+    def run_check(self, devset):
         """
         Monitor dev loss and eventually early-stop training
         """
@@ -283,7 +283,7 @@ class Trainer(object):
 
         return dev_scores
 
-    def train_epoch(self, dev, epoch):
+    def train_epoch(self, devset, epoch):
         rep_loss = collections.defaultdict(float)
         rep_batches = collections.defaultdict(int)
         rep_items, rep_start = 0, time.time()
@@ -321,12 +321,12 @@ class Trainer(object):
                 rep_items, rep_start = 0, time.time()
 
             if self.check_freq > 0 and b > 0 and b % self.check_freq == 0:
-                if dev is not None:
-                    scores = self.run_check(dev)
+                if devset is not None:
+                    scores = self.run_check(devset)
 
         return scores
 
-    def train_epochs(self, epochs, dev=None):
+    def train_epochs(self, epochs, devset=None):
         """
         Train the model for a number of epochs
         """
@@ -338,7 +338,7 @@ class Trainer(object):
                 # train epoch
                 epoch_start = time.time()
                 logging.info("Starting epoch [{}]".format(epoch))
-                self.train_epoch(dev, epoch)
+                self.train_epoch(devset, epoch)
                 epoch_total = time.time() - epoch_start
                 logging.info("Finished epoch [{}] in [{:g}] secs".format(
                     epoch, epoch_total))
