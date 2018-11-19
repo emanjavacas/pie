@@ -15,7 +15,7 @@ class LabelEncoder(object):
     """
     Label encoder
     """
-    def __init__(self, level='token', name=None, target=None,
+    def __init__(self, level='token', name=None, target=None, lower=False,
                  preprocessor=None, max_size=None, min_freq=1,
                  pad=True, eos=False, bos=False, **meta):
 
@@ -26,6 +26,7 @@ class LabelEncoder(object):
         self.eos = constants.EOS if eos else None
         self.pad = constants.PAD if pad else None
         self.bos = constants.BOS if bos else None
+        self.lower = lower
         self.preprocessor = preprocessor
         self.preprocessor_fn = \
             getattr(preprocessors, preprocessor) if preprocessor else None
@@ -58,6 +59,7 @@ class LabelEncoder(object):
             self.preprocessor == other.preprocessor and \
             self.max_size == other.max_size and \
             self.level == other.level and \
+            self.lower == other.lower and \
             self.target == other.target and \
             self.freqs == other.freqs and \
             self.table == other.table and \
@@ -71,8 +73,10 @@ class LabelEncoder(object):
             length = 0
 
         return (
-            '<LabelEncoder name="{}" target="{}" level="{}" vocab="{}" fitted="{}">'
-        ).format(self.name, self.target, self.level, length, self.fitted)
+            ('<LabelEncoder name="{}" lower="{}" target="{}" level="{}" ' + \
+             'vocab="{}" fitted="{}"/>'
+            ).format(
+                self.name, self.lower, self.target, self.level, length, self.fitted))
 
     def get_type_stats(self):
         """
@@ -107,9 +111,10 @@ class LabelEncoder(object):
             postseq = self.preprocess(seq, rseq)
 
         if self.level == 'token':
-            self.freqs.update(postseq)
+            self.freqs.update(tok.lower() if self.lower else tok for tok in postseq)
         else:
-            self.freqs.update(c for tok in postseq for c in tok)
+            self.freqs.update(
+                c.lower() if self.lower else c for tok in postseq for c in tok)
             # always use original sequence for known tokens
             self.known_tokens.update(seq)
 
@@ -146,7 +151,9 @@ class LabelEncoder(object):
         if self.bos:
             output.append(self.get_bos())
 
-        output += [self.table.get(tok, self.table[constants.UNK]) for tok in seq]
+        for tok in seq:
+            tok = tok.lower() if self.lower else tok
+            output.append(self.table.get(tok, self.table[constants.UNK]))
 
         if self.eos:
             output.append(self.get_eos())
@@ -213,6 +220,7 @@ class LabelEncoder(object):
                 'meta': self.meta,
                 'level': self.level,
                 'preprocessor': self.preprocessor,
+                'lower': self.lower,
                 'target': self.target,
                 'max_size': self.max_size,
                 'min_freq': self.min_freq,
@@ -224,7 +232,7 @@ class LabelEncoder(object):
     @classmethod
     def from_json(cls, obj):
         inst = cls(pad=obj['pad'], eos=obj['eos'], bos=obj['bos'],
-                   level=obj['level'], target=obj['target'],
+                   level=obj['level'], target=obj['target'], lower=obj['lower'],
                    max_size=obj['max_size'], min_freq=['min_freq'],
                    preprocessor=obj.get('preprocessor'),
                    name=obj['name'], meta=obj.get('meta', {}))

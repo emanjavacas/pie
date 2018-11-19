@@ -66,8 +66,9 @@ class BaseModel(nn.Module):
                 # - get trues
                 trues = {}
                 for task in preds:
-                    trues[task] = [w for line in rtasks for w in line[task]]
                     le = self.label_encoder.tasks[task]
+                    trues[task] = [w.lower() if le.lower else w
+                                   for line in rtasks for w in line[task]]
 
                     # - flatten token level predictions
                     if le.level == 'token':
