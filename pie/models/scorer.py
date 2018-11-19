@@ -172,6 +172,8 @@ class Scorer(object):
         for true, pred, token in zip(self.trues, self.preds, self.tokens):
             if true == pred:
                 continue
+            if self.known_tokens and token in self.known_tokens:
+                known[true][pred] += 1
             if known_targets and true not in known_targets:
                 unk_trg[true][pred] += 1
             if self.known_tokens and token not in self.known_tokens:
