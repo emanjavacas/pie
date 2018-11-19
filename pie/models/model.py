@@ -290,7 +290,7 @@ class SimpleModel(BaseModel):
 
         return output
 
-    def predict(self, inp, *tasks):
+    def predict(self, inp, *tasks, use_beam=False, beam_width=10):
         tasks = set(self.label_encoder.tasks if not len(tasks) else tasks)
         preds = {}
         (word, wlen), (char, clen) = inp
@@ -325,7 +325,11 @@ class SimpleModel(BaseModel):
                     hyps, _ = decoder.predict(cemb_outs, clen)
                 else:
                     context = get_context(outs, wemb, wlen, self.tasks[task]['context'])
-                    hyps, _ = decoder.predict_max(cemb_outs, clen, context=context)
+                    if use_beam:
+                        hyps, _ = decoder.predict_beam(
+                            cemb_outs, clen, context=context, beam_width=beam_width)
+                    else:
+                        hyps, _ = decoder.predict_max(cemb_outs, clen, context=context)
                     if self.label_encoder.tasks[task].preprocessor_fn is None:
                         hyps = [''.join(hyp) for hyp in hyps]
             else:

@@ -255,6 +255,7 @@ class AttentionalDecoder(nn.Module):
                  init_rnn='default'):
         self.label_encoder = label_encoder
         self.context_dim = context_dim
+        self.num_layers = num_layers
         self.dropout = dropout
         self.init_rnn = init_rnn
         super().__init__()
@@ -423,7 +424,7 @@ class AttentionalDecoder(nn.Module):
         return hyps, scores
 
     def predict_beam(self, enc_outs, lengths, context=None,
-                     max_seq_len=20, beam_width=5):
+                     max_seq_len=50, beam_width=12):
         """
         Decoding routine for inference with beam search
 
@@ -433,58 +434,72 @@ class AttentionalDecoder(nn.Module):
         context : tensor(batch x hidden_size), optional
         """
         hidden = None
-        seq_len, batch, _ = enc_outs.size()
+        (seq_len, batch, _), device = enc_outs.size(), enc_outs.device
         beams = [Beam(beam_width, eos=self.label_encoder.get_eos(),
-                      bos=self.label_encoder.get_bos(), device=enc_outs.device)
+                      bos=self.label_encoder.get_bos(), device=device)
                  for _ in range(batch)]
 
         # expand data along beam width
+        # (seq_len x beam * batch x hidden_size)
         enc_outs = enc_outs.repeat(1, beam_width, 1)
         lengths = lengths.repeat(beam_width)
         if context is not None:
+            # (beam * batch x context_dim)
             context = context.repeat(beam_width, 1)
 
         for _ in range(max_seq_len):
             if all(not beam.active for beam in beams):
                 break
-            # prepare input
-            inp = [beam.get_current_state() for beam in beams]
-            inp = torch.stack(inp).t().contiguous().view(-1)
+            # (beam x batch)
+            inp = torch.stack([beam.get_current_state() for beam in beams], dim=1)
+            # (beam * batch)
+            inp = inp.view(-1)
+            # (beam * batch x emb_dim)
             emb = self.embs(inp)
             if context is not None:
+                # (beam * batch x emb_dim + context_dim)
                 emb = torch.cat([emb, context], dim=1)
             # run rnn
-            emb = emb.unsqueeze(0)
+            emb = emb.unsqueeze(0)  # add singleton seq_len dim
             outs, hidden = self.rnn(emb, hidden)
+
+            # (1 x beam * batch x hidden)
             outs, _ = self.attn(outs, enc_outs, lengths)
-            outs = self.proj(outs)
-            outs = outs.squeeze(0)
-            # get logits
+            # (beam * batch x vocab)
+            outs = self.proj(outs).squeeze(0)
+            # (beam * batch x vocab)
             probs = F.log_softmax(outs, dim=1)
-
-            # (beam_width x batch x vocab)
+            # (beam x batch x vocab)
             probs = probs.view(beam_width, batch, -1)
-            hidden = hidden.view(1, beam_width, batch, -1)
-            enc_outs = enc_outs.view(seq_len, beam_width, batch, -1)
 
+            # expose beam dim for swaping
+            if isinstance(hidden, tuple):
+                hidden = hidden[0].view(self.num_layers, beam_width, batch, -1), \
+                         hidden[0].view(self.num_layers, beam_width, batch, -1)
+            else:
+                hidden = hidden.view(self.num_layers, beam_width, batch, -1)
+
+            # advance and swap
             for i, beam in enumerate(beams):
+                if not beam.active:
+                    continue
                 # advance
                 beam.advance(probs[:, i])
                 # rearrange
-                source_beam = beam.get_source_beam()
-                hidden[:, :, i].copy_(
-                    hidden[:, :, i].index_select(1, source_beam))
-                enc_outs[:, :, i].copy_(
-                    enc_outs[:, :, i].index_select(1, source_beam))
+                sbeam = beam.get_source_beam()
+                if isinstance(hidden, tuple):
+                    hidden[0][:, :, i].copy_(hidden[0][:, :, i].index_select(1, sbeam))
+                    hidden[1][:, :, i].copy_(hidden[1][:, :, i].index_select(1, sbeam))
+                else:
+                    hidden[:, :, i].copy_(hidden[:, :, i].index_select(1, sbeam))
 
-            hidden = hidden.view(1, beam_width * batch, -1)
-            enc_outs = enc_outs.view(seq_len, beam_width * batch, -1)
+            # collapse beam and batch
+            hidden = hidden.view(self.num_layers, beam_width * batch, -1)
 
         scores, hyps = [], []
         for beam in beams:
             bscores, bhyps = beam.decode(n=1)
             bscores, bhyps = bscores[0], bhyps[0]
-            # unwrap best k beams dimension
             scores.append(bscores)
             hyps.append(bhyps)
 
