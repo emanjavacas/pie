@@ -290,7 +290,7 @@ class SimpleModel(BaseModel):
 
         return output
 
-    def predict(self, inp, *tasks, use_beam=False, beam_width=10):
+    def predict(self, inp, *tasks, use_beam=False, beam_width=10, **kwargs):
         tasks = set(self.label_encoder.tasks if not len(tasks) else tasks)
         preds = {}
         (word, wlen), (char, clen) = inp

@@ -256,13 +256,13 @@ class Trainer(object):
         self.model.eval()
 
         with torch.no_grad():
-            dev_loss = self.evaluate(dev)
+            dev_loss = self.evaluate(devset)
             print()
             print("::: Dev losses :::")
             print()
             print('\n'.join('{}: {:.3f}'.format(k, v) for k, v in dev_loss.items()))
             print()
-            summary = self.model.evaluate(dev)
+            summary = self.model.evaluate(devset, self.dataset)
             for task in summary.values():
                 task.print_summary()
 

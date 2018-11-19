@@ -181,7 +181,7 @@ if __name__ == '__main__':
         print("Saved best model to: [{}]".format(fpath))
 
     if devset is not None and not settings.run_test:
-        scorers = model.evaluate(devset)
+        scorers = model.evaluate(devset, trainset)
         scores = []
         for task in sorted(scorers):
             scorer = scorers[task]

@@ -32,7 +32,7 @@ class BaseModel(nn.Module):
         """
         raise NotImplementedError
 
-    def predict(self, inp, *tasks):
+    def predict(self, inp, *tasks, **kwargs):
         """
         Compute predictions based on already processed input
         """
@@ -45,7 +45,7 @@ class BaseModel(nn.Module):
         """
         raise NotImplementedError
 
-    def evaluate(self, dataset):
+    def evaluate(self, dataset, trainset=None, **kwargs):
         """
         Get scores per task
         """
@@ -53,12 +53,13 @@ class BaseModel(nn.Module):
 
         scorers = {}
         for task, le in self.label_encoder.tasks.items():
-            scorers[task] = Scorer(le, known_tokens=set(self.label_encoder.word.table))
+            scorers[task] = Scorer(le, trainset)
 
         with torch.no_grad():
             for (inp, tasks), (rinp, rtasks) in tqdm.tqdm(
                     dataset.batch_generator(return_raw=True)):
-                preds = self.predict(inp)
+
+                preds = self.predict(inp, **kwargs)
 
                 # - get input tokens
                 tokens = [w for line in rinp for w in line]

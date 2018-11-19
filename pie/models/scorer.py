@@ -9,6 +9,24 @@ from sklearn.metrics import precision_score, recall_score, accuracy_score
 from pie import utils
 
 
+def get_ambiguous_tokens(trainset, label_encoder):
+    ambs = defaultdict(Counter)
+    for _, (inp, tasks) in trainset.reader.readsents():
+        trues = label_encoder.preprocess(tasks[label_encoder.target], inp)
+        for tok, true in zip(inp, trues):
+            ambs[tok][true] += 1
+
+    return set(tok for tok in ambs if len(ambs[tok]) > 1)
+
+
+def get_known_tokens(trainset):
+    known = set()
+    for _, (inp, _) in trainset.reader.readsents():
+        for tok in inp:
+            known.add(tok)
+    return known
+
+
 def compute_scores(trues, preds):
 
     def format_score(score):
@@ -26,9 +44,12 @@ class Scorer(object):
     """
     Accumulate predictions over batches and compute evaluation scores
     """
-    def __init__(self, label_encoder, known_tokens):
+    def __init__(self, label_encoder, trainset=None):
         self.label_encoder = label_encoder
-        self.known_tokens = known_tokens
+        self.known_tokens = self.amb_tokens = None
+        if trainset:
+            self.known_tokens = get_known_tokens(trainset)
+            self.amb_tokens = get_ambiguous_tokens(trainset, label_encoder)
         self.preds = []
         self.trues = []
         self.tokens = []
@@ -63,18 +84,13 @@ class Scorer(object):
         output = {}
         output['all'] = compute_scores(self.trues, self.preds)
 
-        # compute scores for ambiguous tokens
-        tok2class = defaultdict(Counter)
-        for tok, true in zip(self.tokens, self.trues):
-            tok2class[tok][true] += 1
-
         # compute scores for unknown input tokens
         unk_trues, unk_preds, amb_trues, amb_preds = [], [], [], []
         for true, pred, token in zip(self.trues, self.preds, self.tokens):
-            if token not in self.known_tokens:
+            if self.known_tokens and token not in self.known_tokens:
                 unk_trues.append(true)
                 unk_preds.append(pred)
-            if len(tok2class[token]) > 1:
+            if self.amb_tokens and token in self.amb_tokens:
                 amb_trues.append(true)
                 amb_preds.append(pred)
         support = len(unk_trues)
@@ -124,7 +140,6 @@ class Scorer(object):
         output = ''
         for true, counts, preds in self.get_most_common(errors, most_common):
             true = '{}(#{})'.format(colored(true, 'green'), counts)
-            true = '{}(#{})'.format('green', counts)
             preds = Counter(preds).most_common(10)
             preds = ''.join('{:<10}'.format('{}(#{})'.format(p, c)) for p, c in preds)
             output += '{:<10}{}\n'.format(true, preds)
@@ -135,11 +150,12 @@ class Scorer(object):
         """
         Get a printable summary of string transduction errors
         """
+        COLORS = {' ': 'white', '+': 'green', '-': 'red'}
+
         def get_diff(true, pred):
             diff = ''
             for action, *_, char in difflib.Differ().compare(true, pred):
-                color = {' ': 'white', '+': 'green', '-': 'red'}[action]
-                diff += colored(char, color)
+                diff += colored(char, COLORS[action])
             return diff
 
         def error_summary(true, count, preds):
@@ -150,35 +166,41 @@ class Scorer(object):
                 for pred, pcount in preds.items())
             return summary
 
-        known = defaultdict(Counter)
-        unk_targets = defaultdict(Counter)
-        unk_tokens = defaultdict(Counter),
-        tokens = self.tokens or itertools.repeat(None)
-        for true, pred, token in zip(self.trues, self.preds, tokens):
+        known_targets = self.label_encoder.known_tokens
+        known, unk_trg = defaultdict(Counter), defaultdict(Counter)
+        unk_tok, amb_tok = defaultdict(Counter), defaultdict(Counter)
+        for true, pred, token in zip(self.trues, self.preds, self.tokens):
             if true == pred:
                 continue
+            if known_targets and true not in known_targets:
+                unk_trg[true][pred] += 1
+            if self.known_tokens and token not in self.known_tokens:
+                unk_tok[true][pred] += 1
+            if self.amb_tokens and token in self.amb_tokens:
+                amb_tok[true][pred] += 1
 
-            unk_target = true not in self.label_encoder.known_tokens
-            unk_token = token and self.known_tokens and token not in self.known_tokens
-            if not unk_target and not unk_token:
-                known[true][pred] += 1
-            else:
-                if unk_target:
-                    unk_targets[true][pred] += 1
-                if unk_token:
-                    unk_tokens[true][pred] += 1
-
-        known_summary = '::: Known tokens :::\n\n'
+        summary = []
+        summary_ = '::: Known tokens :::\n\n'
         for true, count, preds in self.get_most_common(known, most_common):
-            known_summary += '{}\n'.format(error_summary(true, count, preds))
-        unk_target_summary = '::: Unknown targets :::\n\n'
-        for true, count, preds in self.get_most_common(unk_targets, most_common):
-            unk_target_summary += '{}\n'.format(error_summary(true, count, preds))
-        unk_tokens_summary = '::: Unknown tokens :::\n\n'
-        for true, count, preds in self.get_most_common(unk_tokens, most_common):
-            unk_tokens_summary += '{}\n'.format(error_summary(true, count, preds))
+            summary_ += '{}\n'.format(error_summary(true, count, preds))
+        summary += [summary_]
+        if unk_trg:
+            summary_ = '::: Unknown targets :::\n\n'
+            for true, count, preds in self.get_most_common(unk_trg, most_common):
+                summary_ += '{}\n'.format(error_summary(true, count, preds))
+            summary += [summary_]
+        if amb_tok:
+            summary_ = '::: Ambiguous tokens :::\n\n'
+            for true, count, preds in self.get_most_common(amb_tok, most_common):
+                summary_ += '{}\n'.format(error_summary(true, count, preds))
+            summary += [summary_]
+        if unk_tok:
+            summary_ = '::: Unknown tokens :::\n\n'
+            for true, count, preds in self.get_most_common(unk_tok, most_common):
+                summary_ += '{}\n'.format(error_summary(true, count, preds))
+            summary += [summary_]
 
-        return '{}\n{}\n{}'.format(known_summary, unk_target_summary, unk_tokens_summary)
+        return '\n'.join(summary)
 
     def print_summary(self, full=False, most_common=100):
         """
