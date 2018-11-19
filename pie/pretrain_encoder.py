@@ -117,8 +117,8 @@ class Encoder(nn.Module):
             init_rnn=init_rnn)
 
         # decoders
-        self.lm_decoder_fwd = LinearDecoder(label_encoder.word, hidden_size)
-        self.lm_decoder_bwd = LinearDecoder(label_encoder.word, hidden_size)
+        self.lm_fwd_decoder = LinearDecoder(label_encoder.word, hidden_size)
+        self.lm_bwd_decoder = LinearDecoder(label_encoder.word, hidden_size)
 
     def get_args_and_kwargs(self):
         return {'args': (self.wemb_dim, self.cemb_dim, self.hidden_size, self.num_layers),
@@ -212,11 +212,11 @@ class Encoder(nn.Module):
 
         fwd, bwd = F.dropout(enc_outs[-1], p=0, training=self.training).chunk(2, dim=2)
         # forward logits
-        logits = self.lm_decoder_fwd(torch_utils.pad(fwd[:-1], pos='pre'))
-        fwd_lm = self.lm_decoder_fwd.loss(logits, word)
+        logits = self.lm_fwd_decoder(torch_utils.pad(fwd[:-1], pos='pre'))
+        fwd_lm = self.lm_fwd_decoder.loss(logits, word)
         # backward logits
-        logits = self.lm_decoder_fwd(torch_utils.pad(bwd[1:], pos='post'))
-        bwd_lm = self.lm_decoder_bwd.loss(logits, word)
+        logits = self.lm_bwd_decoder(torch_utils.pad(bwd[1:], pos='post'))
+        bwd_lm = self.lm_bwd_decoder.loss(logits, word)
 
         return fwd_lm, bwd_lm
 

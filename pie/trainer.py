@@ -198,8 +198,8 @@ class Trainer(object):
             tasks[task['name']] = task.get('schedule', {})
             tasks[task['name']]['target'] = task.get('target', False)
         if settings.include_lm:
-            tasks['fwd_lm'] = settings.lm_schedule
-            tasks['bwd_lm'] = settings.lm_schedule
+            tasks['lm_fwd'] = settings.lm_schedule
+            tasks['lm_bwd'] = settings.lm_schedule
         self.task_scheduler = TaskScheduler(
             # task schedule
             tasks, settings.patience, settings.factor, settings.threshold,
@@ -267,11 +267,13 @@ class Trainer(object):
                 task.print_summary()
 
         self.model.train()
-        dev_scores = {t: scorer.get_scores()['accuracy'] for t, scorer in summary.items()}
+        dev_scores = {}
+        for task, scorer in summary.items():
+            dev_scores[task] = scorer.get_scores()['all']['accuracy']
         # add lm scores
-        if 'fwd_lm' in dev_loss or 'bwd_lm' in dev_loss:
-            dev_scores['fwd_lm'] = dev_loss['fwd_lm']
-            dev_scores['bwd_lm'] = dev_loss['bwd_lm']
+        if 'lm_fwd' in dev_loss or 'lm_bwd' in dev_loss:
+            dev_scores['lm_fwd'] = dev_loss['lm_fwd']
+            dev_scores['lm_bwd'] = dev_loss['lm_bwd']
 
         self.task_scheduler.step(dev_scores, self.model)
 
