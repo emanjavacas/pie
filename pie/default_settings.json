@@ -17,14 +17,11 @@
   "test_path": "",
   // path to dev set (same format as input_path)
   "dev_path": "",
-  // breakline logic to use to detect sentence boundaries in tsv files
-  // either "LENGTH" (break after n tokens) or "FULLSTOP" (break after a fullstop symbol)
-  "breakline_type": "LENGTH",
-  // data to use as reference for breaking lines (either "input" or a task name)
-  "breakline_ref": "input",
-  // needed to decide for a sentence boundary (e.g. an integer for LENGTH)
-  "breakline_data": "20",
-  // safety max length to avoid too long sentences blowing up memory
+  // data to use as reference for breaking lines (e.g. "pos")
+  "breakline_ref": "",
+  // needed to decide for a sentence boundary (e.g. "$.")
+  "breakline_data": "",
+  // max length of sentences (longer sentence will be split)
   "max_sent_len": 35,
   // maximum number of sentences to process
   "max_sents": 1000000,
