@@ -74,7 +74,7 @@ class LinearDecoder(nn.Module):
         initialization.init_linear(self.decoder)
 
     def forward(self, enc_outs):
-        if hasattr(self, 'highway') and self.highway is not None:
+        if self.highway is not None:
             enc_outs = self.highway(enc_outs)
         linear_out = self.decoder(enc_outs)
 
@@ -109,13 +109,14 @@ class CRFDecoder(nn.Module):
     """
     CRF decoder layer
     """
-    def __init__(self, label_encoder, hidden_size):
+    def __init__(self, label_encoder, hidden_size, highway_layers=0, highway_act='relu'):
         self.label_encoder = label_encoder
         super().__init__()
 
         vocab = len(label_encoder)
-        # self.projection = nn.Sequential(Highway(hidden_size, 1),
-        #                                 nn.Linear(hidden_size, vocab))
+        self.highway = None
+        if highway_layers > 0:
+            self.highway = Highway(hidden_size, highway_layers, highway_act)
         self.projection = nn.Linear(hidden_size, vocab)
         self.transition = nn.Parameter(torch.Tensor(vocab, vocab))
         self.start_transition = nn.Parameter(torch.Tensor(vocab))
@@ -132,6 +133,8 @@ class CRFDecoder(nn.Module):
     def forward(self, enc_outs):
         "get logits of the input features"
         # (seq_len x batch x vocab)
+        if self.highway is None:
+            enc_out = self.highway(enc_outs)
         logits = self.projection(enc_outs)
 
         return F.log_softmax(logits, -1)

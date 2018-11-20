@@ -42,7 +42,7 @@ class SimpleModel(BaseModel):
                  dropout=0.0, word_dropout=0.0, merge_type='concat', cemb_type='RNN',
                  cemb_layers=1, cell='LSTM', custom_cemb_cell=False, scorer='general',
                  include_lm=True, lm_shared_softmax=True, init_rnn='xavier_uniform',
-                 **kwargs):
+                 linear_layers=1, **kwargs):
         # args
         self.wemb_dim = wemb_dim
         self.cemb_dim = cemb_dim
@@ -59,6 +59,7 @@ class SimpleModel(BaseModel):
         self.include_lm = include_lm
         self.lm_shared_softmax = lm_shared_softmax
         self.custom_cemb_cell = custom_cemb_cell
+        self.linear_layers = linear_layers
         # only during training
         self.init_rnn = init_rnn
         super().__init__(label_encoder, tasks)
@@ -150,11 +151,13 @@ class SimpleModel(BaseModel):
                 # linear
                 if task['decoder'].lower() == 'linear':
                     decoder = LinearDecoder(
-                        label_encoder.tasks[tname], hidden_size * 2)
+                        label_encoder.tasks[tname], hidden_size * 2,
+                        highway_layers=linear_layers - 1)
                 # crf
                 elif task['decoder'].lower() == 'crf':
                     decoder = CRFDecoder(
-                        label_encoder.tasks[tname], hidden_size * 2)
+                        label_encoder.tasks[tname], hidden_size * 2,
+                        highway_layers=linear_layers - 1)
 
             else:
                 raise ValueError(
@@ -179,6 +182,7 @@ class SimpleModel(BaseModel):
                            'word_dropout': self.word_dropout,
                            'cell': self.cell,
                            'merge_type': self.merge_type,
+                           'linear_layers': self.linear_layers,
                            'cemb_type': self.cemb_type,
                            'cemb_layers': self.cemb_layers,
                            'include_lm': self.include_lm,

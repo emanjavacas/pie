@@ -128,9 +128,11 @@
   "load_pretrained_encoder": "",
 
   // * Model
-  "wemb_dim": 150,
+  // word-level embedding dim
+  "wemb_dim": 0,
   // whether to freeze the word embeddings
   "freeze_embeddings": false,
+  // input dimension for char-level embeddings
   "cemb_dim": 150,
   // character embedding type (rnn or cnn)
   "cemb_type": "rnn",
@@ -138,11 +140,16 @@
   "custom_cemb_cell": false,
   // number of layers for the rnn-embeddings and the attentional decoder
   "cemb_layers": 1,
-  // attention type
-  "scorer": "general",
   // how to merge word-level and char-level embeddings (mixer or concat)
   "merge_type": "concat",
+  // attention type
+  "scorer": "general",
+  // number of layers for linear decoders
+  "linear_layers": 1,
+  // sentence encoding dimension
   "hidden_size": 300,
+  // num recurrent layers for the sentence encoder
   "num_layers": 1,
+  // cell type for rnns
   "cell": "LSTM"
 }

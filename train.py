@@ -109,6 +109,7 @@ if __name__ == '__main__':
                         cell=settings.cell, cemb_type=settings.cemb_type,
                         cemb_layers=settings.cemb_layers,
                         custom_cemb_cell=settings.custom_cemb_cell,
+                        linear_layers=settings.linear_layers,
                         scorer=settings.scorer,
                         word_dropout=settings.word_dropout,
                         lm_shared_softmax=settings.lm_shared_softmax,
