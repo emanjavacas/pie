@@ -1,30 +1,8 @@
 
 import os
-import re
 
 from pie import utils
 from pie.tagger import Tagger
-
-
-def model_spec(inp):
-    """
-    >>> example = 'model-pos-2018:03:05.tar'
-    >>> model_spec(example)
-    [('model-pos-2018:03:05.tar', [])]
-
-    >>> example = '<model-pos-2018:03:05.tar,pos><model-pos-2018:03:05.tar,lemma>'
-    >>> model_spec(example)
-    [('model-pos-2018:03:05.tar', ['pos']), ('model-pos-2018:03:05.tar', ['lemma'])]
-    """
-    if not inp.startswith('<'):
-        return [(inp, [])]
-
-    output = []
-    for string in re.findall(r'<([^>]+)>', inp):
-        model_path, *tasks = string.split(',')
-        output.append((model_path, tasks))
-
-    return output
 
 
 if __name__ == '__main__':

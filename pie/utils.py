@@ -1,4 +1,5 @@
 
+import re
 import os
 import shutil
 import uuid
@@ -191,3 +192,24 @@ class GitInfo():
         Returns current active tag
         """
         return self.run(["git", "describe", "--tags", "--abbrev=0"])
+
+
+def model_spec(inp):
+    """
+    >>> example = 'model-pos-2018:03:05.tar'
+    >>> model_spec(example)
+    [('model-pos-2018:03:05.tar', [])]
+
+    >>> example = '<model-pos-2018:03:05.tar,pos><model-pos-2018:03:05.tar,lemma>'
+    >>> model_spec(example)
+    [('model-pos-2018:03:05.tar', ['pos']), ('model-pos-2018:03:05.tar', ['lemma'])]
+    """
+    if not inp.startswith('<'):
+        return [(inp, [])]
+
+    output = []
+    for string in re.findall(r'<([^>]+)>', inp):
+        model_path, *tasks = string.split(',')
+        output.append((model_path, tasks))
+
+    return output
