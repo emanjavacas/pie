@@ -187,7 +187,7 @@ if __name__ == '__main__':
             scorer = scorers[task]
             result = scorer.get_scores()
             for acc in result:
-                scores.append('{}:{:6.f}'.format(task, result[acc]['accuracy']))
+                scores.append('{}:{:.6f}'.format(task, result[acc]['accuracy']))
                 scores.append('{}-support:{}'.format(task, result[acc]['support']))
         path = '{}.results.{}.csv'.format(
             settings.modelname, '-'.join(get_targets(settings)))
