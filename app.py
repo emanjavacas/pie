@@ -40,39 +40,17 @@ Example output :
     .	.	_	PONfrt
 
 """
-from flask import Flask, request, Response
+from flask import Flask, request, Response, stream_with_context
 from pie.tagger import Tagger, simple_tokenizer
-from pie.utils import chunks
-import re
+from pie.utils import chunks, model_spec
 from os import getenv
 
 model_file = getenv("PIE_MODEL")
-BATCH = int(getenv("PIE_BATCH", 32))
+BATCH = int(getenv("PIE_BATCH", 3))
 DEVICE = getenv("PIE_DEVICE", "cpu")
 
 app = Flask(__name__)
 tagger = Tagger(device=DEVICE, batch_size=BATCH)
-
-
-def model_spec(inp):  # Taken from tag.py. Maybe it could be in utils to avoid such a repetition ?
-    """
-    >>> example = 'model-pos-2018:03:05.tar'
-    >>> model_spec(example)
-    [('model-pos-2018:03:05.tar', [])]
-
-    >>> example = '<model-pos-2018:03:05.tar,pos><model-pos-2018:03:05.tar,lemma>'
-    >>> model_spec(example)
-    [('model-pos-2018:03:05.tar', ['pos']), ('model-pos-2018:03:05.tar', ['lemma'])]
-    """
-    if not inp.startswith('<'):
-        return [(inp, [])]
-
-    output = []
-    for string in re.findall(r'<([^>]+)>', inp):
-        model_path, *tasks = string.split(',')
-        output.append((model_path, tasks))
-
-    return output
 
 
 for model, tasks in model_spec(model_file):
@@ -87,33 +65,37 @@ def iter_data(data, lower=False):
 
 @app.route("/", methods=["POST", "GET", "OPTIONS"])
 def index():
-    lower = request.args.get("lower", False)
-    if lower:
-        lower = True
+    def lemmatization_stream():
+        lower = request.args.get("lower", False)
+        if lower:
+            lower = True
 
-    if request.method == "GET":
-        data = request.args.get("data")
-    else:
-        data = request.form.get("data")
+        if request.method == "GET":
+            data = request.args.get("data")
+        else:
+            data = request.form.get("data")
 
-    if not data:
-        return ""
+        if not data:
+            yield ""
 
-    output = ""
-    header = False
-    for chunk in chunks(iter_data(data, lower=lower), size=BATCH):
-        sents, lengths = zip(*chunk)
+        header = False
+        for chunk in chunks(iter_data(data, lower=lower), size=BATCH):
+            sents, lengths = zip(*chunk)
 
-        tagged, tasks = tagger.tag(sents=sents, lengths=lengths)
-        sep = "\t"
-        for sent in tagged:
-            if not header:
-                output += sep.join(['token'] + tasks) + '\r\n'
-                header = True
-            for token, tags in sent:
-                output += sep.join([token] + list(tags)) + '\r\n'
+            tagged, tasks = tagger.tag(sents=sents, lengths=lengths)
+            sep = "\t"
+            for sent in tagged:
+                if not header:
+                    yield sep.join(['token'] + tasks) + '\r\n'
+                    header = True
+                for token, tags in sent:
+                    yield sep.join([token] + list(tags)) + '\r\n'
 
-    return output, 200, {
-        'Content-Type': 'text/plain',
-        'Access-Control-Allow-Origin': '*'
-    }
+    return Response(
+           stream_with_context(lemmatization_stream()),
+           200,
+           headers={
+            'Content-Type': 'text/plain',
+            'Access-Control-Allow-Origin': '*'
+           }
+    )
