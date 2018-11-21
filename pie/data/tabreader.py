@@ -6,10 +6,10 @@ class LineParser(object):
     """
     Inner class to handle sentence breaks
     """
-    def __init__(self, tasks, breakline_type, breakline_ref, breakline_data, reader):
+    def __init__(self, tasks, sep, breakline_ref, breakline_data, reader):
         self.reader = reader
+        self.sep = sep
         # breakline info
-        self.breakline_type = breakline_type
         self.breakline_ref = breakline_ref
         self.breakline_data = breakline_data
         # data
@@ -20,7 +20,7 @@ class LineParser(object):
         """
         Adds line to current sentence.
         """
-        inp, *tasks = line.split()
+        inp, *tasks = line.split(self.sep)
 
         if len(tasks) < len(self.tasks):
             try:
@@ -44,23 +44,24 @@ class LineParser(object):
         """
         Check if sentence is finished.
         """
-        if self.breakline_ref == 'input':
+        if len(self.inp) == 0:
+            return False
+
+        if self.breakline_ref:
             ref = self.inp
-        else:
-            ref = self.tasks[self.breakline_ref]
+            if self.breakline_ref != 'input':
+                ref = self.tasks[self.breakline_ref]
+            return ref[-1] == self.breakline_data
 
-        if self.breakline_type == 'FULLSTOP':
-            if ref[-1] == self.breakline_data:
-                return True
-        elif self.breakline_type == 'LENGTH':
-            if len(ref) == int(self.breakline_data):
-                return True
-
-    def reset(self):
+    def reset(self, nitems=None):
         """
         Reset sentence data
         """
-        self.tasks, self.inp = {task: [] for task in self.tasks}, []
+        if nitems is None:
+            self.tasks, self.inp = {task: [] for task in self.tasks}, []
+        else:
+            self.inp = self.inp[nitems:]
+            self.tasks = {task: tdata[nitems:] for task, tdata in self.tasks.items()}
 
 
 class TabReader(BaseReader):
@@ -79,12 +80,7 @@ class TabReader(BaseReader):
     header : bool, whether file has header.
     tasks_order : list, in case of missing header, the expected order of tasks in
         the file (there might be less)
-    breakline_type : str, one of "LENGTH" or "FULLSTOP".
-    breakline_data : str or int, if breakline_type is LENGTH it will be assumed
-        to be an integer defining the number of words per sentence, and the
-        dataset will be break into equally sized chunks. If breakline_type is
-        FULLSTOP it will be assumed to be a POS tag to use as criterion to
-        split sentences.
+    breakline_data : str
     breakline_ref : str, tab used to decide on line breaks
     max_sent_len : int, break lines to this length if they'd become longer
     tasks[task].default : str, method to use to fill in missing values
@@ -92,10 +88,10 @@ class TabReader(BaseReader):
     def __init__(self, settings, fpath, line_parser=LineParser):
         self.header = settings.header  # needed for get_tasks
         self.tasks_order = settings.tasks_order
+        self.sep = settings.sep
         super(TabReader, self).__init__(settings, fpath)
 
         self.line_parser = line_parser
-        self.breakline_type = settings.breakline_type
         self.breakline_ref = settings.breakline_ref
         self.breakline_data = settings.breakline_data
         self.max_sent_len = settings.max_sent_len
@@ -109,23 +105,36 @@ class TabReader(BaseReader):
                 next(f)
 
             parser = self.line_parser(
-                self.tasks, self.breakline_type,
-                self.breakline_ref, self.breakline_data, self)
+                self.tasks, self.sep, self.breakline_ref, self.breakline_data, self)
 
             for line_num, line in enumerate(f):
                 line = line.strip()
 
-                if not line:    # avoid empty line
+                # break
+                if not line:
+                    yield parser.inp, parser.tasks
+                    parser.reset()
                     continue
+
+                if parser.check_breakline():
+                    yield parser.inp, parser.tasks
+                    parser.reset()
+
+                elif len(parser.inp) > self.max_sent_len:
+                    inp = parser.inp[:self.max_sent_len]
+                    tasks = {}
+                    for t in parser.tasks:
+                        tasks[t] = parser.tasks[t][:self.max_sent_len]
+                    yield inp, tasks
+                    parser.reset(self.max_sent_len)
 
                 try:
                     parser.add(line, line_num)
                 except LineParseException as e:
                     yield e
 
-                if parser.check_breakline() or len(parser.inp) >= self.max_sent_len:
-                    yield parser.inp, parser.tasks
-                    parser.reset()
+            if len(parser.inp) > 0:
+                yield parser.inp, parser.tasks
 
     def get_tasks(self):
         """
@@ -135,7 +144,7 @@ class TabReader(BaseReader):
 
             if self.header:
                 # TODO: this assumes text is first field
-                _, *header = next(f).strip().split()
+                _, *header = next(f).strip().split(self.sep)
                 return tuple(header)
 
             else:
@@ -144,7 +153,7 @@ class TabReader(BaseReader):
                 while not line:
                     line = next(f).strip()
 
-                _, *tasks = line.split()
+                _, *tasks = line.split(self.sep)
                 if len(tasks) == 0:
                     raise ValueError("Not enough input tasks: [{}]".format(self.fpath))
 

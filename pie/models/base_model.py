@@ -1,12 +1,8 @@
 
 import os
-import shutil
-import uuid
 import json
 import tarfile
-import gzip
 import logging
-import contextlib
 
 import tqdm
 import torch
@@ -19,34 +15,16 @@ from pie.settings import Settings
 from .scorer import Scorer
 
 
-@contextlib.contextmanager
-def tmpfile(parent='/tmp/'):
-    fid = str(uuid.uuid1())
-    tmppath = os.path.join(parent, fid)
-    yield tmppath
-    if os.path.isdir(tmppath):
-        shutil.rmtree(tmppath)
-    else:
-        os.remove(tmppath)
-
-
-def add_gzip_to_tar(string, subpath, tar):
-    with tmpfile() as tmppath:
-        with gzip.GzipFile(tmppath, 'w') as f:
-            f.write(string.encode())
-        tar.add(tmppath, arcname=subpath)
-
-
-def get_gzip_from_tar(tar, fpath):
-    return gzip.open(tar.extractfile(fpath)).read().decode().strip()
-
-
 class BaseModel(nn.Module):
     """
     Abstract model class defining the model interface
     """
-    def __init__(self, label_encoder, *args, **kwargs):
+    def __init__(self, label_encoder, tasks, *args, **kwargs):
         self.label_encoder = label_encoder
+        # prepare input task data from task settings
+        if isinstance(tasks, list):
+            tasks = {task['name']: task for task in tasks}
+        self.tasks = tasks
         super().__init__()
 
     def loss(self, batch_data):
@@ -54,7 +32,7 @@ class BaseModel(nn.Module):
         """
         raise NotImplementedError
 
-    def predict(self, inp, *tasks):
+    def predict(self, inp, *tasks, **kwargs):
         """
         Compute predictions based on already processed input
         """
@@ -63,11 +41,11 @@ class BaseModel(nn.Module):
     def get_args_and_kwargs(self):
         """
         Return a dictionary of {'args': tuple, 'kwargs': dict} that were used
-        to instantiate the model (excluding the label_encoder)
+        to instantiate the model (excluding the label_encoder and tasks)
         """
         raise NotImplementedError
 
-    def evaluate(self, dataset, total=None):
+    def evaluate(self, dataset, trainset=None, **kwargs):
         """
         Get scores per task
         """
@@ -75,26 +53,32 @@ class BaseModel(nn.Module):
 
         scorers = {}
         for task, le in self.label_encoder.tasks.items():
-            scorers[task] = Scorer(le, compute_unknown=le.level == 'char')
+            scorers[task] = Scorer(le, trainset)
 
         with torch.no_grad():
-            for inp, tasks in tqdm.tqdm(dataset, total=total):
-                # get preds
-                preds = self.predict(inp)
+            for (inp, tasks), (rinp, rtasks) in tqdm.tqdm(
+                    dataset.batch_generator(return_raw=True)):
 
-                # get trues
+                preds = self.predict(inp, **kwargs)
+
+                # - get input tokens
+                tokens = [w for line in rinp for w in line]
+
+                # - get trues
                 trues = {}
-                for task, le in self.label_encoder.tasks.items():
-                    tinp, tlen = tasks[task]
-                    tinp, tlen = tinp.t().tolist(), tlen.tolist()
-                    if le.level == 'char':
-                        trues[task] = [''.join(le.stringify(t)) for t in tinp]
-                    else:
-                        trues[task] = [le.stringify(t, l) for t, l in zip(tinp, tlen)]
+                for task in preds:
+                    le = self.label_encoder.tasks[task]
+                    # - transform targets
+                    trues[task] = le.preprocess(
+                        [t for line in rtasks for t in line[task]], tokens)
+
+                    # - flatten token level predictions
+                    if le.level == 'token':
+                        preds[task] = [pred for batch in preds[task] for pred in batch]
 
                 # accumulate
                 for task, scorer in scorers.items():
-                    scorer.register_batch(preds[task], trues[task])
+                    scorer.register_batch(preds[task], trues[task], tokens)
 
         return scorers
 
@@ -102,7 +86,7 @@ class BaseModel(nn.Module):
         """
         Serialize model to path
         """
-        import pie # to handle git commits
+        import pie
         fpath = utils.ensure_ext(fpath, 'tar', infix)
 
         # create dir if necessary
@@ -113,30 +97,34 @@ class BaseModel(nn.Module):
         with tarfile.open(fpath, 'w') as tar:
             # serialize label_encoder
             string, path = json.dumps(self.label_encoder.jsonify()), 'label_encoder.zip'
-            add_gzip_to_tar(string, path, tar)
+            utils.add_gzip_to_tar(string, path, tar)
+
+            # serialize tasks
+            string, path = json.dumps(self.tasks), 'tasks.zip'
+            utils.add_gzip_to_tar(string, path, tar)
 
             # serialize model class
             string, path = str(type(self).__name__), 'class.zip'
-            add_gzip_to_tar(string, path, tar)
+            utils.add_gzip_to_tar(string, path, tar)
 
             # serialize parameters
             string, path = json.dumps(self.get_args_and_kwargs()), 'parameters.zip'
-            add_gzip_to_tar(string, path, tar)
+            utils.add_gzip_to_tar(string, path, tar)
 
             # serialize weights
-            with tmpfile() as tmppath:
+            with utils.tmpfile() as tmppath:
                 torch.save(self.state_dict(), tmppath)
                 tar.add(tmppath, arcname='state_dict.pt')
 
             # serialize current pie commit
             if pie.__commit__ is not None:
                 string, path = pie.__commit__, 'pie-commit.zip'
-                add_gzip_to_tar(string, path, tar)
+                utils.add_gzip_to_tar(string, path, tar)
 
             # if passed, serialize settings
             if settings is not None:
                 string, path = json.dumps(settings), 'settings.zip'
-                add_gzip_to_tar(string, path, tar)
+                utils.add_gzip_to_tar(string, path, tar)
 
         return fpath
 
@@ -145,10 +133,8 @@ class BaseModel(nn.Module):
         """
         Load settings from path
         """
-        import pie
-
         with tarfile.open(utils.ensure_ext(fpath, 'tar'), 'r') as tar:
-            return Settings(json.loads(get_gzip_from_tar(tar, 'settings.zip')))
+            return Settings(json.loads(utils.get_gzip_from_tar(tar, 'settings.zip')))
 
     @staticmethod
     def load(fpath):
@@ -160,37 +146,41 @@ class BaseModel(nn.Module):
         with tarfile.open(utils.ensure_ext(fpath, 'tar'), 'r') as tar:
             # check commit
             try:
-                commit = get_gzip_from_tar(tar, 'pie-commit.zip')
+                commit = utils.get_gzip_from_tar(tar, 'pie-commit.zip')
             except Exception:
                 commit = None
             if (pie.__commit__ and commit) and pie.__commit__ != commit:
                 logging.warn(
                     ("Model {} was serialized with a previous "
                      "version of `pie`. This might result in issues. "
-                     "Model commit is {}, whereas current `pie` commit is {}."
-                    ).format(fpath, commit, pie.__commit__))
+                     "Model commit is {}, whereas current `pie` commit is {}.").format(
+                         fpath, commit, pie.__commit__))
 
             # load label encoder
             le = MultiLabelEncoder.load_from_string(
-                get_gzip_from_tar(tar, 'label_encoder.zip'))
+                utils.get_gzip_from_tar(tar, 'label_encoder.zip'))
+
+            # load tasks
+            tasks = json.loads(utils.get_gzip_from_tar(tar, 'tasks.zip'))
 
             # load model parameters
-            params = json.loads(get_gzip_from_tar(tar, 'parameters.zip'))
+            params = json.loads(utils.get_gzip_from_tar(tar, 'parameters.zip'))
 
             # instantiate model
-            model_type = getattr(pie.models, get_gzip_from_tar(tar, 'class.zip'))
+            model_type = getattr(pie.models, utils.get_gzip_from_tar(tar, 'class.zip'))
             with utils.shutup():
-                model = model_type(le, *params['args'], **params['kwargs'])
+                model = model_type(le, tasks, *params['args'], **params['kwargs'])
 
             # load settings
             try:
-                settings = Settings(json.loads(get_gzip_from_tar(tar, 'settings.zip')))
+                settings = Settings(
+                    json.loads(utils.get_gzip_from_tar(tar, 'settings.zip')))
                 model._settings = settings
-            except:
+            except Exception:
                 logging.warn("Couldn't load settings for model {}!".format(fpath))
 
             # load state_dict
-            with tmpfile() as tmppath:
+            with utils.tmpfile() as tmppath:
                 tar.extract('state_dict.pt', path=tmppath)
                 dictpath = os.path.join(tmppath, 'state_dict.pt')
                 model.load_state_dict(torch.load(dictpath, map_location='cpu'))

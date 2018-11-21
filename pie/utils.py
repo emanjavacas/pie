@@ -1,10 +1,13 @@
 
+import re
 import os
+import shutil
+import uuid
+import gzip
 import logging
 import sys
 import glob
 import itertools
-import re
 from contextlib import contextmanager
 from subprocess import check_output, CalledProcessError
 
@@ -111,6 +114,28 @@ def shutup():
             sys.stderr = old_err
 
 
+@contextmanager
+def tmpfile(parent='/tmp/'):
+    fid = str(uuid.uuid1())
+    tmppath = os.path.join(parent, fid)
+    yield tmppath
+    if os.path.isdir(tmppath):
+        shutil.rmtree(tmppath)
+    else:
+        os.remove(tmppath)
+
+
+def add_gzip_to_tar(string, subpath, tar):
+    with tmpfile() as tmppath:
+        with gzip.GzipFile(tmppath, 'w') as f:
+            f.write(string.encode())
+        tar.add(tmppath, arcname=subpath)
+
+
+def get_gzip_from_tar(tar, fpath):
+    return gzip.open(tar.extractfile(fpath)).read().decode().strip()
+
+
 class GitInfo():
     """
     Utility class to retrieve git-based info from a repository
@@ -167,3 +192,24 @@ class GitInfo():
         Returns current active tag
         """
         return self.run(["git", "describe", "--tags", "--abbrev=0"])
+
+
+def model_spec(inp):
+    """
+    >>> example = 'model-pos-2018:03:05.tar'
+    >>> model_spec(example)
+    [('model-pos-2018:03:05.tar', [])]
+
+    >>> example = '<model-pos-2018:03:05.tar,pos><model-pos-2018:03:05.tar,lemma>'
+    >>> model_spec(example)
+    [('model-pos-2018:03:05.tar', ['pos']), ('model-pos-2018:03:05.tar', ['lemma'])]
+    """
+    if not inp.startswith('<'):
+        return [(inp, [])]
+
+    output = []
+    for string in re.findall(r'<([^>]+)>', inp):
+        model_path, *tasks = string.split(',')
+        output.append((model_path, tasks))
+
+    return output

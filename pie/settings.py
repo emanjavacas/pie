@@ -70,12 +70,23 @@ def recursive_merge(s1, s2):
     return s1
 
 
+def merge_task_defaults(settings):
+    for task in settings.tasks:
+        task_settings = task.get("settings", {})
+        task_settings["target"] = task_settings.get("target", task['name'])
+        task['settings'] = task_settings
+        for tkey, tval in settings.task_defaults.items():
+            task[tkey] = task.get(tkey, tval)
+
+    return settings
+
+
 def load_default_settings():
     """
     Load built-in default settings
     """
     with open(DEFAULTPATH) as f:
-        return Settings(json.loads(json_minify(f.read())))
+        return merge_task_defaults(Settings(json.loads(json_minify(f.read()))))
 
 
 def settings_from_file(config_path):
@@ -125,4 +136,4 @@ def settings_from_file(config_path):
         print("\n::: Loaded Config :::\n")
         print(yaml.dump(dict(settings)))
 
-    return settings
+    return merge_task_defaults(settings)

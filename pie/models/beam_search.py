@@ -46,7 +46,7 @@ class Beam(object):
             beam_outs = outs + self.scores.unsqueeze(1).expand_as(outs)
             # EOS nihilation (adapted from OpenNMT)
             for i in range(len(beam_outs)):
-                if self.eos is not None and self.beam_values[-1][i] == self.eos:
+                if self.beam_values[-1][i] == self.eos:
                     beam_outs[i] = -1e20
         else:
             # all beams have same start values, just pick the 1st

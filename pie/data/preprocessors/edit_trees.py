@@ -39,10 +39,11 @@ def depth_first(root):
 
 
 class Node:
-    def __init__(self, _prefix, _infix, _suffix):
+    def __init__(self, _prefix, _infix, _suffix, target):
         self._prefix = _prefix  # prefix of the string at this level
         self._infix = _infix    # current string
         self._suffix = _suffix  # suffix of the string at this level
+        self.target = target
         # children
         self.prefix = None
         self.suffix = None
@@ -73,8 +74,21 @@ class Node:
     def children(self):
         return [self.prefix, self.suffix]
 
+    def to_class(self):
+        return get_class(self)
 
-class Leaf:
+    def to_tuple(self):
+        if isinstance(self, Leaf):
+            # full replacement
+            return (len(self.a), self.b, 0, "")
+        else:
+            plen, slen = self.get_span()
+            start = self.target.find(self._infix)
+            pstring, sstring = self.target[:start], self.target[start+len(self._infix):]
+            return (plen, pstring, slen, sstring)
+
+
+class Leaf(Node):
     def __init__(self, a, b):
         self.a = a
         self.b = b
@@ -128,7 +142,7 @@ def get_class(node):
         return node.get_span(), (get_class(node.prefix), get_class(node.suffix))
 
 
-def tree_edit_scripts(a, b):
+def make_edit_tree(a, b):
     match = lcs(a, b)
 
     # check if leaf
@@ -138,13 +152,13 @@ def tree_edit_scripts(a, b):
     # parent
     else:
         (pre_a, suf_a), (pre_b, suf_b) = get_segments(a, b, match)
-        node = Node(pre_a, a[match.a:match.a+match.size], suf_a)
+        node = Node(pre_a, a[match.a:match.a+match.size], suf_a, b)
         node.prefix = make_edit_tree(pre_a, pre_b)
         node.suffix = make_edit_tree(suf_a, suf_b)
         return node
 
 
-def apply_tree_edit_scripts(tclass, inp, prefix=False):
+def apply_edit_tree(tclass, inp, prefix=False):
     if isinstance(tclass, Rule):
         # apply leaf
         return apply_rule(tclass, inp, prefix)
@@ -152,6 +166,19 @@ def apply_tree_edit_scripts(tclass, inp, prefix=False):
         # split and recur on non-terminals
         (plen, slen), (p, s) = tclass
         infix = inp[plen:len(inp)-slen]
-        prefix = apply_tree_edit_scripts(p, inp[:plen], prefix=True)
-        suffix = apply_tree_edit_scripts(s, inp[len(inp)-slen:])
+        prefix = apply_edit_tree(p, inp[:plen], prefix=True)
+        suffix = apply_edit_tree(s, inp[len(inp)-slen:])
         return prefix + infix + suffix
+
+
+def apply_tuple(tup, inp):
+    plen, pstring, slen, sstring = tup
+    return pstring + inp[plen:-slen] + sstring
+
+
+def transform(lem, tok):
+    return make_edit_tree(tok, lem).to_class()
+
+
+def inverse_transform(pred, tok):
+    return apply_edit_tree(pred, tok)

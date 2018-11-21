@@ -1,4 +1,5 @@
 
+import tarfile
 import json
 import logging
 from collections import Counter, defaultdict
@@ -14,17 +15,21 @@ class LabelEncoder(object):
     """
     Label encoder
     """
-    def __init__(self, level='word', target=None, name=None,
-                 pad=True, eos=False, bos=False,
-                 max_size=None, min_freq=1, **meta):
+    def __init__(self, level='token', name=None, target=None, lower=False,
+                 preprocessor=None, max_size=None, min_freq=1,
+                 pad=True, eos=False, bos=False, **meta):
 
-        if level.lower() not in ('word', 'char'):
-            raise ValueError("`level` must be 'word' or 'char'")
+        if level.lower() not in ('token', 'char'):
+            raise ValueError("`level` must be 'token' or 'char'. Got ", level)
 
         self.meta = meta  # dictionary with other task-relevant information
         self.eos = constants.EOS if eos else None
         self.pad = constants.PAD if pad else None
         self.bos = constants.BOS if bos else None
+        self.lower = lower
+        self.preprocessor = preprocessor
+        self.preprocessor_fn = \
+            getattr(preprocessors, preprocessor) if preprocessor else None
         self.max_size = max_size
         self.min_freq = min_freq
         self.level = level.lower()
@@ -51,8 +56,10 @@ class LabelEncoder(object):
         return self.pad == other.pad and \
             self.eos == other.eos and \
             self.bos == other.bos and \
+            self.preprocessor == other.preprocessor and \
             self.max_size == other.max_size and \
             self.level == other.level and \
+            self.lower == other.lower and \
             self.target == other.target and \
             self.freqs == other.freqs and \
             self.table == other.table and \
@@ -66,8 +73,10 @@ class LabelEncoder(object):
             length = 0
 
         return (
-            '<LabelEncoder name="{}" target="{}" level="{}" vocab="{}" fitted="{}">'
-        ).format(self.name, self.target, self.level, length, self.fitted)
+            ('<LabelEncoder name="{}" lower="{}" target="{}" level="{}" ' + \
+             'vocab="{}" fitted="{}"/>'
+            ).format(
+                self.name, self.lower, self.target, self.level, length, self.fitted))
 
     def get_type_stats(self):
         """
@@ -91,14 +100,21 @@ class LabelEncoder(object):
         known_tokens = sum(self.freqs[w] for w in self.table)
         return known_tokens, total_tokens, known_tokens / total_tokens
 
-    def add(self, seq):
+    def add(self, seq, rseq=None):
         if self.fitted:
             raise ValueError("Already fitted")
 
-        if self.level == 'word':
-            self.freqs.update(seq)
+        postseq = seq
+        if self.preprocessor_fn is not None:
+            if rseq is None:
+                raise ValueError("Expected ref sequence for preprocessor")
+            postseq = self.preprocess(seq, rseq)
+
+        if self.level == 'token':
+            self.freqs.update(postseq)
         else:
-            self.freqs.update(c for tok in seq for c in tok)
+            self.freqs.update(c for tok in postseq for c in tok)
+            # always use original sequence for known tokens
             self.known_tokens.update(seq)
 
     def compute_vocab(self):
@@ -120,6 +136,16 @@ class LabelEncoder(object):
         self.table = {sym: idx for idx, sym in enumerate(self.inverse_table)}
         self.fitted = True
 
+    def preprocess(self, tseq, rseq):
+        "gets always called before transform"
+        if self.lower:
+            tseq = [tok.lower() for tok in tseq]
+
+        if not self.preprocessor_fn:
+            return tseq
+
+        return [self.preprocessor_fn.transform(t, r) for t, r in zip(tseq, rseq)]
+
     def transform(self, seq):
         if not self.fitted:
             raise ValueError("Vocabulary hasn't been computed yet")
@@ -128,7 +154,8 @@ class LabelEncoder(object):
         if self.bos:
             output.append(self.get_bos())
 
-        output += [self.table.get(tok, self.table[constants.UNK]) for tok in seq]
+        for tok in seq:
+            output.append(self.table.get(tok, self.table[constants.UNK]))
 
         if self.eos:
             output.append(self.get_eos())
@@ -194,6 +221,8 @@ class LabelEncoder(object):
                 'pad': self.pad,
                 'meta': self.meta,
                 'level': self.level,
+                'preprocessor': self.preprocessor,
+                'lower': self.lower,
                 'target': self.target,
                 'max_size': self.max_size,
                 'min_freq': self.min_freq,
@@ -205,8 +234,9 @@ class LabelEncoder(object):
     @classmethod
     def from_json(cls, obj):
         inst = cls(pad=obj['pad'], eos=obj['eos'], bos=obj['bos'],
-                   level=obj['level'], target=obj['target'],
+                   level=obj['level'], target=obj['target'], lower=obj['lower'],
                    max_size=obj['max_size'], min_freq=['min_freq'],
+                   preprocessor=obj.get('preprocessor'),
                    name=obj['name'], meta=obj.get('meta', {}))
         inst.freqs = Counter(obj['freqs'])
         inst.table = dict(obj['table'])
@@ -222,13 +252,13 @@ class MultiLabelEncoder(object):
     Complex Label encoder for all tasks.
     """
     def __init__(self, word_max_size=None, char_max_size=None,
-                 word_min_freq=1, char_min_freq=None):
+                 word_min_freq=1, char_min_freq=None, char_eos=True, char_bos=True):
         self.word = LabelEncoder(max_size=word_max_size, min_freq=word_min_freq,
                                  name='word')
         self.char = LabelEncoder(max_size=char_max_size, min_freq=char_min_freq,
-                                 name='char', level='char', eos=True, bos=True)
+                                 name='char', level='char', eos=char_eos, bos=char_bos)
         self.tasks = {}
-        self.preprocessors = {}
+        self.nsents = None
 
     def __repr__(self):
         return (
@@ -245,15 +275,11 @@ class MultiLabelEncoder(object):
                 return False
             if self.tasks[task] != other.tasks[task]:
                 return False
-            if self.preprocessors.get(task, {}) != other.preprocessors.get(task, {}):
-                return False
 
         return True
 
     def add_task(self, name, **meta):
         self.tasks[name] = LabelEncoder(name=name, **meta)
-        if 'preprocessor' in meta:
-            self.preprocessors[name] = meta['preprocessor']
         return self
 
     @classmethod
@@ -261,18 +287,15 @@ class MultiLabelEncoder(object):
         le = cls(word_max_size=settings.word_max_size,
                  word_min_freq=settings.word_min_freq,
                  char_max_size=settings.char_max_size,
-                 char_min_freq=settings.char_min_freq)
+                 char_min_freq=settings.char_min_freq,
+                 char_eos=settings.char_eos, char_bos=settings.char_bos)
 
         for task in settings.tasks:
-            task_settings = task.get("settings", {})
-            task_target = task_settings.get('target', task['name'])
-            if tasks is not None and task_target not in tasks:
-                logging.warning("Ignoring task [{}]: no available data"
-                                .format(task_target))
+            if tasks is not None and task['settings']['target'] not in tasks:
+                logging.warning(
+                    "Ignoring task [{}]: no available data".format(task['target']))
                 continue
-
-            task_settings['target'] = task_target
-            le.add_task(task['name'], **task_settings)
+            le.add_task(task['name'], level=task['level'], **task['settings'])
 
         return le
 
@@ -282,9 +305,7 @@ class MultiLabelEncoder(object):
         ===========
         lines : iterator over tuples of (Input, Tasks)
         """
-        ninsts = 0
         for idx, inp in enumerate(lines):
-
             tasks = None
             if isinstance(inp, tuple):
                 inp, tasks = inp
@@ -294,22 +315,12 @@ class MultiLabelEncoder(object):
             self.char.add(inp)
 
             for le in self.tasks.values():
-                task_data = tasks[le.target]
-                # preprocess if needed
-                if le.name in self.preprocessors:
-                    preprocessor = getattr(preprocessors, self.preprocessors[le.name])
-                    task_data = [preprocessor(s1, s2) for s1, s2 in zip(inp, task_data)]
-                le.add(task_data)
-
-            # increment counter
-            ninsts += 1
+                le.add(tasks[le.target], inp)
 
         self.word.compute_vocab()
         self.char.compute_vocab()
         for le in self.tasks.values():
             le.compute_vocab()
-
-        return ninsts
 
     def fit_reader(self, reader):
         """
@@ -352,26 +363,22 @@ class MultiLabelEncoder(object):
                 continue
 
             for le in self.tasks.values():
-                task_data = tasks[le.target]
-                # preprocess if needed
-                if le.name in self.preprocessors:
-                    preprocessor = getattr(preprocessors, self.preprocessors[le.name])
-                    task_data = [preprocessor(s1, s2) for s1, s2 in zip(inp, task_data)]
-
+                task_data = le.preprocess(tasks[le.target], inp)
                 # add data
-                if le.level == 'word':
+                if le.level == 'token':
                     tasks_dict[le.name].append(le.transform(task_data))
-                else:
+                elif le.level == 'char':
                     for w in task_data:
                         tasks_dict[le.name].append(le.transform(w))
+                else:
+                    raise ValueError("Wrong level {}: task {}".format(le.level, le.name))
 
         return (word, char), tasks_dict
 
     def jsonify(self):
         return {'word': self.word.jsonify(),
                 'char': self.char.jsonify(),
-                'tasks': {le.name: le.jsonify() for le in self.tasks.values()},
-                'preprocessors': self.preprocessors}
+                'tasks': {le.name: le.jsonify() for le in self.tasks.values()}}
 
     def save(self, path):
         with open(path, 'w+') as f:
@@ -384,8 +391,6 @@ class MultiLabelEncoder(object):
 
         for task, le in obj['tasks'].items():
             inst.tasks[task] = LabelEncoder.from_json(le)
-
-        inst.preprocessors = obj.get('preprocessors', {})
 
         return inst
 
@@ -401,6 +406,11 @@ class MultiLabelEncoder(object):
 
         inst = cls()  # dummy instance to overwrite
         return cls._init(inst, obj)
+
+    @classmethod
+    def load_from_pretrained_model(cls, path):
+        with tarfile.open(utils.ensure_ext(path, 'tar'), 'r') as tar:
+            return cls.load_from_string(utils.get_gzip_from_tar(tar, 'label_encoder'))
 
 
 class Dataset(object):
@@ -439,7 +449,6 @@ class Dataset(object):
         self.minimize_pad = settings.minimize_pad
 
         # data
-        self.dev_sents = defaultdict(set)
         self.reader = reader
         self.label_encoder = label_encoder
 
@@ -456,7 +465,7 @@ class Dataset(object):
         """
         return pack_batch(self.label_encoder, batch, device or self.device)
 
-    def prepare_buffer(self, buf, **kwargs):
+    def prepare_buffer(self, buf, return_raw=False, **kwargs):
         "Transform buffer into batch generator"
 
         def key(data):
@@ -474,42 +483,14 @@ class Dataset(object):
             random.shuffle(batches)
 
         for batch in batches:
-            yield self.pack_batch(batch, **kwargs)
+            packed = self.pack_batch(batch, **kwargs)
+            if return_raw:
+                inp, tasks = zip(*batch)
+                yield packed, (inp, tasks)
+            else:
+                yield packed
 
-    def get_dev_split(self, ninsts, split=0.05):
-        "Grab a dev split from the dataset"
-        if len(self.dev_sents) > 0:
-            raise RuntimeError("A dev-split has already been created!")
-
-        buf = []
-        split_size = ninsts * split
-        split_prop = split_size / ninsts
-
-        for sent in self.reader.readsents():
-            if len(buf) >= split_size:
-                break
-
-            if random.random() > split_prop:
-                continue
-
-            (fpath, line_num), data = sent
-            buf.append(data)
-            self.dev_sents[fpath].add(line_num)
-
-        # get batches on cpu
-        batches = list(self.prepare_buffer(buf, device='cpu'))
-
-        return device_wrapper(batches, device=self.device)
-
-    def get_batches(self):
-        """
-        Put batches on memory (for dev/test sets)
-        """
-        batches = list(data for (_, data) in self.reader.readsents())
-        batches = list(self.prepare_buffer(batches, device='cpu'))
-        return device_wrapper(batches, device=self.device)
-
-    def batch_generator(self):
+    def batch_generator(self, return_raw=False):
         """
         Generator over dataset batches. Each batch is a tuple of (input, tasks):
             * (word, char)
@@ -520,20 +501,16 @@ class Dataset(object):
         buf = []
         for (fpath, line_num), data in self.reader.readsents():
 
-            # don't use dev sentences
-            if fpath in self.dev_sents and line_num in self.dev_sents[fpath]:
-                continue
-
             # fill buffer
             buf.append(data)
 
             # check if buffer is full and yield
             if len(buf) == self.buffer_size:
-                yield from self.prepare_buffer(buf)
+                yield from self.prepare_buffer(buf, return_raw=return_raw)
                 buf = []
 
         if len(buf) > 0:
-            yield from self.prepare_buffer(buf)
+            yield from self.prepare_buffer(buf, return_raw=return_raw)
 
 
 def pack_batch(label_encoder, batch, device=None):

@@ -1,11 +1,10 @@
 
 {
-  "input_path": "datasets/medieval_latin/dev/",
+  "input_path": "datasets/medieval_latin/dev/test0.tab",
   "header": false,
   "verbose": false,
   "buffer_size": 100,
   "batch_size": 10,
-  "breakline_type": "FULLSTOP",
   "breakline_ref": "pos",
   "breakline_data": "$.",
   "word_vocabsize": 100000 // needed for testing, otherwise we get UNKs

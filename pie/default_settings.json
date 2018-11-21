@@ -6,6 +6,8 @@
   "modelname": "model",
   // model path to be used for saving
   "modelpath": "./",
+  // run test (no serialization)
+  "run_test": false,
 
   // * Data
   // path or unix-like expression to file(s)/dir with training data:
@@ -15,27 +17,28 @@
   "test_path": "",
   // path to dev set (same format as input_path)
   "dev_path": "",
-  // proportion of instances in the dev set (ignored if dev_path is passed)
-  "dev_split": 0.05,
-  // breakline logic to use to detect sentence boundaries in tsv files
-  // either "LENGTH" (break after n tokens) or "FULLSTOP" (break after a fullstop symbol)
-  "breakline_type": "LENGTH",
-  // data to use as reference for breaking lines (either "input" or a task name)
-  "breakline_ref": "input",
-  // needed to decide for a sentence boundary (e.g. an integer for LENGTH)
-  "breakline_data": "15",
-  // safety max length to avoid too long sentences blowing up memory
+  // data to use as reference for breaking lines (e.g. "pos")
+  "breakline_ref": "",
+  // needed to decide for a sentence boundary (e.g. "$.")
+  "breakline_data": "",
+  // max length of sentences (longer sentence will be split)
   "max_sent_len": 35,
   // maximum number of sentences to process
   "max_sents": 1000000,
   // maximum vocabulary size
-  "char_max_size": 100,
+  "char_max_size": 500,
+  // maximum vocabulary size for word input
   "word_max_size": 20000,
   // min freq per item to be incorporated in the vocabulary (only used if *_max_size is 0)
   "char_min_freq": 1,
   "word_min_freq": 1,
-  // header
+  // char-level encoding
+  "char_eos": true,
+  "char_bos": true,
+  // tab-format only:
   "header": true,
+  // separator for csv-like files
+  "sep": "\t",
   // expected order of tasks for tabreader
   "tasks_order": ["lemma", "pos"], // only for TabReader
   // task-related config
@@ -48,9 +51,19 @@
     {
       // name (by default should match the target task)
       "name": "lemma",
+      // whether the target is the target task (there can only be one)
+      "target": true,
+      // is this task token-level or char level? (token, char)
+      "level": "char",
+      // type of the decoder (linear, attentional, crf)
+      "decoder": "attentional",
+      // add sentential context (none, word, sentence, both). Only for char-level!
+      "context": "none",
+      // at what sentence encoder layer do we do this task?
+      "layer": -1,
+      // encoder settings ("max_size", "min_freq", "preprocessor", "eos", "bos")
       "settings": {
-	// encoder settings (other entries are: "target", "max_size", "min_freq")
-	"level": "char", "bos": true, "eos": true
+	"bos": true, "eos": true
       },
       // schedule: additional schedule params can be passed to control the extent
       // of learning of each task. There are 2 types of tasks: targets and slaves
@@ -59,25 +72,19 @@
       // without improvement over the threshold we need before stopping learning).
       // For auxiliary tasks, they control how we decay the loss weight of that task
       // and the extra parameters are: "factor" (by how much), "min_weight"
-      // (minimum weight) given to the loss,  "weight" (initial weight) and "mode"
+      // (minimum weight) given to the loss, "weight" (initial weight) and "mode"
       // (whether the task dev score is being minimized "min" or maximized "max")
       "schedule": {
-	"target": true, "patience": 2, "threshold": 0.001
+	"patience": 2, "threshold": 0.001
       },
       // while processing the files if the field is missing use this instead
       // e.g. "copy": copy over the token form; "UNK": use "UNK"
       "default": "copy"
-    },
-    {
-      "name": "pos", "default": "UNK"
     }
   ],
 
-  // whether to include autoregressive loss
-  "include_lm": false,
-  // lm settings in case it's included as an extra task
-  "lm_schedule": {
-    "patience": 100, "factor": 0.5, "weight": 0.2, "mode": "min"
+  "task_defaults": {
+    "level": "token", "layer": -1, "decoder": "linear", "context": "sentence"
   },
 
   // general task schedule params (can be overwritten in the "settings" entry of each)
@@ -85,6 +92,15 @@
   "factor": 1, // decrease the loss weight by this amount (0, 1)
   "threshold": 0, // minimum decrease in loss to be considered an improvement
   "min_weight": 0, // minimum value a task weight can be decreased to
+
+  // whether to include autoregressive loss
+  "include_lm": false,
+  // whether to share the output layer for both fwd and bwd lm
+  "lm_shared_softmax": false,
+  // lm settings in case it's included as an extra task
+  "lm_schedule": {
+    "patience": 100, "factor": 0.5, "weight": 0.2, "mode": "min"
+  },
 
   // * Training
   "buffer_size": 10000,
@@ -108,24 +124,32 @@
   "pretrain_embeddings": false,
   // path to file with word2vec pretrained embeddings
   "load_pretrained_embeddings": "",
+  // path to file with pretrained sentence encoder
+  "load_pretrained_encoder": "",
 
   // * Model
-  "wemb_dim": 150,
+  // word-level embedding dim
+  "wemb_dim": 0,
   // whether to freeze the word embeddings
   "freeze_embeddings": false,
+  // input dimension for char-level embeddings
   "cemb_dim": 150,
   // character embedding type (rnn or cnn)
   "cemb_type": "rnn",
   // whether to use the custom lstm cell for word embeddings
   "custom_cemb_cell": false,
+  // number of layers for the rnn-embeddings and the attentional decoder
+  "cemb_layers": 1,
   // how to merge word-level and char-level embeddings (mixer or concat)
   "merge_type": "concat",
+  // attention type
+  "scorer": "general",
+  // number of layers for linear decoders
+  "linear_layers": 1,
+  // sentence encoding dimension
   "hidden_size": 300,
+  // num recurrent layers for the sentence encoder
   "num_layers": 1,
-  "cell": "LSTM",
-  // in case of char-level lemmatization:
-  // - "sentence"
-  // - "word"
-  // - "both"
-  "lemma_context": "sentence"
+  // cell type for rnns
+  "cell": "LSTM"
 }

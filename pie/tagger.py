@@ -50,7 +50,7 @@ class Tagger():
         self.models = []
 
     def add_model(self, model_path, *tasks):
-        model = BaseModel.load(model_path).to(self.device)
+        model = BaseModel.load(model_path)
         for task in tasks:
             if task not in model.label_encoder.tasks:
                 raise ValueError("Model [{}] doesn't have task: {}".format(
@@ -58,16 +58,17 @@ class Tagger():
 
         self.models.append((model, tasks))
 
-    def tag(self, sents, lengths):
+    def tag(self, sents, lengths, **kwargs):
         # add dummy input tasks (None)
         batch = list(zip(sents, itertools.repeat(None)))
         # output
         output = {}
         for model, tasks in self.models:
+            model.to(self.device)
             inp, _ = pack_batch(model.label_encoder, batch, self.device)
 
             # inference
-            preds = model.predict(inp, *tasks)
+            preds = model.predict(inp, *tasks, **kwargs)
 
             for task in preds:
                 # flatten all sentences (since some tasks return flattened output)
@@ -75,6 +76,7 @@ class Tagger():
                     preds[task] = [hyp for sent in preds[task] for hyp in sent]
                 # append
                 output[task] = preds[task]
+            model.to('cpu')
 
         tasks = sorted(output)
         # [token1, token2, ...]
@@ -94,17 +96,16 @@ class Tagger():
 
         return tagged, tasks
 
-    def tag_file(self, fpath, sep='\t'):
+    def tag_file(self, fpath, sep='\t', **kwargs):
         _, ext = os.path.splitext(fpath)
         header = False
 
         with open(utils.ensure_ext(fpath, ext, 'pie'), 'w+') as f:
 
-            for chunk in utils.chunks(lines_from_file(fpath, self.lower),
-                                      self.batch_size):
+            for chunk in utils.chunks(
+                    lines_from_file(fpath, self.lower), self.batch_size):
                 sents, lengths = zip(*chunk)
-
-                tagged, tasks = self.tag(sents, lengths)
+                tagged, tasks = self.tag(sents, lengths, **kwargs)
 
                 for sent in tagged:
                     if not header:
