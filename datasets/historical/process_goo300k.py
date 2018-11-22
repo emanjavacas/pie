@@ -34,6 +34,10 @@ for split, sents in {'dev':   sents[:five],
     with open(os.path.join(root, '{}.tsv'.format(split)), 'w') as f:
         f.write('{}\t{}\t{}\n'.format("token", "lemma", "pos"))
         for sent in sents:
-            for token, lemma, pos in process_sent(sent):
+            line = list(process_sent(sent))
+            if len(line) == 0:
+                print("Empty line")
+                continue
+            for token, lemma, pos in line:
                 f.write('{}\t{}\t{}\n'.format(token, lemma, pos))
             f.write('\n')
