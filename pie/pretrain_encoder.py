@@ -161,7 +161,7 @@ class Encoder(nn.Module):
                      "version of `pie`. This might result in issues. "
                      "Model commit is {}, whereas current `pie` commit is {}."
                     ).format(path, commit, pie.__commit__))
-            
+
             # load label encoder
             le = pie.dataset.MultiLabelEncoder.load_from_string(
                 utils.get_gzip_from_tar(tar, 'label_encoder.zip'))

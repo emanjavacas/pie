@@ -1,6 +1,11 @@
 
 import tarfile
 import json
+import yaml
+try:
+    from yaml import CLoader as Loader, CDumper as Dumper
+except ModuleNotFoundError:
+    from yaml import Loader, Dumper
 import logging
 from collections import Counter, defaultdict
 import random
@@ -382,7 +387,7 @@ class MultiLabelEncoder(object):
 
     def save(self, path):
         with open(path, 'w+') as f:
-            json.dump(self.jsonify(), f)
+            yaml.dump(self.jsonify(), f, Dumper=Dumper)
 
     @staticmethod
     def _init(inst, obj):
@@ -396,16 +401,17 @@ class MultiLabelEncoder(object):
 
     @classmethod
     def load_from_string(cls, string):
-        inst, obj = cls(), json.loads(string)
+        inst = cls()
+        try:
+            obj = json.loads(string)
+        except ValueError:      # use yaml
+            obj = yaml.load(string, Loader=Loader)
         return cls._init(inst, obj)
 
     @classmethod
     def load_from_file(cls, path):
         with open(path, 'r+') as f:
-            obj = json.load(f)
-
-        inst = cls()  # dummy instance to overwrite
-        return cls._init(inst, obj)
+            return cls.load_from_string(f.read())
 
     @classmethod
     def load_from_pretrained_model(cls, path):

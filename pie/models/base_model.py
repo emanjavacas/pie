@@ -1,6 +1,11 @@
 
 import os
 import json
+import yaml
+try:
+    from yaml import CDumper as Dumper
+except ModuleNotFoundError:
+    from yaml import Dumper
 import tarfile
 import logging
 
@@ -96,7 +101,8 @@ class BaseModel(nn.Module):
 
         with tarfile.open(fpath, 'w') as tar:
             # serialize label_encoder
-            string, path = json.dumps(self.label_encoder.jsonify()), 'label_encoder.zip'
+            string = yaml.dump(self.label_encoder.jsonify(), Dumper=Dumper)
+            path = 'label_encoder.zip'
             utils.add_gzip_to_tar(string, path, tar)
 
             # serialize tasks
