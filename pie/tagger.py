@@ -61,6 +61,8 @@ class Tagger():
     def tag(self, sents, lengths, **kwargs):
         # add dummy input tasks (None)
         batch = list(zip(sents, itertools.repeat(None)))
+        # [token1, token2, ...]
+        tokens = [token for sent in sents for token in sent]
         # output
         output = {}
         for model, tasks in self.models:
@@ -74,16 +76,23 @@ class Tagger():
                 # flatten all sentences (since some tasks return flattened output)
                 if model.label_encoder.tasks[task].level != 'char':
                     preds[task] = [hyp for sent in preds[task] for hyp in sent]
+                # postprocess if needed
+                if model.label_encoder.tasks[task].preprocessor_fn is not None:
+                    post = []
+                    assert len(tokens) == len(preds[task])
+                    for tok, hyp in zip(tokens, preds[task]):
+                        pred = model.label_encoder.tasks[task].preprocessor_fn \
+                               .inverse_transform(hyp, tok)
+                        post.append(pred)
+                    preds[task] = post
                 # append
                 output[task] = preds[task]
             model.to('cpu')
 
         tasks = sorted(output)
-        # [token1, token2, ...]
-        tokens = [token for sent in sents for token in sent]
+
         # [(task1, task2, ...), (task1, task2, ...), ...]
         output = list(zip(*tuple(output[task] for task in tasks)))
-
         assert len(tokens) == len(output), "{} != {}".format(len(tokens), len(output))
 
         # segment sentences

@@ -1,3 +1,4 @@
+
 from pie import utils
 from pie.tagger import Tagger
 
@@ -13,7 +14,7 @@ if __name__ == '__main__':
     parser.add_argument('--beam_width', default=10, type=int)
     parser.add_argument('--lower', action='store_true')
     args = parser.parse_args()
-    
+
     tagger = Tagger(device=args.device, batch_size=args.batch_size, lower=args.lower)
 
     for model, tasks in args.model_spec:
