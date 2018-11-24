@@ -39,6 +39,7 @@ random.shuffle(subsets)
 
 def writesubsets(path, subsets):
     with open(path, 'w') as f:
+        f.write("token\tlemma\tpos\tmorph\n")
         for subset in subsets:
             for sent in subset:
                 for line in sent:
