@@ -1,5 +1,4 @@
 
-import itertools
 import yaml
 import difflib
 from termcolor import colored
@@ -7,6 +6,7 @@ from collections import Counter, defaultdict
 
 from sklearn.metrics import precision_score, recall_score, accuracy_score
 from pie import utils
+from pie import constants
 
 
 def get_ambiguous_tokens(trainset, label_encoder):
@@ -73,6 +73,13 @@ class Scorer(object):
                              .format(len(hyps), len(targets), len(tokens)))
 
         for pred, true, token in zip(hyps, targets, tokens):
+            if self.label_encoder.preprocessor_fn is not None:
+                true = self.label_encoder.preprocessor_fn.inverse_transform(true, token)
+                try:
+                    pred = self.label_encoder.preprocessor_fn.inverse_transform(
+                        pred, token)
+                except:
+                    pred = constants.INVALID
             self.preds.append(pred)
             self.trues.append(true)
             self.tokens.append(token)
