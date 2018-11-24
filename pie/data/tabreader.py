@@ -111,7 +111,7 @@ class TabReader(BaseReader):
                 line = line.strip()
 
                 # break
-                if not line:
+                if not line and len(parser.inp) > 0:
                     yield parser.inp, parser.tasks
                     parser.reset()
                     continue
