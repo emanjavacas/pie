@@ -4,7 +4,7 @@ import json
 import yaml
 try:
     from yaml import CDumper as Dumper
-except ModuleNotFoundError:
+except ImportError:
     from yaml import Dumper
 import tarfile
 import logging

@@ -4,7 +4,7 @@ import json
 import yaml
 try:
     from yaml import CLoader as Loader, CDumper as Dumper
-except ModuleNotFoundError:
+except ImportError:
     from yaml import Loader, Dumper
 import logging
 from collections import Counter, defaultdict
