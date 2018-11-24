@@ -20,9 +20,14 @@ def parsetree(tree):
             pos = 'punc'
         else:
             pos = node.attrib['pos']
+        if ' ' in token:        # some tokens are like ".... ...."
+            token = '...'
         assert token
         assert lemma
         assert pos
+        assert " " not in token
+        assert " " not in lemma
+        assert " " not in pos
         sent.append((token, lemma, pos))
     return sent
 
@@ -33,25 +38,26 @@ def parsetrees(roottree):
         yield parsetree(tree)
 
 
-# trees = roottree.xpath('//aldt:LM[not(ancestor::aldt:LM)]', namespaces={'aldt': ALDT})
-# import collections
-# counts = {k: collections.Counter()
-#           for k in 'document_id subdoc date place scribe type'.split()}
-# for tree in trees:
-#     for k in counts:
-#         counts[k][tree.attrib[k]] += 1
+if __name__ == '__main__':
+    # trees = roottree.xpath('//aldt:LM[not(ancestor::aldt:LM)]', namespaces={'aldt': ALDT})
+    # import collections
+    # counts = {k: collections.Counter()
+    #           for k in 'document_id subdoc date place scribe type'.split()}
+    # for tree in trees:
+    #     for k in counts:
+    #         counts[k][tree.attrib[k]] += 1
 
-trees = list(parsetrees(roottree))
-random.shuffle(trees)
-five = int(len(trees) * 0.05)
-if not os.path.isdir(target):
-    os.makedirs(target)
-for split, sents in {'dev': trees[:five],
-                     'test': trees[five:3*five],
-                     'train': trees[3*five:]}.items():
-    with open(os.path.join(target, '{}.tsv'.format(split)), 'w+') as f:
-        f.write('token\tlemma\tpos\n')
-        for sent in sents:
-            for token, lemma, pos in sent:
-                f.write('{}\t{}\t{}\n'.format(token, lemma, pos))
-            f.write('\n')
+    trees = list(parsetrees(roottree))
+    random.shuffle(trees)
+    five = int(len(trees) * 0.05)
+    if not os.path.isdir(target):
+        os.makedirs(target)
+    for split, sents in {'dev': trees[:five],
+                         'test': trees[five:3*five],
+                         'train': trees[3*five:]}.items():
+        with open(os.path.join(target, '{}.tsv'.format(split)), 'w+') as f:
+            f.write('token\tlemma\tpos\n')
+            for sent in sents:
+                for token, lemma, pos in sent:
+                    f.write('{}\t{}\t{}\n'.format(token, lemma, pos))
+                f.write('\n')
