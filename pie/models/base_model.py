@@ -75,7 +75,7 @@ class BaseModel(nn.Module):
                     le = self.label_encoder.tasks[task]
                     # - transform targets
                     trues[task] = le.preprocess(
-                        [t for line in rtasks for t in line[task]], tokens)
+                        [t for line in rtasks for t in line[le.target]], tokens)
 
                     # - flatten token level predictions
                     if le.level == 'token':
