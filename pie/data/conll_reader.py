@@ -63,8 +63,8 @@ def get_sents(fpath, parse_morph_):
                     tasks['pos'].append(pos)
                     tasks['ppos'].append(ppos)
                     for key, val in parse_morph_(morph).items():
-                        tasks[key] = val
-                    
+                        tasks[key].append(val)
+
                 except ValueError:
                     # 20-22	"průběžná_inventarizace"
                     continue
