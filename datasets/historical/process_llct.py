@@ -11,6 +11,8 @@ target = 'LLCT1'
 root = './LLCT1.xml'
 roottree = parse(root, parser=parser)
 
+OMIT = set('id relation seg status form lemma pos'.split())
+
 
 def parsetree(tree):
     sent = []
@@ -28,7 +30,9 @@ def parsetree(tree):
         assert " " not in token
         assert " " not in lemma
         assert " " not in pos
-        sent.append((token, lemma, pos))
+        morph = '|'.join('{}={}'.format(k, v)
+                         for k, v in sorted(node.attrib.items()) if k not in OMIT)
+        sent.append((token, lemma, pos, morph))
     return sent
 
 
@@ -56,8 +60,8 @@ if __name__ == '__main__':
                          'test': trees[five:3*five],
                          'train': trees[3*five:]}.items():
         with open(os.path.join(target, '{}.tsv'.format(split)), 'w+') as f:
-            f.write('token\tlemma\tpos\n')
+            f.write('token\tlemma\tpos\tmorph\n')
             for sent in sents:
-                for token, lemma, pos in sent:
-                    f.write('{}\t{}\t{}\n'.format(token, lemma, pos))
+                for token, lemma, pos, morph in sent:
+                    f.write('{}\t{}\t{}\t{}\n'.format(token, lemma, pos, morph))
                 f.write('\n')
