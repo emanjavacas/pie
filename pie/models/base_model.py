@@ -53,6 +53,11 @@ class BaseModel(nn.Module):
     def evaluate(self, dataset, trainset=None, **kwargs):
         """
         Get scores per task
+
+        dataset: pie.data.Dataset, dataset to evaluate on (your dev or test set)
+        trainset: pie.data.Dataset (optional), if passed scores for unknown and ambiguous
+            tokens can be computed
+        **kwargs: any other arguments to Model.predict
         """
         assert not self.training, "Ooops! Inference in training mode. Call model.eval()"
 

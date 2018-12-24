@@ -135,21 +135,26 @@ class Scorer(object):
 
         return output
 
-    def get_classification_summary(self, most_common=200):
-        """
-        Get a printable summary for classification errors
-        """
+    def get_confusion_matrix(self):
         errors = defaultdict(Counter)
         for true, pred in zip(self.trues, self.preds):
             if true != pred:
                 errors[true][pred] += 1
 
+        return errors
+
+    def get_classification_summary(self, most_common=200):
+        """
+        Get a printable summary for classification errors
+        """
+        errors = self.get_confusion_matrix()
+
         output = ''
         for true, counts, preds in self.get_most_common(errors, most_common):
             true = '{}(#{})'.format(colored(true, 'green'), counts)
             preds = Counter(preds).most_common(10)
-            preds = ''.join('{:<10}'.format('{}(#{})'.format(p, c)) for p, c in preds)
-            output += '{:<10}{}\n'.format(true, preds)
+            preds = '\t'.join('{}'.format('{}(#{})'.format(p, c)) for p, c in preds)
+            output += '{}\t{}\n'.format(true, preds)
 
         return output
 
