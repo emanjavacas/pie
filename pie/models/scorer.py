@@ -2,6 +2,7 @@
 import yaml
 import difflib
 from termcolor import colored
+from terminaltables import github_table
 from collections import Counter, defaultdict
 
 from sklearn.metrics import precision_score, recall_score, accuracy_score
@@ -143,6 +144,39 @@ class Scorer(object):
 
         return errors
 
+    def get_confusion_matrix_table(self) -> list:
+        """
+        Returns a table formated confusion matrix
+        """
+        matrix = self.get_confusion_matrix()
+        table = []
+        # Retrieve each true prediction and its dictionary of errors
+        for expected, predictions_counter in matrix.items():
+            table.append((
+                expected,
+                sum(list(predictions_counter.values())),
+                [
+                    (word, counter)
+                    for word, counter in sorted(
+                        list(predictions_counter.items()),
+                        key=lambda x: x[1],
+                        reverse=True
+                    )
+                ]
+            ))
+        # Sort by error sum
+        table = sorted(table, reverse=True, key=lambda x: x[1])
+        # Then, we expand lines
+        output = []
+        for word, total, errors in table:
+            for index, (prediction, counter) in enumerate(errors):
+                row = ["", ""]
+                if index == 0:
+                    row = [word, total]
+                row += [prediction, counter]
+                output.append(row)
+        return [["Expected", "Total Errors", "Predictions", "Predicted times"]] + output
+
     def get_classification_summary(self, most_common=200):
         """
         Get a printable summary for classification errors
@@ -216,7 +250,7 @@ class Scorer(object):
 
         return '\n'.join(summary)
 
-    def print_summary(self, full=False, most_common=100):
+    def print_summary(self, full=False, most_common=100, confusion_matrix=False):
         """
         Get evaluation summary
         """
@@ -235,3 +269,5 @@ class Scorer(object):
                 print(self.get_transduction_summary(most_common=most_common))
             else:
                 print(self.get_classification_summary(most_common=most_common))
+        if confusion_matrix:
+            print((github_table.GithubFlavoredMarkdownTable(self.get_confusion_matrix_table())).table)
