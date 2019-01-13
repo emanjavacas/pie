@@ -93,7 +93,7 @@ class BahdanauScorer(nn.Module):
         # (src_len x trg_len x batch x att_dim) +
         # (1           x trg_len x batch x att_dim)
         # => (src_len x trg_len x batch x att_dim)
-        dec_enc_att = F.tanh(enc_att + dec_att.unsqueeze(0))
+        dec_enc_att = torch.tanh(enc_att + dec_att.unsqueeze(0))
 
         # (src_len * trg_len x batch x dim)
         dec_enc_att = dec_enc_att.view(src_len * trg_len, batch, dim)
@@ -174,6 +174,6 @@ class Attention(nn.Module):
             weights.transpose(0, 1), enc_outs.transpose(0, 1)
         ).transpose(0, 1)
         # (eq 5) linear out combining context and hidden
-        context = F.tanh(self.linear_out(torch.cat([context, dec_out], 2)))
+        context = torch.tanh(self.linear_out(torch.cat([context, dec_out], 2)))
 
         return context, weights

@@ -2,6 +2,7 @@
 import yaml
 import difflib
 from termcolor import colored
+from terminaltables import github_table
 from collections import Counter, defaultdict
 
 from sklearn.metrics import precision_score, recall_score, accuracy_score
@@ -135,21 +136,59 @@ class Scorer(object):
 
         return output
 
-    def get_classification_summary(self, most_common=200):
-        """
-        Get a printable summary for classification errors
-        """
+    def get_confusion_matrix(self):
         errors = defaultdict(Counter)
         for true, pred in zip(self.trues, self.preds):
             if true != pred:
                 errors[true][pred] += 1
 
+        return errors
+
+    def get_confusion_matrix_table(self) -> list:
+        """
+        Returns a table formated confusion matrix
+        """
+        matrix = self.get_confusion_matrix()
+        table = []
+        # Retrieve each true prediction and its dictionary of errors
+        for expected, predictions_counter in matrix.items():
+            table.append((
+                expected,
+                sum(list(predictions_counter.values())),
+                [
+                    (word, counter)
+                    for word, counter in sorted(
+                        list(predictions_counter.items()),
+                        key=lambda x: x[1],
+                        reverse=True
+                    )
+                ]
+            ))
+        # Sort by error sum
+        table = sorted(table, reverse=True, key=lambda x: x[1])
+        # Then, we expand lines
+        output = []
+        for word, total, errors in table:
+            for index, (prediction, counter) in enumerate(errors):
+                row = ["", ""]
+                if index == 0:
+                    row = [word, total]
+                row += [prediction, counter]
+                output.append(row)
+        return [["Expected", "Total Errors", "Predictions", "Predicted times"]] + output
+
+    def get_classification_summary(self, most_common=200):
+        """
+        Get a printable summary for classification errors
+        """
+        errors = self.get_confusion_matrix()
+
         output = ''
         for true, counts, preds in self.get_most_common(errors, most_common):
             true = '{}(#{})'.format(colored(true, 'green'), counts)
             preds = Counter(preds).most_common(10)
-            preds = ''.join('{:<10}'.format('{}(#{})'.format(p, c)) for p, c in preds)
-            output += '{:<10}{}\n'.format(true, preds)
+            preds = '\t'.join('{}'.format('{}(#{})'.format(p, c)) for p, c in preds)
+            output += '{}\t{}\n'.format(true, preds)
 
         return output
 
@@ -211,7 +250,7 @@ class Scorer(object):
 
         return '\n'.join(summary)
 
-    def print_summary(self, full=False, most_common=100):
+    def print_summary(self, full=False, most_common=100, confusion_matrix=False):
         """
         Get evaluation summary
         """
@@ -230,3 +269,5 @@ class Scorer(object):
                 print(self.get_transduction_summary(most_common=most_common))
             else:
                 print(self.get_classification_summary(most_common=most_common))
+        if confusion_matrix:
+            print((github_table.GithubFlavoredMarkdownTable(self.get_confusion_matrix_table())).table)

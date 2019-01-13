@@ -27,8 +27,8 @@ def get_lines(fpath, _parse_morph):
             elif line.startswith('#'):
                 continue
             else:
-                num, form, lemma, pos, ppos, morph, *_ = line.split('\t')
-                tasks = {'lemma': lemma, 'pos': pos, 'ppos': ppos}
+                num, form, lemma, pos, ppos, morph, _, dep, *_ = line.split('\t')
+                tasks = {'lemma': lemma, 'pos': pos, 'ppos': ppos, 'dep': dep}
                 for task, val in _parse_morph(morph).items():
                     tasks[task] = val
                 yield form, tasks
@@ -52,7 +52,7 @@ def get_sents(fpath, parse_morph_):
                 continue
 
             else:
-                num, form, lemma, pos, ppos, morph, *_ = line.split('\t')
+                num, form, lemma, pos, ppos, morph, _, dep, *_ = line.split('\t')
                 try:
                     num = int(num)
                     assert num == prev + 1, (num, prev)
@@ -62,6 +62,7 @@ def get_sents(fpath, parse_morph_):
                     tasks['lemma'].append(lemma)
                     tasks['pos'].append(pos)
                     tasks['ppos'].append(ppos)
+                    tasks['dep'].append(dep)
                     for key, val in parse_morph_(morph).items():
                         tasks[key].append(val)
 
@@ -98,7 +99,7 @@ class CONLLReader(BaseReader):
         morph = self._parse_morph(morph)
         output = {}
         for task in self.tasks:
-            if task not in ('lemma', 'pos', 'ppos'):
+            if task not in ('lemma', 'pos', 'ppos', 'dep'):
                 output[task] = morph.get(task, '_')
         return output
 

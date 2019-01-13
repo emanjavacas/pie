@@ -20,6 +20,7 @@ if __name__ == '__main__':
     parser.add_argument('--full', action='store_true')
     parser.add_argument('--use_beam', action='store_true')
     parser.add_argument('--beam_width', default=10, type=int)
+    parser.add_argument('--confusion', default=False, action="store_true")
     args = parser.parse_args()
 
     model = BaseModel.load(args.model_path).to(args.device)
@@ -48,4 +49,4 @@ if __name__ == '__main__':
     testset = Dataset(settings, Reader(settings, *args.test_path), model.label_encoder)
 
     for task in model.evaluate(testset, trainset).values():
-        task.print_summary(full=args.full)
+        task.print_summary(full=args.full, confusion_matrix=args.confusion)
