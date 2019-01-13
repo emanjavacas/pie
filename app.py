@@ -40,62 +40,6 @@ Example output :
     .	.	_	PONfrt
 
 """
-from flask import Flask, request, Response, stream_with_context
-from pie.tagger import Tagger, simple_tokenizer
-from pie.utils import chunks, model_spec
-from os import getenv
+from webapp import bind
 
-model_file = getenv("PIE_MODEL")
-BATCH = int(getenv("PIE_BATCH", 3))
-DEVICE = getenv("PIE_DEVICE", "cpu")
-
-app = Flask(__name__)
-tagger = Tagger(device=DEVICE, batch_size=BATCH)
-
-
-for model, tasks in model_spec(model_file):
-    tagger.add_model(model, *tasks)
-    tasks = tasks or tagger.models[-1][0].label_encoder.tasks
-
-
-def iter_data(data, lower=False):
-    for sentence in simple_tokenizer(data, lower=lower):
-        yield sentence, len(sentence)
-
-
-@app.route("/", methods=["POST", "GET", "OPTIONS"])
-def index():
-    def lemmatization_stream():
-        lower = request.args.get("lower", False)
-        if lower:
-            lower = True
-
-        if request.method == "GET":
-            data = request.args.get("data")
-        else:
-            data = request.form.get("data")
-
-        if not data:
-            yield ""
-
-        header = False
-        for chunk in chunks(iter_data(data, lower=lower), size=BATCH):
-            sents, lengths = zip(*chunk)
-
-            tagged, tasks = tagger.tag(sents=sents, lengths=lengths)
-            sep = "\t"
-            for sent in tagged:
-                if not header:
-                    yield sep.join(['token'] + tasks) + '\r\n'
-                    header = True
-                for token, tags in sent:
-                    yield sep.join([token] + list(tags)) + '\r\n'
-
-    return Response(
-           stream_with_context(lemmatization_stream()),
-           200,
-           headers={
-            'Content-Type': 'text/plain',
-            'Access-Control-Allow-Origin': '*'
-           }
-    )
+app = bind()
