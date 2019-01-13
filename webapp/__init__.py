@@ -12,7 +12,7 @@ from flask import Flask, request, Response, stream_with_context, current_app
 from pie.tagger import Tagger, simple_tokenizer
 from pie.utils import chunks, model_spec
 
-model_file = getenv("PIE_MODEL")
+MODEL_FILE = getenv("PIE_MODEL")
 BATCH = int(getenv("PIE_BATCH", 3))
 DEVICE = getenv("PIE_DEVICE", "cpu")
 
@@ -40,13 +40,15 @@ class DataIterator:
             yield sentence, len(sentence)
 
 
-def bind(app: Flask = None, device: str = None, batch_size: int=None,
+def bind(app: Flask = None, device: str = None, batch_size: int = None,
+         model_file: str = None,
          tokenizer: Tokenizer = None, allow_origin: str = None) -> Flask:
     """ Binds default value
 
     :param app: Flask app to bind with the tagger
     :param device: Device to use for PyTorch (Default : cpu)
     :param batch_size: Size of the batch to treat
+    :param model_file: Model to use to tag
     :param tokenizer: Tokenizer to split text into segments (eg. sentence) and into words
     :param allow_origin: Value for the http header field Access-Control-Allow-Origin
     :returns: Application
@@ -54,12 +56,14 @@ def bind(app: Flask = None, device: str = None, batch_size: int=None,
     # Generates or use default values for non completed parameters
     if not app:
         app = Flask(__name__)
-    if not device:
-        device = DEVICE
+
     if not batch_size:
         batch_size = BATCH
-    if not allow_origin:
-        allow_origin = '*'
+
+    device = device or DEVICE
+    model_file = model_file or MODEL_FILE
+    allow_origin = allow_origin or '*'
+
     if tokenizer:
         data_iterator = DataIterator(tokenizer)
     else:
@@ -71,7 +75,7 @@ def bind(app: Flask = None, device: str = None, batch_size: int=None,
         tagger.add_model(model, *tasks)
 
     @app.route("/", methods=["POST", "GET", "OPTIONS"])
-    def index():
+    def lemmatize():
         def lemmatization_stream() -> Iterator[str]:
             lower = request.args.get("lower", False)
             if lower:
@@ -84,19 +88,19 @@ def bind(app: Flask = None, device: str = None, batch_size: int=None,
 
             if not data:
                 yield ""
+            else:
+                header = False
+                for chunk in chunks(data_iterator(data, lower=lower), size=BATCH):
+                    sents, lengths = zip(*chunk)
 
-            header = False
-            for chunk in chunks(data_iterator(data, lower=lower), size=BATCH):
-                sents, lengths = zip(*chunk)
-
-                tagged, tasks = tagger.tag(sents=sents, lengths=lengths)
-                sep = "\t"
-                for sent in tagged:
-                    if not header:
-                        yield sep.join(['token'] + tasks) + '\r\n'
-                        header = True
-                    for token, tags in sent:
-                        yield sep.join([token] + list(tags)) + '\r\n'
+                    tagged, tasks = tagger.tag(sents=sents, lengths=lengths)
+                    sep = "\t"
+                    for sent in tagged:
+                        if not header:
+                            yield sep.join(['token'] + tasks) + '\r\n'
+                            header = True
+                        for token, tags in sent:
+                            yield sep.join([token] + list(tags)) + '\r\n'
 
         return Response(
                stream_with_context(lemmatization_stream()),
