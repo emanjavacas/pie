@@ -183,7 +183,7 @@ To avoid verbosity, parameters invariant across auxiliary tasks can be specified
 
 ### Transduction-based lemmatization
 
-PIE has built-in support for lemmatization as a string transduction task using an Encoder-Decoder architecture as shown below:
+PIE has built-in support for lemmatization as a string transduction task using an Encoder-Decoder architecture as shown below (lemmatizing Latin token "esse" to its lemma "edo"):
 
 ![Encoder-Decoder for lemmatization](./img/seq2seq.png)
 
