@@ -6,5 +6,6 @@ tqdm==4.23.3
 numpy==1.14.3
 termcolor==1.1.0
 scikit_learn==0.19.1
-PyYAML==3.13 # make sure to have libyaml-dev bindings for speed
+# temporary using version from github due to security issues
+git+https://github.com/yaml/pyyaml # make sure to have libyaml-dev bindings for speed
 terminaltables==3.1.0
