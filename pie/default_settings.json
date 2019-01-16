@@ -106,8 +106,8 @@
   "buffer_size": 10000,
   // preprocess data to have similar sentence lengths inside batch
   "minimize_pad": false,
-  "dropout": 0,
-  "word_dropout": 0,
+  "dropout": 0.0,
+  "word_dropout": 0.0,
   "epochs": 5,
   "batch_size": 50,
   "shuffle": true,
