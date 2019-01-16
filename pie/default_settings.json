@@ -142,7 +142,7 @@
   "cemb_layers": 1,
   // how to merge word-level and char-level embeddings (mixer or concat)
   "merge_type": "concat",
-  // attention type
+  // attention type (one of "general", "dot" and "bahdanau")
   "scorer": "general",
   // number of layers for linear decoders
   "linear_layers": 1,
