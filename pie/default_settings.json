@@ -66,9 +66,9 @@
 	"bos": true, "eos": true
       },
       // schedule: additional schedule params can be passed to control the extent
-      // of learning of each task. There are 2 types of tasks: targets and slaves
-      // depending on the value of "target" (if true then task is target else slave)
-      // For target, "patience", "threshold" control early stopping (how many steps
+      // of learning of each task. There are 2 types of tasks: targets and auxiliary
+      // depending on the value of "target" (if true then task is target else auxiliary).
+      // For target tasks, "patience", "threshold" control early stopping (how many steps
       // without improvement over the threshold we need before stopping learning).
       // For auxiliary tasks, they control how we decay the loss weight of that task
       // and the extra parameters are: "factor" (by how much), "min_weight"
