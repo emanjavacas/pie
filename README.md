@@ -31,8 +31,9 @@ Training models is done with `python train.py path/to/config.json`. All non-nest
 
 # Model
 
-PIE underlying model comprises a set of hierarchical feature extractors from the character-level up to the sentence-level. For each input token a sentence-level feature vector is extracted and used for the prediction of any number of target tasks (e.g. POS-tagging, lemmatization, ...)
-![](./img/PIE.svg)
+PIE underlying model comprises a set of hierarchical feature extractors from the character-level up to the sentence-level. For each input token a sentence-level feature vector is extracted and used for the prediction of any number of target tasks (e.g. POS-tagging, lemmatization, ...). A visualization of the underlying model using bidirectional RNNs to extract word-level and sentence-level features is shown below.
+
+![PIE](./img/PIE.svg)
 
 Prediction is accomplished with decoder modules. We provide implementations of a `linear` decoder trained to maximize the probability assigned by the model to the corpus data via a softmax function (similar to a MaxEnt classifier). A `crf` decoder, particularly suited for tasks that imply a dependency between neighboring output tags and an `attentional` decoder, suited for tasks that can be solved by generating the token-level output character by characters in a string transduction manner (e.g. lemmatization, normalization).
 
@@ -44,13 +45,11 @@ Training a model only requires a model specification and paths to training and d
 {
   "modelname": "lemmatization-latin",
   "modelpath": "models",
- 
-  // input data
+
   "input_path": "datasets/LLCT1/train.tsv",
   "dev_path": "datasets/LLCT1/dev.tsv",
   "sep": "\t",
-
-  // model definition
+ 
   "tasks": [
     {
       "name": "lemma",
@@ -58,8 +57,7 @@ Training a model only requires a model specification and paths to training and d
       "context": "sentence",
       "level": "char",
       "decoder": "attentional",
-      "settings":
-	  {
+      "settings": {
         "bos": true,
         "eos": true,
         "lower": true,
@@ -68,18 +66,16 @@ Training a model only requires a model specification and paths to training and d
       "layer": -1
     }
   ],
-
-  // training parameters
   "batch_size": 25,
-  "dropout": 0.25,
   "epochs": 100,
+  
+  "dropout": 0.25,
   "optimizer": "Adam",
   "patience": 3,
   "lr": 0.001,
   "lr_factor": 0.75,
   "lr_patience": 2,
-
-  // model hyperparameters
+  
   "cell": "GRU",
   "num_layers": 1,
   "hidden_size": 150,
@@ -90,119 +86,127 @@ Training a model only requires a model specification and paths to training and d
 }
 ```
 
-The very minimum set of options required to train a model includes `input_path` (path to files with training data), `dev_path` (path to files with development data), and `tasks`, which defines the model to be trained.
+The very minimum set of options required to train a model includes `input_path` (path to files with training data), `dev_path` (path to files with development data), and `tasks`, which defines the model to be trained. Other parameters refer to model hyperparameters (`cell`, `num_layers`, `hidden_size`, `wemb_dim`, `cemb_dim`, `cemb_type`, `cemb_layers`), training (`batch_size`, `epochs`) and optimization (`dropout`, `optimizer`, `patience`, `lr`, `lr_factor`, `lr_patience).
 
 ## Example task configurations
 
-- POS tagging using a CRF
-
-```json
-"tasks": [
-  {
-    "name": "pos",
-    "target": true,
-    "decoder": "crf",
-    "layer": -1 
-  }
-]
-```
-
-- POS tagging using a linear decoder and auxiliary tasks
-```json
-{
-"tasks": [
-  {
-    "name": "pos",
-    "level": "token",
-    "target": true,
-    "decoder": "crf",
-    "layer": -1,
-    "schedule": 
-    {
-      "patience": 3, // stop training after 3 epochs without improvement
-	},
-  },
-  {
-    "name": "case",
-    "level": "token",
-    "target": false,
-    "decoder": "linear",
-    "layer": 0,
-    "schedule": 
-	{
-    // halve loss contribution of this task after 2 epochs without improvement
-       "patience": 2,
-	   "factor": 0.5
-    }
-  },
-  {
-    "name": "number",
-    "level": "token",
-    "target": false,
-    "decoder": "linear",
-    "layer": 0,
-    "schedule": 
-	{
-    // halve loss contribution of this task after 2 epochs without improvement
-      "patience": 2,
-	  "factor": 0.5
-    }
-  }
-]}
-```
-
-To avoid verbosity, the same configuration can be written in the following form:
+### POS tagging using a CRF
 
 ```json
 {
-"tasks": [
-  {
-    "name": "pos",
-    "level": "token",
-    "target": true,
-    "decoder": "crf",
-    "layer": -1,
-    "schedule": 
+  "tasks": [
     {
-      "patience": 3, // stop training after 3 epochs without improvement
-	},
-  {
-    "name": "case",
- 
-  },
-  {
-    "name": "number",
-  }
-],
-"task_defaults": 
-  {
+      "name": "pos", 
+      "target": true,
+      "decoder": "crf",
+      "layer": -1
+    }
+  ]
+}
+
+```
+
+### POS tagging using a linear decoder and 2 auxiliary tasks
+```json
+{
+  "tasks": [
+    {
+      "name": "pos",
+      "level": "token",
+      "target": true,
+      "decoder": "crf",
+      "layer": -1,
+      "schedule": {
+        "patience": 3
+      }
+    },
+    {
+      "name": "case",
+      "level": "token",
+      "target": false,
+      "decoder": "linear",
+      "layer": 0,
+      "schedule": {
+        "patience": 2,
+        "factor": 0.5
+      }
+    },
+    {
+      "name": "number",
+      "level": "token",
+      "target": false,
+      "decoder": "linear",
+      "layer": 0,
+      "schedule": {
+        "patience": 2,
+        "factor": 0.5
+      }
+    }
+  ]
+}
+```
+
+By setting a schedule we can fine-tune the learning dynamics of auxiliary tasks in a multi-task settings (see below for more information on this). 
+
+To avoid verbosity, parameters invariant across auxiliary tasks can be specified only once using `task_defaults`. Similarly, learning schedule parameters invariant across tasks (`factor`, `patience`, `threshold`, `min_weight`) can be factored out of the task schedule definition. In summary, the previous configuration can be rewritten in the following form:
+
+```json
+{
+  "tasks": [
+    {
+      "name": "pos",
+      "level": "token",
+      "target": true,
+      "decoder": "crf",
+      "layer": -1,
+      "schedule": {
+        "patience": 3
+      }
+    },
+    {
+      "name": "case"
+    },
+    {
+      "name": "number"
+    }
+  ],
+  "task_defaults": {
     "level": "token",
     "decoder": "linear",
     "layer": 0
   },
-  // halve loss contribution of auxiliary task after 2 epochs without improvement
-"patience": 2,
-"factor": 0.5
+  "patience": 2,
+  "factor": 0.5
 }
+
 ```
 
-- Transduction-based lemmatization
+### Transduction-based lemmatization
+
+PIE has built-in support for lemmatization as a string transduction task using an Encoder-Decoder architecture as shown below:
+
+![Encoder-Decoder for lemmatization](./img/seq2seq.png)
+
+PIE implements several state-of-the-art attention mechanisms to faciliate information flow between the encoder and the decoder. Additionally, the decoder can be conditioned on sentence-level features to help with disambiguating.
+
+A task configuration for lemmatization with an Encoder-Decoder model and integrated sentence-level features is shown below.
+
 ```json
 {
-"tasks": [
-  {
-    "name": "lemma",
-    "level": "char",
-    "target": true,
-    "decoder": "attentional",
-	"context": "sentence", // use sentence-level features to help lemmatization
-    "layer": -1,
-    "schedule": 
+  "tasks": [
     {
-      "patience": 3, // stop training after 3 epochs without improvement
-	}
-  }
-]}
+      "name": "lemma",
+      "level": "char",
+      "target": true,
+      "decoder": "attentional",
+      "context": "sentence",
+      "layer": -1,
+      "schedule": {
+        "patience": 3
+      }
+    }
+  ]
+}
 ```
 
 # Improving feature extraction with a joint Language Model loss
@@ -225,6 +229,6 @@ Additionally, it is also important, in case of a multi-layer sentence-level feat
 
 Finally, multi-task learning is far from being a silver bullet and it is an empirical question whether a multi-task learning setup will yield improvements. It is recommended to first train a single model, and then try different multi-task learning configuration to see if improvements can be achieved.
 
-# (TODO) Webapp
+# (TODO) Web-App
 
 # (TODO) Post-correction App
