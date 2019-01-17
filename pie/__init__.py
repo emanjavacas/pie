@@ -4,6 +4,7 @@ from .utils import GitInfo
 try:
     __commit__ = GitInfo(__file__).get_commit()
 except Exception:
+    import logging
     logging.warn("Couldn't locate current `pie` commit, which is weird...")
     __commit__ = None
 
