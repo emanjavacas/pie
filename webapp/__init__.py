@@ -40,17 +40,33 @@ class DataIterator:
             yield sentence, len(sentence)
 
 
+class Formatter:
+    def __init__(self, tasks: List[str]):
+        self.tasks = tasks
+
+    def format_headers(self)-> List[str]:
+        """ Format the headers """
+        return ["token"] + self.tasks
+
+    def format_line(self, token: str, tags: Iterable[str]) -> List[str]:
+        """ Format the tags"""
+        return [token] + list(tags)
+
+
 def bind(app: Flask = None, device: str = None, batch_size: int = None,
-         model_file: str = None,
-         tokenizer: Tokenizer = None, allow_origin: str = None) -> Flask:
+         model_file: str = None, formatter_class: Formatter = None,
+         tokenizer: Tokenizer = None, allow_origin: str = None,
+         route_path: str= "/") -> Flask:
     """ Binds default value
 
     :param app: Flask app to bind with the tagger
     :param device: Device to use for PyTorch (Default : cpu)
     :param batch_size: Size of the batch to treat
     :param model_file: Model to use to tag
+    :param formatter_class: Formatter of response
     :param tokenizer: Tokenizer to split text into segments (eg. sentence) and into words
     :param allow_origin: Value for the http header field Access-Control-Allow-Origin
+    :param route_path: Route for the API (default : `/`)
     :returns: Application
     """
     # Generates or use default values for non completed parameters
@@ -74,7 +90,9 @@ def bind(app: Flask = None, device: str = None, batch_size: int = None,
     for model, tasks in model_spec(model_file):
         tagger.add_model(model, *tasks)
 
-    @app.route("/", methods=["POST", "GET", "OPTIONS"])
+    formatter_class = formatter_class or Formatter
+
+    @app.route(route_path, methods=["POST", "GET", "OPTIONS"])
     def lemmatize():
         def lemmatization_stream() -> Iterator[str]:
             lower = request.args.get("lower", False)
@@ -94,13 +112,14 @@ def bind(app: Flask = None, device: str = None, batch_size: int = None,
                     sents, lengths = zip(*chunk)
 
                     tagged, tasks = tagger.tag(sents=sents, lengths=lengths)
+                    formatter = formatter_class(tasks)
                     sep = "\t"
                     for sent in tagged:
                         if not header:
-                            yield sep.join(['token'] + tasks) + '\r\n'
+                            yield sep.join(formatter.format_headers()) + '\r\n'
                             header = True
                         for token, tags in sent:
-                            yield sep.join([token] + list(tags)) + '\r\n'
+                            yield sep.join(formatter.format_line(token, tags)) + '\r\n'
 
         return Response(
                stream_with_context(lemmatization_stream()),
