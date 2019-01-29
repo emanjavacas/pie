@@ -1,4 +1,5 @@
 
+# Warning: make sure to use commit: 9c1fd27 from https://github.com/Jean-Baptiste-Camps/Geste 
 import os
 import random
 random.seed(1001)

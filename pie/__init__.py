@@ -4,7 +4,12 @@ from .utils import GitInfo
 try:
     __commit__ = GitInfo(__file__).get_commit()
 except Exception:
-    logging.warn("Couldn't locate current `pie` commit, which is weird...")
+    import logging
+    logging.warn(
+        """
+It seems like you download `pie` instead of git-cloning it.
+We won't be able to check compatibility between pretrained models and `pie` version
+        """)
     __commit__ = None
 
 from . import utils

@@ -132,7 +132,7 @@ class SimpleModel(BaseModel):
                 elif task['decoder'].lower() == 'crf':
                     decoder = CRFDecoder(
                         label_encoder.tasks[tname], self.cemb.embedding_dim)
-                else:
+                elif task['decoder'].lower() == 'attentional':
                     # get context size
                     context_dim = 0
                     if task['context'].lower() == 'sentence':
@@ -146,6 +146,11 @@ class SimpleModel(BaseModel):
                         label_encoder.tasks[tname], cemb_dim, self.cemb.embedding_dim,
                         context_dim=context_dim, scorer=scorer, num_layers=cemb_layers,
                         cell=cell, dropout=dropout, init_rnn=init_rnn)
+
+                else:
+                    raise ValueError(
+                        "Unknown decoder type {} for char-level task: {}".format(
+                            task['decoder'], tname))
 
             elif task['level'].lower() == 'token':
                 # linear
@@ -161,7 +166,8 @@ class SimpleModel(BaseModel):
 
             else:
                 raise ValueError(
-                    "Unknown decoder type {}. Task: {}".format(task['decoder'], tname))
+                    "Unknown decoder type {} for token-level task: {}".format(
+                        task['decoder'], tname))
 
             self.add_module('{}_decoder'.format(tname), decoder)
             decoders[tname] = decoder
