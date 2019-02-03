@@ -47,7 +47,8 @@ For example, given models `good-pos-tagger.tar` and `good-lemma-tagger.tar`, we 
 and the output will be written to `test.pie.txt`
 
 - If you want to pass input from the command line, you can use:
-```$ echo "echo "el gato duerme encima de la silla" | python tagger_pipe.py spanish-lemmatizer.rar
+```
+$ echo "el gato duerme encima de la silla" | python tagger_pipe.py spanish-lemmatizer.rar
 
 token	lemma
 el	el
