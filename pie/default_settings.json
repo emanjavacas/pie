@@ -51,7 +51,7 @@
 	// encoder settings ("max_size", "min_freq", "preprocessor", "eos", "bos")
 	"bos": true, // whether to prepend target tokens with <bos>
 	"eos": true, // whether to append target tokens with <eos>
-	"preprocessor": "lower" // lowercase target tokens
+	"lower": true // lowercase target tokens
       },
 
       // * Schedule
