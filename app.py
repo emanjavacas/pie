@@ -40,6 +40,7 @@ Example output :
     .	.	_	PONfrt
 
 """
-from webapp import bind
 
-app = bind()
+if __name__ == '__main__':
+    from webapp import bind
+    app = bind()
