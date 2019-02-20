@@ -1,10 +1,18 @@
-
 import time
 import os
 import logging
 from datetime import datetime
 
-import pie
+try:
+    import pie
+except ModuleNotFoundError as E:
+    if str(E) == "No module named 'pie'":
+        import sys
+        sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
+        import pie
+    else:
+        raise E
+
 from pie.settings import settings_from_file
 from pie.trainer import Trainer
 from pie import initialization
@@ -15,15 +23,6 @@ from pie.models import SimpleModel, get_pretrained_embeddings
 import random
 import numpy
 import torch
-
-now = datetime.now()
-seed = now.hour * 10000 + now.minute * 100 + now.second
-print("Using seed:", seed)
-random.seed(seed)
-numpy.random.seed(seed)
-torch.manual_seed(seed)
-if torch.cuda.is_available():
-    torch.cuda.manual_seed(seed)
 
 
 def get_targets(settings):
@@ -38,13 +37,17 @@ def get_fname_infix(settings):
     return fname, infix
 
 
-if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('config_path', nargs='?', default='config.json')
-    args = parser.parse_args()
+def run(config_path):
+    now = datetime.now()
+    seed = now.hour * 10000 + now.minute * 100 + now.second
+    print("Using seed:", seed)
+    random.seed(seed)
+    numpy.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
 
-    settings = settings_from_file(args.config_path)
+    settings = settings_from_file(config_path)
 
     # check settings
     # - check at least and at most one target
@@ -198,3 +201,11 @@ if __name__ == '__main__':
             f.write('{}\n'.format('\t'.join(line)))
 
     print("Bye!")
+
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('config_path', nargs='?', default='config.json')
+    args = parser.parse_args()
+    run(config_path=args.config_path)

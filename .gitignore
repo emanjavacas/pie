@@ -1,3 +1,12 @@
+# When flask is installed, produce a flask binary file
+flask
+# If one of these kind of file should be added, then it should be force added.
+#   Otherwise, it allows for clean development.
+*.csv
+*.md
+*.txt
+commit_build.py
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
