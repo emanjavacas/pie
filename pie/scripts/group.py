@@ -1,17 +1,6 @@
 import click
-# If we are running python pie/scripts/app.py
-#  We need to add pie to the python path
-try:
-    import pie.utils
-except ModuleNotFoundError as E:
-    if str(E) == "No module named 'pie'":
-        import sys
-        import os
-
-        sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
-        import pie.utils
-    else:
-        raise E
+# Can be run with python -m pie.scripts.group
+import pie.utils
 
 
 @click.group()
@@ -90,3 +79,7 @@ def train(config_path):
     """ Train a model using the file at [CONFIG_PATH]"""
     import pie.scripts.train
     pie.scripts.train.run(config_path=config_path)
+
+
+if __name__ == "__main__":
+    pie_cli()

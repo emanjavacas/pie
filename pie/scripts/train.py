@@ -1,18 +1,11 @@
+# Can be run with python -m pie.scripts.train
 import time
 import os
 import logging
 from datetime import datetime
 
-try:
-    import pie
-except ModuleNotFoundError as E:
-    if str(E) == "No module named 'pie'":
-        import sys
-        sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
-        import pie
-    else:
-        raise E
 
+import pie
 from pie.settings import settings_from_file
 from pie.trainer import Trainer
 from pie import initialization

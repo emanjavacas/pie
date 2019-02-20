@@ -1,10 +1,6 @@
-try:
-    from pie import utils
-except ModuleNotFoundError as E:
-    import os
-    import sys
-    sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
-    from pie import utils
+# Can be run with python -m pie.scripts.evaluate
+from pie import utils
+
 
 from pie.models import BaseModel
 from pie.data import Dataset, Reader, device_wrapper

@@ -1,16 +1,6 @@
-# Running this in case the module is running as a script
-#   like python pie/scripts/tag.py
-
-try:
-    from pie import utils
-    from pie.tagger import Tagger
-except ModuleNotFoundError as E:
-    import sys
-    import os
-    sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
-
-    from pie import utils
-    from pie.tagger import Tagger
+# Can be run with python -m pie.scripts.tag
+from pie import utils
+from pie.tagger import Tagger
 
 
 def run(model_spec, input_path, device, batch_size, lower, beam_width, use_beam):

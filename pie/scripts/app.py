@@ -40,20 +40,8 @@ Example output :
     .	.	_	PONfrt
 
 """
-
-# If we are running python pie/scripts/app.py
-#  We need to add pie to the python path
-try:
-    from pie.webapp import bind
-except ModuleNotFoundError as E:
-    if str(E) == "No module named 'pie'":
-        import sys
-        import os
-
-        sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
-        from pie.webapp import bind
-    else:
-        raise E
+# Can be run with python -m pie.scripts.tagger_pipe
+from pie.webapp import bind
 
 
 def run(device: str = None, batch_size: int = None, model_file: str = None):
