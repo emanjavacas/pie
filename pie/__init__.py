@@ -5,7 +5,7 @@ from .utils import GitInfo
 try:
     from .commit_build import COMMIT
     __commit__ = COMMIT
-except (ImportError, SyntaxError):
+except ImportError:
     try:
         __commit__ = GitInfo(__file__).get_commit()
     except Exception:
