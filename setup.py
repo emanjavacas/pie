@@ -18,7 +18,7 @@ URL = 'https://github.com/emanjavacas/pie'
 EMAIL = 'me@example.com'
 AUTHOR = ' Enrique Manjavacas; Mike Kestemont'
 REQUIRES_PYTHON = '>=3.6.0'
-VERSION = "0.2.0a0"
+VERSION = "0.2.0a1"
 
 # What packages are required for this module to be executed?
 REQUIRED = [
@@ -96,14 +96,14 @@ class UploadCommand(Command):
 
         # Adds the commit for the verification when checking against
         #   the model git sha
+        self.status('Writing commit SHA to pie/commit_build.py')
         COMMIT_BUILD = os.path.join(here, "pie", "commit_build.py")
+
         try:
             from pie.utils import GitInfo
             __commit__ = GitInfo(os.path.join(here, "pie", "__init__.py")).get_commit()
-            print(__commit__)
             with open(COMMIT_BUILD, "w") as f:
                 f.write("COMMIT = '" + __commit__ + "'")
-
         except Exception as E:
             raise E
 
@@ -116,6 +116,13 @@ class UploadCommand(Command):
         self.status('Pushing git tags…')
         os.system('git tag v{0}'.format(about['__version__']))
         os.system('git push --tags')
+
+        self.status('Reseting pie/commit_build.py')
+        try:
+            with open(COMMIT_BUILD, "w") as f:
+                f.write("# DO NOT CHANGE THIS MANUALLY.\nCOMMIT = None")
+        except Exception as E:
+            raise E
 
         sys.exit()
 

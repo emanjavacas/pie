@@ -3,16 +3,16 @@
 from .utils import GitInfo
 
 try:
+    __commit__ = GitInfo(__file__).get_commit()
+except Exception:
     from .commit_build import COMMIT
-    __commit__ = COMMIT
-except ImportError:
-    try:
-        __commit__ = GitInfo(__file__).get_commit()
-    except Exception:
+    if COMMIT:
+        __commit__ = COMMIT
+    else:
         import logging
-        logging.warn(
+        logging.warning(
             """
-    It seems like you download `pie` instead of git-cloning it.
+    It seems like you download `pie` instead of git-cloning it or installing it with pip.
     We won't be able to check compatibility between pretrained models and `pie` version
             """)
         __commit__ = None
