@@ -11,6 +11,8 @@ from shutil import rmtree
 
 from setuptools import find_packages, setup, Command
 
+here = os.path.abspath(os.path.dirname(__file__))
+
 # Package meta-data.
 NAME = 'pie'
 DESCRIPTION = 'A Framework for Joint Learning of Sequence Labeling Tasks'
@@ -21,20 +23,9 @@ REQUIRES_PYTHON = '>=3.6.0'
 VERSION = "0.2.0a1"
 
 # What packages are required for this module to be executed?
-REQUIRED = [
-    "lxml==4.2.1",
-    "JSON_minify==0.3.0",
-    "gensim==3.4.0",
-    "tqdm==4.23.3",
-    "numpy==1.14.3",
-    "termcolor==1.1.0",
-    "scikit_learn==0.19.1",
-    "terminaltables==3.1.0",
-    "torch>=1.0.1,<=1.2.0",
-    "pyyaml @ https://github.com/yaml/pyyaml/archive/ccc40f3e2ba384858c0d32263ac3e3a6626ab15e.zip",
-    "typing==3.6.6",
-    "click==7.0"
-]
+
+with open(os.path.join(here, 'requirements.txt')) as f:
+    REQUIRED = f.read().splitlines()
 
 # What packages are optional?
 EXTRAS = {
@@ -50,7 +41,6 @@ EXTRAS = {
 # Except, perhaps the License and Trove Classifiers!
 # If you do change the License, remember to change the Trove Classifier for that!
 
-here = os.path.abspath(os.path.dirname(__file__))
 
 # Import the README and use it as the long-description.
 # Note: this will only work if 'README.md' is present in your MANIFEST.in file!
