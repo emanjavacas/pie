@@ -31,7 +31,7 @@ REQUIRED = [
     "scikit_learn==0.19.1",
     "terminaltables==3.1.0",
     "torch>=1.0.1,<=1.2.0",
-    "pyyaml==3.13",
+    "pyyaml @ https://github.com/yaml/pyyaml/archive/ccc40f3e2ba384858c0d32263ac3e3a6626ab15e.zip",
     "typing==3.6.6",
     "click==7.0"
 ]
