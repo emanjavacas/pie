@@ -12,9 +12,9 @@ except Exception:
         import logging
         logging.warning(
             """
-    It seems like you download `pie` instead of git-cloning it or installing it with pip.
-    We won't be able to check compatibility between pretrained models and `pie` version
-            """)
+It seems like you downloaded `pie` instead of git-cloning it or installing it with pip.
+We won't be able to check compatibility between pretrained models and `pie` version.
+""")
         __commit__ = None
 
 from . import utils

@@ -3,11 +3,13 @@ from pie import utils
 
 
 from pie.models import BaseModel
-from pie.data import Dataset, Reader, device_wrapper
+from pie.data import Dataset, Reader
 from pie.settings import load_default_settings, settings_from_file
 
 
-def run(model_path, test_path, train_path, settings, batch_size, buffer_size, device, model_info, full, confusion):
+def run(model_path, test_path, train_path,
+        settings, batch_size, buffer_size, device, model_info, full, confusion):
+
     model = BaseModel.load(model_path).to(device)
     if model_info:
         print(model)
@@ -52,6 +54,8 @@ if __name__ == '__main__':
     parser.add_argument('--full', action='store_true')
     parser.add_argument('--confusion', default=False, action="store_true")
     args = parser.parse_args()
-    run(model_path=args.model_path, test_path=args.test_path, train_path=args.train_path, settings=args.settings,
-        batch_size=args.batch_size, buffer_size=args.buffer_size, device=args.device, model_info=args.model_info,
+    run(model_path=args.model_path, test_path=args.test_path,
+        train_path=args.train_path, settings=args.settings,
+        batch_size=args.batch_size, buffer_size=args.buffer_size,
+        device=args.device, model_info=args.model_info,
         full=args.full, confusion=args.confusion)

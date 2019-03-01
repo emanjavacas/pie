@@ -1,3 +1,4 @@
+
 # Can be run with python -m pie.scripts.tag
 from pie import utils
 from pie.tagger import Tagger
@@ -29,5 +30,6 @@ if __name__ == '__main__':
     parser.add_argument('--lower', action='store_true')
     args = parser.parse_args()
 
-    run(model_spec=args.model_spec, input_path=args.input_path, device=args.device, batch_size=args.batch_size,
+    run(model_spec=args.model_spec, input_path=args.input_path,
+        device=args.device, batch_size=args.batch_size,
         lower=args.lower, beam_width=args.beam_width, use_beam=args.use_beam)

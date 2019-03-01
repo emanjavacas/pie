@@ -8,7 +8,16 @@ PIE was primarily conceived to make experimentation on sequence labeling of vari
 Documentation is work in progress and it will improve over the following months. A good place to learn about its functionality is to check `pie/default_settings.json` which explains all input parameters and shows a full example of a config file (minus input data).
 
 ## 1. Installation
-In order to run PIE, the easiest way is to download the repository and install the dependencies (see `requirements.txt`). There is no need to install the packaged (and in fact there is no `setup.py` file), since there aren't any required compilation steps. The only step needed to have `pie` available from any place in the file system is to add the path to `pie` to the `PYTHONPATH` environment variable. There are two ways to accomplish this:
+
+PIE is available from pypi, which means that all you should need to do is:
+
+```bash
+pip install pie
+```
+
+### For development
+
+If you are planning to develop on top of PIE, the easiest way is to get setup is to download the repository and install the dependencies (see `requirements.txt`). The only step needed to have `pie` available from any place in the file system is to add the path to `pie` to the `PYTHONPATH` environment variable. There are two ways to accomplish this:
 
 - From your bash init file (depending on your distro and configuration this could be `.bashrc`, `.bash_profile`, `.profile`, etc...):
 
@@ -23,32 +32,30 @@ import sys
 sys.path.append('/path/to/pie')
 ```
 
-Note that this is only required if you wish to use PIE programmatically from within a python script. Otherwise, you will be fine using the provided `train.py`, `evaluate.py` and `tag.py` scripts or deploying PIE as a web-app (see `webapp/`).
-
 ## 2. Training
 
-Training models is done with `python train.py path/to/config.json`. All non-nested parameters can be overwritten directly from the command line using environment variables like `PIE_DEVICE=cpu` (for input parameter `device`. Warning: bear in mind that due to the way bash parses environment variables `PIE_...=False` will be parsed into a boolean `True`, which might be counter-intuitive. If you wish to get `False` for a parameter from the command line you can use `PIE_...=""`).
+Training models is done with `pie train path/to/config.json` (or script `python pie/scripts/train.py`. All non-nested parameters can be overwritten directly from the command line using environment variables like `PIE_DEVICE=cpu` (for input parameter `device`. Warning: bear in mind that due to the way bash parses environment variables `PIE_...=False` will be parsed into a boolean `True`, which might be counter-intuitive. If you wish to get `False` for a parameter from the command line you can use `PIE_...=""`).
 
 ## 3. Evaluation
 
-A given model can be evaluated with the `evaluate.py` script. (Run `python evaluate.py --help` for more info).
+A given model can be evaluated with `pie evaluate` (or `python pie/scripts/evaluate.py`).
 
 ## 4. Tagging
 
-Given one or several trained models, two scripts are provided in order to tag given input: `tag.py` and `tagger_pipe.py`, the difference being that the first tags input files and the second can take input from a unix pipe.
+Given one or several trained models, two scripts are provided in order to tag given input: `pie tag` and `pie tag-pipe` (or `python pie/scripts/tag.py`, `python pie/scripts/tag_pipe.py`), the difference being that the first tags input files and the second can take input from a unix pipe.
 
 Common to both scripts is the *model specification* that allows to combine several models, where the output for a particular task is taken from a model that excels at that task.
 For example, given models `good-pos-tagger.tar` and `good-lemma-tagger.tar`, we can define a tagger that uses `good-pos-tagger.tar` for POS-tagging and `good-lemma-tagger.tar` for lemmatization with the following specification: `<good-lemma-tagger.tar,lemma><good-pos-tagger.tar,pos>`.
 
 - If your input is in a file `test.txt` (with a sentence per line) you can use:
 
-`python tag.py "<good-lemma-tagger.tar,lemma><good-pos-tagger.tar,pos>" test.txt`
+`pie tag "<good-lemma-tagger.tar,lemma><good-pos-tagger.tar,pos>" test.txt`
 
 and the output will be written to `test.pie.txt`
 
 - If you want to pass input from the command line, you can use:
 ```
-$ echo "el gato duerme encima de la silla" | python tagger_pipe.py spanish-lemmatizer.rar
+$ echo "el gato duerme encima de la silla" | pie tag-pipe spanish-lemmatizer.rar
 
 token	lemma
 el	el

@@ -1,3 +1,4 @@
+
 import click
 # Can be run with python -m pie.scripts.group
 import pie.utils
@@ -16,8 +17,11 @@ def webapp(model_spec, batch_size, device):
     """ Run the webapp """
     import pie.scripts.app
     app = pie.scripts.app.run(device=device, batch_size=batch_size, model_file=model_spec)
-    print("This application should not be used in production. The webserver given here is only for"
-          "development purposes")
+    print(
+        """
+This application should not be used in production.
+The webserver given here is only for development purposes
+""")
     app.run()
 
 
@@ -32,7 +36,8 @@ def webapp(model_spec, batch_size, device):
 def tag(model_spec, input_path, device, batch_size, lower, beam_width, use_beam):
     """ Tag [INPUT_PATH] with model(s) at [MODEL_SPEC]"""
     import pie.scripts.tag
-    pie.scripts.tag.run(model_spec, input_path, device, batch_size, lower, beam_width, use_beam)
+    pie.scripts.tag.run(
+        model_spec, input_path, device, batch_size, lower, beam_width, use_beam)
 
 
 @pie_cli.command("tag-pipe")
@@ -41,13 +46,14 @@ def tag(model_spec, input_path, device, batch_size, lower, beam_width, use_beam)
 @click.option('--device', default='cpu')
 @click.option('--use_beam', is_flag=True, default=False)
 @click.option('--beam_width', default=10, type=int)
-@click.option('--lower', is_flag=True, help="Treat the input as lower case", default=False)
+@click.option('--lower', is_flag=True, help="Lowercase input to tagger", default=False)
 @click.option('--tokenize', is_flag=True, help="Tokenize the input", default=False)
 def tag_pipe(model_spec, device, batch_size, lower, beam_width, use_beam, tokenize):
     """ Tag the terminal input with [MODEL_SPEC]"""
-    import pie.scripts.tagger_pipe
-    pie.scripts.tagger_pipe.run(model_spec=model_spec, device=device, batch_size=batch_size, lower=lower,
-                                beam_width=beam_width, use_beam=use_beam, tokenize=tokenize)
+    import pie.scripts.tag_pipe
+    pie.scripts.tag_pipe.run(
+        model_spec=model_spec, device=device, batch_size=batch_size,
+        lower=lower, beam_width=beam_width, use_beam=use_beam, tokenize=tokenize)
 
 
 @pie_cli.command("eval")
@@ -67,10 +73,9 @@ def evaluate(model_path, test_path, train_path, settings, batch_size,
     unknown tokens"""
     import pie.scripts.evaluate
     pie.scripts.evaluate.run(
-        model_path=model_path, test_path=test_path, train_path=train_path, settings=settings,
-        batch_size=batch_size, buffer_size=buffer_size, device=device, model_info=model_info,
-        full=full, confusion=confusion
-    )
+        model_path=model_path, test_path=test_path, train_path=train_path,
+        settings=settings, batch_size=batch_size, buffer_size=buffer_size,
+        device=device, model_info=model_info, full=full, confusion=confusion)
 
 
 @pie_cli.command("train")

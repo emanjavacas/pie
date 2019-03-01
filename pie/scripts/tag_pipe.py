@@ -1,4 +1,5 @@
-# Can be run with python -m pie.scripts.tagger_pipe
+
+# Can be run with python -m pie.scripts.tag_pipe
 import sys
 from pie import utils
 from pie.tagger import Tagger, simple_tokenizer
@@ -46,5 +47,7 @@ if __name__ == '__main__':
     parser.add_argument('--lower', action='store_true')
     parser.add_argument('--tokenize', action='store_true')
     args = parser.parse_args()
-    run(model_spec=args.model_spec, device=args.device, batch_size=args.batch_size,
-        lower=args.lower, beam_width=args.beam_width, use_beam=args.use_beam, tokenize=args.tokenize)
+    run(model_spec=args.model_spec, device=args.device,
+        batch_size=args.batch_size,
+        lower=args.lower, beam_width=args.beam_width,
+        use_beam=args.use_beam, tokenize=args.tokenize)

@@ -1,10 +1,12 @@
+
 """
+This module can be run by installing the app requirements:
+    `pip install -r requirements-app.txt`
 
-This module can be run by install the app requirements (`pip install -r requirements-app.txt`)
-
-The goal here is to be able to have, later, a distributed series of APIs that could be using different version of Pie
-and run through containers, unified by a public API such as https://github.com/hipster-philology/deucalion which would
-then talk to the different micro-services.
+The goal here is to be able to have, later, a distributed series of APIs
+that could be using different version of PIE and run through containers,
+unified by a public API such as https://github.com/hipster-philology/deucalion
+which would then talk to the different micro-services.
 
 How to run for development :
     PIE_MODEL=/home/thibault/dev/pie/model-lemma-2018_10_23-14_05_19.tar FLASK_ENV=development flask run
@@ -38,9 +40,8 @@ Example output :
     bon	bon	NOMB.=s|GENRE=m|CAS=n|DEGRE=p	ADJqua
     rois	roi2	NOMB.=s|GENRE=m|CAS=n	NOMcom
     .	.	_	PONfrt
-
 """
-# Can be run with python -m pie.scripts.tagger_pipe
+
 from pie.webapp import bind
 
 
