@@ -40,7 +40,14 @@ Example output :
     .	.	_	PONfrt
 
 """
+# Can be run with python -m pie.scripts.tagger_pipe
+from pie.webapp import bind
+
+
+def run(device: str = None, batch_size: int = None, model_file: str = None):
+    app = bind(device=device, batch_size=batch_size, model_file=model_file)
+    return app
+
 
 if __name__ == '__main__':
-    from webapp import bind
-    app = bind()
+    run()
