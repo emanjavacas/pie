@@ -56,7 +56,7 @@ class Formatter:
 def bind(app: Flask = None, device: str = None, batch_size: int = None,
          model_file: str = None, formatter_class: Formatter = None,
          tokenizer: Tokenizer = None, allow_origin: str = None,
-         route_path: str= "/") -> Flask:
+         route_path: str= "/", headers=None) -> Flask:
     """ Binds default value
 
     :param app: Flask app to bind with the tagger
@@ -67,6 +67,7 @@ def bind(app: Flask = None, device: str = None, batch_size: int = None,
     :param tokenizer: Tokenizer to split text into segments (eg. sentence) and into words
     :param allow_origin: Value for the http header field Access-Control-Allow-Origin
     :param route_path: Route for the API (default : `/`)
+    :param headers: Additional headers
     :returns: Application
     """
     # Generates or use default values for non completed parameters
@@ -91,6 +92,13 @@ def bind(app: Flask = None, device: str = None, batch_size: int = None,
         tagger.add_model(model, *tasks)
 
     formatter_class = formatter_class or Formatter
+
+    _headers = {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Access-Control-Allow-Origin': allow_origin
+       }
+    if headers:
+        _headers.update(headers)
 
     @app.route(route_path, methods=["POST", "GET", "OPTIONS"])
     def lemmatize():
@@ -124,10 +132,7 @@ def bind(app: Flask = None, device: str = None, batch_size: int = None,
         return Response(
                stream_with_context(lemmatization_stream()),
                200,
-               headers={
-                'Content-Type': 'text/plain; charset=utf-8',
-                'Access-Control-Allow-Origin': allow_origin
-               }
+               headers=_headers
         )
 
     return app
