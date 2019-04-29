@@ -106,7 +106,7 @@ class BaseModel(nn.Module):
 
         with tarfile.open(fpath, 'w') as tar:
             # serialize label_encoder
-            string = yaml.dump(self.label_encoder.jsonify(), Dumper=Dumper)
+            string = json.dumps(self.label_encoder.jsonify())
             path = 'label_encoder.zip'
             utils.add_gzip_to_tar(string, path, tar)
 
