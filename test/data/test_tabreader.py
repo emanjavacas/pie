@@ -1,3 +1,5 @@
+
+import os
 import unittest
 import copy
 
@@ -12,12 +14,13 @@ class AttributeDict(dict):
 class TestTabReader(unittest.TestCase):
 
     TASKS = [{"name": "lemma"}, {"name": "pos"}]
+    FILENAME = '/tmp/test-data.tab'
     HEADER = {
         "header": False,
         "tasks_order": ["lemma", "pos", "ignore"],
         "sep": "\t",
         "breakline_ref": "input",
-        "breakline_data": "^(\.|''''|seg)$",
+        "breakline_data": r"^(\.|''''|seg)$",
         "max_sent_len": 120,
         "tasks": TASKS
     }
@@ -91,16 +94,19 @@ devint	devenir	VERcjg	MODE=ind|TEMPS=psp|PERS.=3|NOMB.=s"""
         x.update(kwargs)
         return AttributeDict(x)
 
-    def write(self, inp, file="test-data.tab"):
-        with open(file, "w") as f:
+    def write(self, inp):
+        with open(self.FILENAME, "w") as f:
             f.write(inp)
-        return file
+
+    def tearDown(self):
+        if os.path.isfile(self.FILENAME):
+            os.remove(self.FILENAME)
 
     def test_breakline_input(self):
         """ Regular expression should be taken into account as breaking line """
-        inp = self.write(self.DEFAULT_INPUT.format(separator="''''\tx\ty\tz"))
+        self.write(self.DEFAULT_INPUT.format(separator="''''\tx\ty\tz"))
 
-        tab_reader = TabReader(settings=self.settings(), fpath=inp)
+        tab_reader = TabReader(settings=self.settings(), fpath=self.FILENAME)
 
         seen = 0
         expected_tokens = copy.deepcopy(self.tokens)
@@ -114,11 +120,12 @@ devint	devenir	VERcjg	MODE=ind|TEMPS=psp|PERS.=3|NOMB.=s"""
         self.assertEqual(seen, 3, "There should have been 3 sentences read")
 
     def test_breakline_input_empty_combination(self):
-        """ Regular expression and empty lines should be taken into account as breaking line """
+        """ Regular expression and empty lines should be taken into account as
+        breaking line """
 
-        inp = self.write(self.DIFF_INPUT.format(sep1="''''\tx\ty\tz", sep2=""))
+        self.write(self.DIFF_INPUT.format(sep1="''''\tx\ty\tz", sep2=""))
 
-        tab_reader = TabReader(settings=self.settings(), fpath=inp)
+        tab_reader = TabReader(settings=self.settings(), fpath=self.FILENAME)
 
         seen = 0
         expected_tokens = copy.deepcopy(self.tokens)
@@ -131,8 +138,8 @@ devint	devenir	VERcjg	MODE=ind|TEMPS=psp|PERS.=3|NOMB.=s"""
 
     def test_breakline_empty_line(self):
         """ Empty lines should be taken into account as breaking line """
-        inp = self.write(self.DEFAULT_INPUT.format(separator=""))
-        tab_reader = TabReader(settings=self.settings(), fpath=inp)
+        self.write(self.DEFAULT_INPUT.format(separator=""))
+        tab_reader = TabReader(settings=self.settings(), fpath=self.FILENAME)
 
         seen = 0
         for (tokens, tasks), expected in zip(tab_reader.parselines(), self.tokens):
@@ -140,4 +147,3 @@ devint	devenir	VERcjg	MODE=ind|TEMPS=psp|PERS.=3|NOMB.=s"""
             seen += 1
 
         self.assertEqual(seen, 3, "There should have been 3 sentences read")
-
