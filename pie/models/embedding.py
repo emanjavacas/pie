@@ -66,7 +66,10 @@ class CNNEmbedding(nn.Module):
 
     def init(self):
         initialization.init_embeddings(self.emb)
-        for conv in self.convs:
+        for conv_seq in self.convs:
+            for conv in conv_seq:
+                if isinstance(conv, torch.nn.ZeroPad2d):
+                    continue
             initialization.init_conv(conv)
 
     def forward(self, char, nchars, nwords):
