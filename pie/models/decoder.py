@@ -263,8 +263,8 @@ class AttentionalDecoder(nn.Module):
         self.init_rnn = init_rnn
         super().__init__()
 
-        if label_encoder.get_eos() is None and label_encoder.get_bos() is None:
-            raise ValueError("AttentionalDecoder needs at least one of <eos> or <bos>")
+        if label_encoder.get_eos() is None or label_encoder.get_bos() is None:
+            raise ValueError("AttentionalDecoder needs <eos> and <bos>")
 
         nll_weight = torch.ones(len(label_encoder))
         nll_weight[label_encoder.get_pad()] = 0.
@@ -292,11 +292,6 @@ class AttentionalDecoder(nn.Module):
         the targets for the `loss` method. Takes care of padding.
         """
         targets, lengths = targets[:-1], lengths - 1
-        if self.label_encoder.get_bos() is None:  # needs prepad
-            targets = torch_utils.pad(
-                targets, pad=self.label_encoder.get_eos(), pos='pre')
-            lengths += 1
-
         embs = self.embs(targets)
 
         if self.context_dim > 0:
@@ -326,8 +321,7 @@ class AttentionalDecoder(nn.Module):
         logits : tensor(seq_len x batch x vocab)
         targets : tensor(seq_len x batch)
         """
-        if self.label_encoder.get_bos() is not None:
-            targets = targets[1:]  # remove <bos> from targets
+        targets = targets[1:]  # remove <bos> from targets
 
         loss = F.cross_entropy(
             logits.view(-1, len(self.label_encoder)), targets.view(-1),
@@ -338,52 +332,8 @@ class AttentionalDecoder(nn.Module):
 
         return loss
 
-    def predict_sequence(self, enc_outs, lengths, context=None):
-        """
-        Decoding routine with step-wise argmax for fixed output lengths
-
-        Parameters
-        ===========
-        enc_outs : tensor(src_seq_len x batch x hidden_size)
-        context : tensor(batch x hidden_size), optional
-        """
-        hidden = None
-        batch = enc_outs.size(1)
-        device = enc_outs.device
-        mask = torch.ones(batch, dtype=torch.int64, device=device)
-        inp = torch.zeros(batch, dtype=torch.int64, device=device)
-        inp += self.label_encoder.get_eos()
-        hyps, scores = [], 0
-
-        for i in range(max(lengths.tolist())):
-            # prepare input
-            emb = self.embs(inp)
-            if context is not None:
-                emb = torch.cat([emb, context], dim=1)
-            # run rnn
-            emb = emb.unsqueeze(0)
-            outs, hidden = self.rnn(emb, hidden)
-            outs, _ = self.attn(outs, enc_outs, lengths)
-            outs = self.proj(outs).squeeze(0)
-            # get logits
-            probs = F.log_softmax(outs, dim=1)
-            # sample and accumulate
-            score, inp = probs.max(1)
-            hyps.append(inp.tolist())
-            mask = mask * (i != lengths).long()
-            score[mask == 0] = 0
-            scores += score
-
-        # remove <bos>/<eos> if given
-        start = 1 if self.label_encoder.get_bos() else 0
-        lengths = lengths - 1 if self.label_encoder.get_eos() else lengths
-        hyps = [self.label_encoder.inverse_transform(hyp[start:length])
-                for hyp, length in zip(zip(*hyps), lengths.tolist())]
-        scores = (scores / lengths.float()).tolist()
-
-        return hyps, scores
-
-    def predict_max(self, enc_outs, lengths, context=None, max_seq_len=20):
+    def predict_max(self, enc_outs, lengths, context=None, max_seq_len=20,
+                    bos=None, eos=None):
         """
         Decoding routine for inference with step-wise argmax procedure
 
@@ -392,10 +342,11 @@ class AttentionalDecoder(nn.Module):
         enc_outs : tensor(src_seq_len x batch x hidden_size)
         context : tensor(batch x hidden_size), optional
         """
+        eos = eos or self.label_encoder.get_eos()
+        bos = bos or self.label_encoder.get_bos()
         hidden, batch, device = None, enc_outs.size(1), enc_outs.device
         mask = torch.ones(batch, dtype=torch.int64, device=device)
-        inp = torch.zeros(batch, dtype=torch.int64, device=device)
-        inp += self.label_encoder.get_bos()
+        inp = torch.zeros(batch, dtype=torch.int64, device=device) + bos
         hyps, scores = [], 0
 
         for _ in range(max_seq_len):
@@ -416,7 +367,7 @@ class AttentionalDecoder(nn.Module):
             # sample and accumulate
             score, inp = probs.max(1)
             hyps.append(inp.tolist())
-            mask = mask * (inp != self.label_encoder.get_eos()).long()
+            mask = mask * (inp != eos).long()
             score = score.cpu()
             score[mask == 0] = 0
             scores += score
@@ -426,7 +377,8 @@ class AttentionalDecoder(nn.Module):
 
         return hyps, scores
 
-    def predict_beam(self, enc_outs, lengths, context=None, max_seq_len=50, width=12):
+    def predict_beam(self, enc_outs, lengths, context=None, max_seq_len=50, width=12,
+                     eos=None, bos=None):
         """
         Decoding routine for inference with beam search
 
@@ -435,11 +387,11 @@ class AttentionalDecoder(nn.Module):
         enc_outs : tensor(src_seq_len x batch x hidden_size)
         context : tensor(batch x hidden_size), optional
         """
-        hidden = None
-        (seq_len, batch, _), device = enc_outs.size(), enc_outs.device
-        beams = [Beam(width, eos=self.label_encoder.get_eos(),
-                      bos=self.label_encoder.get_bos(), device=device)
-                 for _ in range(batch)]
+        eos = eos or self.label_encoder.get_eos()
+        bos = bos or self.label_encoder.get_bos()
+        hidden, device = None, enc_outs.device
+        seq_len, batch, _ = enc_outs.size()
+        beams = [Beam(width, eos=eos, bos=bos, device=device) for _ in range(batch)]
 
         # expand data along beam width
         # (seq_len x beam * batch x hidden_size)
