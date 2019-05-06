@@ -133,8 +133,8 @@ class CRFDecoder(nn.Module):
     def forward(self, enc_outs):
         "get logits of the input features"
         # (seq_len x batch x vocab)
-        if self.highway is None:
-            enc_out = self.highway(enc_outs)
+        if self.highway is not None:
+            enc_outs = self.highway(enc_outs)
         logits = self.projection(enc_outs)
 
         return F.log_softmax(logits, -1)
@@ -225,7 +225,7 @@ class CRFDecoder(nn.Module):
         tag_sequence = logits.new(seq_len + 2, vocab + 2)
 
         # iterate over batches
-        for logits_b, len_b in zip(logits.t(), lengths):
+        for logits_b, len_b in zip(logits.transpose(0, 1), lengths):
             seq_len = len_b.item()
             # get this batch logits
             tag_sequence.fill_(-10000)
