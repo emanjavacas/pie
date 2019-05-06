@@ -12,7 +12,7 @@ Documentation is work in progress and it will improve over the following months.
 PIE is available from pypi, which means that all you should need to do is:
 
 ```bash
-pip install pie
+pip install nlp-pie
 ```
 
 ### For development

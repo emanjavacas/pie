@@ -1,4 +1,4 @@
-
+import re
 from .base_reader import BaseReader, LineParseException, MissingDefaultException
 
 
@@ -11,7 +11,7 @@ class LineParser(object):
         self.sep = sep
         # breakline info
         self.breakline_ref = breakline_ref
-        self.breakline_data = breakline_data
+        self.breakline_data = re.compile(breakline_data)
         # data
         self.inp = []
         self.tasks = {task: [] for task in tasks}
@@ -51,7 +51,7 @@ class LineParser(object):
             ref = self.inp
             if self.breakline_ref != 'input':
                 ref = self.tasks[self.breakline_ref]
-            return ref[-1] == self.breakline_data
+            return self.breakline_data.match(ref[-1])
 
     def reset(self, nitems=None):
         """
@@ -90,7 +90,6 @@ class TabReader(BaseReader):
         self.tasks_order = settings.tasks_order
         self.sep = settings.sep
         super(TabReader, self).__init__(settings, fpath)
-
         self.line_parser = line_parser
         self.breakline_ref = settings.breakline_ref
         self.breakline_data = settings.breakline_data
