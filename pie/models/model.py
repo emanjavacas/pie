@@ -39,10 +39,18 @@ class SimpleModel(BaseModel):
     cemb_type : str, one of "RNN", "CNN", layer to use for char-level embeddings
     """
     def __init__(self, label_encoder, tasks, wemb_dim, cemb_dim, hidden_size, num_layers,
-                 dropout=0.0, word_dropout=0.0, merge_type='concat', cemb_type='RNN',
-                 cemb_layers=1, cell='LSTM', custom_cemb_cell=False, scorer='general',
-                 include_lm=True, lm_shared_softmax=True, init_rnn='xavier_uniform',
-                 linear_layers=1, **kwargs):
+                 cell='LSTM', init_rnn='xavier_uniform',
+                 # dropout
+                 dropout=0.0, word_dropout=0.0,
+                 # word embeddings
+                 merge_type='concat', cemb_type='RNN', cemb_layers=1,
+                 custom_cemb_cell=False, scorer='general',
+                 # lm joint loss
+                 include_lm=True, lm_shared_softmax=True,
+                 # decoder
+                 linear_layers=1,
+                 # kwargs
+                 **kwargs):
         # args
         self.wemb_dim = wemb_dim
         self.cemb_dim = cemb_dim

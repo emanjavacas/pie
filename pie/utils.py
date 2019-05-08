@@ -1,9 +1,11 @@
 
 import re
+import io
 import os
 import shutil
 import uuid
 import gzip
+import tarfile
 import logging
 import sys
 import glob
@@ -142,6 +144,15 @@ def tmpfile(parent='/tmp/'):
         shutil.rmtree(tmppath)
     else:
         os.remove(tmppath)
+
+
+def add_weights_to_tar(state_dict, path, tar):
+    f = io.BytesIO()
+    torch.save(state_dict, f)
+    tinf = tarfile.TarInfo(name=path)
+    f.seek(0)
+    tinf.size = len(f.getbuffer())
+    tar.addfile(tinf, f)     # read tinf.size bytes from f into tinf
 
 
 def add_gzip_to_tar(string, subpath, tar):
