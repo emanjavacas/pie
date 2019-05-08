@@ -50,27 +50,38 @@ class TaskScheduler(object):
     """
     Track scores
     """
-    def __init__(self, tasks, patience, factor, threshold, min_weight):
-        for task, values in tasks.items():
-            tasks[task] = {'steps': 0, **values}
-            # set task mode
-            if 'mode' not in tasks[task]:
-                tasks[task]['mode'] = 'max'
+    def __init__(self, settings):
+        tasks = {}
+        # preprocess tasks
+        for task in settings.tasks:
+            # ignore read-only
+            if task.get('read_only'):
+                continue
+            # add schedule and target
+            tasks[task['name']] = task.get('schedule', {})
+            tasks[task['name']]['target'] = task.get('target', False)
+            # add task data for lm loss
+            if settings.include_lm:
+                tasks['lm_fwd'] = settings.lm_schedule
+                tasks['lm_bwd'] = settings.lm_schedule
+
+        for task, tdata in tasks.items():
+            # set step counter
+            tdata['step'] = 0
+            # set default task mode
+            tdata['mode'] = tdata.get('mode', 'max')
             # set initial weight
-            if 'weight' not in tasks[task]:
-                tasks[task]['weight'] = 1.0
+            tdata['weight'] = tdata.get('weight', 1.0)
             # set initial best
-            if tasks[task]['mode'] == 'max':
-                tasks[task]['best'] = -float('inf')
-            else:
-                tasks[task]['best'] = float('inf')
+            tdata['best'] = -float('inf') if tdata['mode'] == 'max' else float('inf')
+
+        self.tasks = tasks
 
         # task schedule
-        self.tasks = tasks
-        self.patience = patience
-        self.factor = factor
-        self.threshold = threshold
-        self.min_weight = min_weight
+        self.patience = settings.patience
+        self.factor = settings.factor
+        self.threshold = settings.threshold
+        self.min_weight = settings.min_weight
         self.fid = '/tmp/{}'.format(str(uuid.uuid1()))
 
     def __repr__(self):
@@ -167,7 +178,6 @@ class Trainer(object):
     checks_per_epoch
     """
     def __init__(self, settings, model, dataset, num_instances):
-        self.tasks = settings.tasks
         self.target_task = get_target_task(settings)
         self.verbose = settings.verbose
         self.dataset = dataset
@@ -187,17 +197,9 @@ class Trainer(object):
         else:
             self.check_freq = 0  # no checks
 
-        tasks = {}
-        for task in settings.tasks:
-            tasks[task['name']] = task.get('schedule', {})
-            tasks[task['name']]['target'] = task.get('target', False)
-        if settings.include_lm:
-            tasks['lm_fwd'] = settings.lm_schedule
-            tasks['lm_bwd'] = settings.lm_schedule
-        self.task_scheduler = TaskScheduler(
-            tasks, settings.patience, settings.factor, settings.threshold,
-            settings.min_weight)
-        self.lr_scheduler = LRScheduler(self.optimizer, factor=settings.lr_factor,
+        self.task_scheduler = TaskScheduler(settings)
+        self.lr_scheduler = LRScheduler(
+            self.optimizer, factor=settings.lr_factor,
             patience=settings.lr_patience, min_lr=settings.min_lr)
 
         if settings.verbose:
@@ -289,7 +291,7 @@ class Trainer(object):
 
         for b, batch in enumerate(self.dataset.batch_generator()):
             # get loss
-            loss = self.model.loss(batch, get_batch_task(self.tasks))
+            loss = self.model.loss(batch, get_batch_task(self.model.tasks.values()))
 
             if not loss:
                 raise ValueError("Got empty loss, no tasks defined?")
