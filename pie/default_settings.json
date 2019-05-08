@@ -116,7 +116,8 @@
   "lr": 0.001,
   "lr_factor": 0.75, // lr schedule (decrease lr by this factor after `lr_patience` epochs
   // without improvement on dev-set data)
-  "lr_patience": 2, // patience for early stopping
+  "min_lr": 0.000001, // minimum learning rate
+  "lr_patience": 2, // patience for lr schedule
   "checks_per_epoch": 1, // check model on dev-set so many times during epoch
 
   // * Model hyperparameters
