@@ -69,16 +69,20 @@
 	"patience": 2, "threshold": 0.001
       },
 
-      "default": "copy" // while processing the files if the field is missing predict
+      "default": "copy", // while processing the files if the field is missing predict
       // the input token or something else:
       // - "copy" for copy over the token form
       // - "UNK" predict "UNK"
+      "read_only": false // encode task but don't model it
     }
   ],
 
   // task defaults for any given auxiliary task (can be overwritten by a task definition)
   "task_defaults": {
-    "level": "token", "layer": -1, "decoder": "linear", "context": "sentence"
+    "level": "token",
+    "layer": -1,
+    "decoder": "linear",
+    "context": "sentence"
   },
 
   // general task schedule params (can be overwritten in the "settings" entry of each)

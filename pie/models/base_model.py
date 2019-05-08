@@ -27,9 +27,7 @@ class BaseModel(nn.Module):
     def __init__(self, label_encoder, tasks, *args, **kwargs):
         self.label_encoder = label_encoder
         # prepare input task data from task settings
-        if isinstance(tasks, list):
-            tasks = {task['name']: task for task in tasks}
-        self.tasks = tasks
+        self.tasks = {task['name']: task for task in tasks if not task.get('read_only')}
         super().__init__()
 
     def loss(self, batch_data):
@@ -62,7 +60,8 @@ class BaseModel(nn.Module):
         assert not self.training, "Ooops! Inference in training mode. Call model.eval()"
 
         scorers = {}
-        for task, le in self.label_encoder.tasks.items():
+        for task in self.tasks:
+            le = self.label_encoder.tasks[task]
             scorers[task] = Scorer(le, trainset)
 
         with torch.no_grad():
