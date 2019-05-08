@@ -82,7 +82,7 @@
   },
 
   // general task schedule params (can be overwritten in the "settings" entry of each)
-  "patience": 1000000, // default task schedule patience
+  "patience": 100, // task patience (global early stopping patience for target task)
   "factor": 1, // default task schedule factor
   "threshold": 0, // default task schedule thresholed
   "min_weight": 0, // default task schedule min_weight
@@ -92,7 +92,7 @@
   "lm_shared_softmax": false, // whether to share the output layer for both fwd and bwd lm
   "lm_schedule": {
     // settings for joint LM task in case `include_lm` is true
-    "patience": 100, "factor": 0.5, "weight": 0.2, "mode": "min"
+    "patience": 2, "factor": 0.5, "weight": 0.2, "mode": "min"
   },
 
   // * Training

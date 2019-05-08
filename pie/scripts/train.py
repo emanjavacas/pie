@@ -171,8 +171,10 @@ def run(settings):
             scorer = scorers[task]
             result = scorer.get_scores()
             for acc in result:
-                scores.append('{}:{:.6f}'.format(task, result[acc]['accuracy']))
-                scores.append('{}-support:{}'.format(task, result[acc]['support']))
+                scores.append('{}-{}:{:.6f}'.format(
+                    acc, task, result[acc]['accuracy']))
+                scores.append('{}-{}-support:{}'.format(
+                    acc, task, result[acc]['support']))
         path = '{}.results.{}.csv'.format(
             settings.modelname, '-'.join(get_targets(settings)))
         with open(path, 'a') as f:
