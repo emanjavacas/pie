@@ -89,7 +89,7 @@
 
   // * Joint LM-loss
   "include_lm": false, // whether to include autoregressive loss
-  "lm_shared_softmax": false, // whether to share the output layer for both fwd and bwd lm
+  "lm_shared_softmax": true, // whether to share the output layer for both fwd and bwd lm
   "lm_schedule": {
     // settings for joint LM task in case `include_lm` is true
     "patience": 2, "factor": 0.5, "weight": 0.2, "mode": "min"
