@@ -7,13 +7,13 @@ from datetime import datetime
 
 
 import pie
+from pie import utils
 from pie.settings import settings_from_file
 from pie.trainer import Trainer
 from pie import initialization
 from pie.data import Dataset, Reader, MultiLabelEncoder
 from pie.models import SimpleModel, get_pretrained_embeddings
 
-# set seeds
 import random
 import numpy
 import torch
@@ -40,21 +40,6 @@ def run(config_path):
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
-
-    settings = settings_from_file(config_path)
-
-    # check settings
-    # - check at least and at most one target
-    has_target = False
-    for task in settings.tasks:
-        if len(settings.tasks) == 1:
-            task['target'] = True
-        if task.get('target', False):
-            if has_target:
-                raise ValueError("Got more than one target task")
-            has_target = True
-    if not has_target:
-        raise ValueError("Needs at least one target task")
 
     # datasets
     reader = Reader(settings, settings.input_path)

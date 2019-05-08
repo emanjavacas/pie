@@ -55,6 +55,25 @@ def flatten(it):
             yield from flatten(subit)
 
 
+def recursive_merge(s1, s2, overwrite=False):
+    """
+    Recursively merge two dictionaries
+
+    >>> recursive_merge({"a": {"b": 1}}, {"a": {"c": 2}})
+    {'a': {'b': 1, 'c': 2}}
+    """
+    for k, v in s2.items():
+        if k in s1 and isinstance(v, dict):
+            if not isinstance(s1[k], dict):
+                raise ValueError("Expected dictionary at key [{}]".format(k))
+            s1[k] = recursive_merge(s1[k], v, overwrite=overwrite)
+        else:
+            if overwrite or k not in s1:
+                s1[k] = v
+
+    return s1
+
+
 def ensure_ext(path, ext, infix=None):
     """
     Compute target path with eventual infix and extension
