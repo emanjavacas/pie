@@ -27,7 +27,10 @@ class BaseModel(nn.Module):
     def __init__(self, label_encoder, tasks, *args, **kwargs):
         self.label_encoder = label_encoder
         # prepare input task data from task settings
-        self.tasks = {task['name']: task for task in tasks if not task.get('read_only')}
+        if isinstance(tasks, list):
+            tasks = {task['name']: task for task in tasks}
+        # drop read-only tasks
+        self.tasks = {t: task for t, task in tasks.items() if not task.get('read_only')}
         super().__init__()
 
     def loss(self, batch_data):
@@ -189,8 +192,7 @@ class BaseModel(nn.Module):
 
             # load state_dict
             model.load_state_dict(
-                torch.load(tar.extractfile('state_dict.pt'),
-                           map_location='cpu'))
+                torch.load(tar.extractfile('state_dict.pt'), map_location='cpu'))
 
         model.eval()
 

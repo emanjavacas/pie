@@ -10,37 +10,38 @@ from pie.constants import TINY
 
 from .beam_search import Beam
 from .attention import Attention
+from .highway import Highway
 
 
-class Highway(nn.Module):
+class ConditionEmbedding(nn.Module):
     """
-    Highway network
+    Embed tags and project onto a fixed-size tag embedding
     """
-    def __init__(self, in_features, num_layers, act='relu'):
-        self.in_features = in_features
-
-        self.act = act
+    def __init__(self, label_encoders, emb_dim, out_features, dropout=0):
+        self.dropout = dropout
         super().__init__()
 
-        self.layers = nn.ModuleList(
-            [nn.Linear(in_features, in_features*2) for _ in range(num_layers)])
+        self.embs = nn.ModuleDict({
+            le.name: nn.Embedding(len(le), emb_dim, padding_idx=le.get_pad())
+            for le in label_encoders})
+        self.proj = nn.Linear(len(label_encoders) * emb_dim, out_features)
 
         self.init()
 
     def init(self):
-        for layer in self.layers:
-            initialization.init_linear(layer)
-            # bias gate to let information go untouched
-            nn.init.constant_(layer.bias[self.in_features:], 1.)
+        for emb in self.embs.values():
+            initialization.init_embeddings(emb)
+        initialization.init_linear(self.proj)
 
-    def forward(self, inp):
-        current = inp
-        for layer in self.layers:
-            inp, gate = layer(current).chunk(2, dim=-1)
-            inp, gate = getattr(F, self.act)(inp), F.sigmoid(gate)
-            current = gate * current + (1 - gate) * inp
+    def forward(self, **conds):
+        """t (seq_len x batch) or (batch), tlen"""
+        embs = torch.cat(
+            [emb(conds[name]) for name, emb in sorted(self.embs.items())],
+            dim=-1)
 
-        return current
+        embs = F.dropout(embs, p=self.dropout, training=self.training)
+
+        return self.proj(embs)
 
 
 class LinearDecoder(nn.Module):
@@ -131,7 +132,7 @@ class CRFDecoder(nn.Module):
         nn.init.normal_(self.end_transition)
 
     def forward(self, enc_outs):
-        "get logits of the input features"
+        """get logits of the input features"""
         # (seq_len x batch x vocab)
         if self.highway is not None:
             enc_outs = self.highway(enc_outs)
@@ -211,7 +212,7 @@ class CRFDecoder(nn.Module):
 
     def predict(self, enc_outs, lengths):
         # (seq_len x batch x vocab)
-        logits = self.projection(enc_outs)
+        logits = self(enc_outs)
         seq_len, _, vocab = logits.size()
         start_tag, end_tag = vocab, vocab + 1
 

@@ -230,7 +230,7 @@ class Trainer(object):
         total_losses, total_batches = collections.defaultdict(float), 0
 
         # get all tasks
-        tasks = list(self.model.label_encoder.tasks)
+        tasks = list(self.model.tasks)
 
         for batch in tqdm.tqdm(dataset.batch_generator()):
             total_batches += 1

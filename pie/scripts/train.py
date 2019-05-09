@@ -32,6 +32,10 @@ def get_fname_infix(settings):
 
 
 def run(settings):
+    # read settings if input is path
+    if isinstance(settings, str):
+        settings = settings_from_file(settings)
+
     # seeding
     now = datetime.now()
     seed = now.hour * 10000 + now.minute * 100 + now.second
@@ -190,4 +194,4 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('config_path', nargs='?', default='config.json')
     args = parser.parse_args()
-    run(settings_from_file(args.config_path))
+    run(args.config_path)

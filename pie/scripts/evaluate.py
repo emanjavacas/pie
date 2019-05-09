@@ -13,7 +13,6 @@ def run(model_path, test_path, train_path,
     model = BaseModel.load(model_path).to(device)
     if model_info:
         print(model)
-
     if hasattr(model, '_settings'):  # new models should all have _settings
         settings = model._settings
     elif settings:
@@ -27,6 +26,7 @@ def run(model_path, test_path, train_path,
     settings.batch_size = batch_size
     settings.buffer_size = buffer_size
     settings.device = device
+    settings.shuffle = False    # avoid shuffling
 
     trainset = None
     if train_path:
