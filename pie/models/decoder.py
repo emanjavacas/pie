@@ -54,7 +54,9 @@ class LinearDecoder(nn.Module):
     label_encoder : LabelEncoder
     in_features : int, input dimension
     """
-    def __init__(self, label_encoder, in_features, highway_layers=0, highway_act='relu'):
+    def __init__(self, label_encoder, in_features, dropout=0.0,
+                 cond_label_encoders=(), cond_emb_dim=64, cond_out_dim=64,
+                 highway_layers=0, highway_act='relu'):
         self.label_encoder = label_encoder
         super().__init__()
 
@@ -66,17 +68,25 @@ class LinearDecoder(nn.Module):
         self.highway = None
         if highway_layers > 0:
             self.highway = Highway(in_features, highway_layers, highway_act)
+        # conds
+        self.conds = {}
+        if cond_label_encoders:
+            self.conds = ConditionEmbedding(
+                cond_label_encoders, cond_emb_dim, cond_out_dim, dropout=dropout)
         # decoder output
-        self.decoder = nn.Linear(in_features, len(label_encoder))
+        self.decoder = nn.Linear(
+            in_features + bool(self.conds) * cond_out_dim, len(label_encoder))
         self.init()
 
     def init(self):
         # linear
         initialization.init_linear(self.decoder)
 
-    def forward(self, enc_outs):
+    def forward(self, enc_outs, **conds):
         if self.highway is not None:
             enc_outs = self.highway(enc_outs)
+        if self.conds:
+            enc_outs = torch.cat([enc_outs, self.conds(**conds)], -1)
         linear_out = self.decoder(enc_outs)
 
         return linear_out
@@ -89,18 +99,19 @@ class LinearDecoder(nn.Module):
 
         return loss
 
-    def predict(self, enc_outs, lengths):
+    def predict(self, enc_outs, lengths, **conds):
         """
         Parameters
         ==========
         enc_outs : torch.tensor(seq_len x batch x hidden_size)
         """
-        probs = F.softmax(self.decoder(enc_outs), dim=-1)
+        probs = F.softmax(self(enc_outs, **conds), dim=-1)
         probs, preds = torch.max(probs.transpose(0, 1), dim=-1)
 
         output_probs, output_preds = [], []
         for idx, length in enumerate(lengths.tolist()):
-            output_preds.append(self.label_encoder.inverse_transform(preds[idx])[:length])
+            output_preds.append(
+                self.label_encoder.inverse_transform(preds[idx])[:length])
             output_probs.append(probs[idx].tolist())
 
         return output_preds, output_probs
@@ -254,9 +265,16 @@ class AttentionalDecoder(nn.Module):
     hidden_size : int, hidden size of the encoder, decoder and attention modules.
     context_dim : int (optional), dimensionality of additional context vectors
     """
-    def __init__(self, label_encoder, in_dim, hidden_size, scorer='general',
-                 context_dim=0, dropout=0.0, num_layers=1, cell='LSTM',
-                 init_rnn='default'):
+    def __init__(self, label_encoder, in_dim, hidden_size, dropout=0.0,
+                 # rnn
+                 num_layers=1, cell='LSTM', init_rnn='default',
+                 # attention
+                 scorer='general',
+                 # sentence context
+                 context_dim=0,
+                 # conditions
+                 cond_label_encoders=(), cond_emb_dim=64, cond_out_dim=64):
+
         self.label_encoder = label_encoder
         self.context_dim = context_dim
         self.num_layers = num_layers
@@ -267,13 +285,22 @@ class AttentionalDecoder(nn.Module):
         if label_encoder.get_eos() is None or label_encoder.get_bos() is None:
             raise ValueError("AttentionalDecoder needs <eos> and <bos>")
 
+        # nll weight
         nll_weight = torch.ones(len(label_encoder))
         nll_weight[label_encoder.get_pad()] = 0.
         self.register_buffer('nll_weight', nll_weight)
+        # emb
         self.embs = nn.Embedding(len(label_encoder), in_dim)
-        self.rnn = getattr(nn, cell)(in_dim + context_dim, hidden_size,
-                                     num_layers=num_layers,
-                                     dropout=dropout if num_layers > 1 else 0)
+        # conds
+        self.conds = {}
+        if cond_label_encoders:
+            self.conds = ConditionEmbedding(
+                cond_label_encoders, cond_emb_dim, cond_out_dim, dropout=dropout)
+        # rnn
+        self.rnn = getattr(nn, cell)(
+            in_dim + context_dim + bool(self.conds) * cond_out_dim, hidden_size,
+            num_layers=num_layers,
+            dropout=dropout if num_layers > 1 else 0)
         self.attn = Attention(hidden_size)
         self.proj = nn.Linear(hidden_size, len(label_encoder))
 
@@ -287,13 +314,21 @@ class AttentionalDecoder(nn.Module):
         # linear
         initialization.init_linear(self.proj)
 
-    def forward(self, targets, lengths, enc_outs, src_lengths, context=None):
+    def forward(self, targets, lengths, enc_outs, src_lengths, context=None, **conds):
         """
         Decoding routine for training. Returns the logits corresponding to
         the targets for the `loss` method. Takes care of padding.
         """
         targets, lengths = targets[:-1], lengths - 1
         embs = self.embs(targets)
+
+        if self.conds:
+            # each cond should be (batch) already flattened
+            # (seq_len x batch x emb_dim) + (batch x cond_dim)
+            embs = torch.cat(
+                [embs,
+                 self.conds(**conds).unsqueeze(0).repeat(embs.size(0), 1, 1)],
+                dim=2)
 
         if self.context_dim > 0:
             if context is None:
@@ -333,8 +368,9 @@ class AttentionalDecoder(nn.Module):
 
         return loss
 
-    def predict_max(self, enc_outs, lengths, context=None, max_seq_len=20,
-                    bos=None, eos=None):
+    def predict_max(self, enc_outs, lengths,
+                    max_seq_len=20, bos=None, eos=None,
+                    context=None, **conds):
         """
         Decoding routine for inference with step-wise argmax procedure
 
@@ -342,12 +378,14 @@ class AttentionalDecoder(nn.Module):
         ===========
         enc_outs : tensor(src_seq_len x batch x hidden_size)
         context : tensor(batch x hidden_size), optional
+        conds : {cond : tensor(batch)}, optional
         """
         eos = eos or self.label_encoder.get_eos()
         bos = bos or self.label_encoder.get_bos()
         hidden, batch, device = None, enc_outs.size(1), enc_outs.device
         mask = torch.ones(batch, dtype=torch.int64, device=device)
         inp = torch.zeros(batch, dtype=torch.int64, device=device) + bos
+        conds = self.conds(**conds) if self.conds else None
         hyps, scores = [], 0
 
         for _ in range(max_seq_len):
@@ -356,6 +394,8 @@ class AttentionalDecoder(nn.Module):
 
             # prepare input
             emb = self.embs(inp)
+            if conds is not None:
+                emb = torch.cat([emb, conds], dim=1)
             if context is not None:
                 emb = torch.cat([emb, context], dim=1)
             # run rnn
@@ -378,8 +418,9 @@ class AttentionalDecoder(nn.Module):
 
         return hyps, scores
 
-    def predict_beam(self, enc_outs, lengths, context=None, max_seq_len=50, width=12,
-                     eos=None, bos=None):
+    def predict_beam(self, enc_outs, lengths,
+                     max_seq_len=50, width=12, eos=None, bos=None,
+                     context=None, **conds):
         """
         Decoding routine for inference with beam search
 
@@ -387,6 +428,7 @@ class AttentionalDecoder(nn.Module):
         ===========
         enc_outs : tensor(src_seq_len x batch x hidden_size)
         context : tensor(batch x hidden_size), optional
+        conds : {cond : tensor(batch)}, optional
         """
         eos = eos or self.label_encoder.get_eos()
         bos = bos or self.label_encoder.get_bos()
@@ -401,6 +443,8 @@ class AttentionalDecoder(nn.Module):
         if context is not None:
             # (beam * batch x context_dim)
             context = context.repeat(width, 1)
+        if self.conds:
+            conds = self.conds(**conds).repeat(width, 1)
 
         for _ in range(max_seq_len):
             if all(not beam.active for beam in beams):
@@ -411,6 +455,8 @@ class AttentionalDecoder(nn.Module):
             inp = inp.view(-1)
             # (beam * batch x emb_dim)
             emb = self.embs(inp)
+            if conds is not None:
+                emb = torch.cat([emb, conds], dim=1)
             if context is not None:
                 # (beam * batch x emb_dim + context_dim)
                 emb = torch.cat([emb, context], dim=1)

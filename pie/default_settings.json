@@ -46,6 +46,7 @@
       "decoder": "attentional", // type of the decoder (linear, attentional, crf)
       "context": "none", // (only for char-level) add sentential context
       // (none, word, sentence, both)
+      "conditions": [], // name of other tasks that this task will be conditioned on
       "layer": -1, // define at what sentence encoder layer we do this task
       "settings": {
 	// encoder settings ("max_size", "min_freq", "preprocessor", "eos", "bos")
@@ -133,6 +134,8 @@
   "merge_type": "concat", // how to merge word-level and char-level embs (mixer or concat)
   "scorer": "general", // attention type (one of "general", "dot" and "bahdanau")
   "linear_layers": 1, // number of layers for linear decoders
+  "cond_emb_dim": 64, // embedding dimension of each conditioning tag embeddings
+  "cond_out_dim": 64, // output embedding dimension of resulting general tag embedding
   "hidden_size": 300, // sentence encoding dimension
   "num_layers": 1, // num recurrent layers for the sentence encoder
   "cell": "LSTM" // cell type for rnns

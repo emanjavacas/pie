@@ -71,7 +71,7 @@ class BaseModel(nn.Module):
             for (inp, tasks), (rinp, rtasks) in tqdm.tqdm(
                     dataset.batch_generator(return_raw=True)):
 
-                preds = self.predict(inp, **kwargs)
+                preds = self.predict(inp, conds=tasks, **kwargs)
 
                 # - get input tokens
                 tokens = [w for line in rinp for w in line]
