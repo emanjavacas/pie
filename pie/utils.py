@@ -13,6 +13,28 @@ import itertools
 from contextlib import contextmanager
 from subprocess import check_output, CalledProcessError
 
+import random
+import numpy
+import torch
+from datetime import datetime
+
+
+def set_random_seed(seed=None):
+    """
+    Pick random seed
+    """
+    if seed is None:
+        now = datetime.now()
+        seed = now.hour * 10000 + now.minute * 100 + now.second
+
+    random.seed(seed)
+    numpy.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+
+    return seed
+
 
 def window(it):
     """

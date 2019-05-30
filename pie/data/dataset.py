@@ -424,6 +424,25 @@ class MultiLabelEncoder(object):
         with tarfile.open(utils.ensure_ext(path, 'tar'), 'r') as tar:
             return cls.load_from_string(utils.get_gzip_from_tar(tar, 'label_encoder'))
 
+    def summary(self):
+        """Print a summary"""
+        print()
+        print("::: Vocabulary :::")
+        print()
+        types = '{}/{}={:.2f}'.format(*self.word.get_type_stats())
+        tokens = '{}/{}={:.2f}'.format(*self.word.get_token_stats())
+        print("- {:<15} types={:<10} tokens={:<10}".format("word", types, tokens))
+        types = '{}/{}={:.2f}'.format(*self.char.get_type_stats())
+        tokens = '{}/{}={:.2f}'.format(*self.char.get_token_stats())
+        print("- {:<15} types={:<10} tokens={:<10}".format("char", types, tokens))
+        print()
+        print("::: Tasks :::")
+        print()
+        for task, le in self.tasks.items():
+            print("- {:<15} target={:<6} level={:<6} vocab={:<6}"
+                  .format(task, le.target, le.level, len(le)))
+        print()
+
 
 class Dataset(object):
     """

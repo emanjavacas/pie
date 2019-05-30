@@ -3,8 +3,6 @@
 import time
 import os
 import logging
-from datetime import datetime
-
 
 import pie
 from pie import utils
@@ -14,33 +12,11 @@ from pie import initialization
 from pie.data import Dataset, Reader, MultiLabelEncoder
 from pie.models import SimpleModel, get_pretrained_embeddings
 
-import random
-import numpy
 import torch
 
 
-def get_targets(settings):
-    return [task['name'] for task in settings.tasks if task.get('target')]
-
-
-def get_fname_infix(settings):
-    # fname
-    fname = os.path.join(settings.modelpath, settings.modelname)
-    timestamp = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
-    infix = '+'.join(get_targets(settings)) + '-' + timestamp
-    return fname, infix
-
-
 def run(settings):
-    # seeding
-    now = datetime.now()
-    seed = now.hour * 10000 + now.minute * 100 + now.second
-    print("Using seed:", seed)
-    random.seed(seed)
-    numpy.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
+    seed = utils.set_random_seed()
 
     # datasets
     reader = Reader(settings, settings.input_path)
@@ -60,22 +36,7 @@ def run(settings):
     label_encoder.fit_reader(reader)
 
     if settings.verbose:
-        print()
-        print("::: Vocabulary :::")
-        print()
-        types = '{}/{}={:.2f}'.format(*label_encoder.word.get_type_stats())
-        tokens = '{}/{}={:.2f}'.format(*label_encoder.word.get_token_stats())
-        print("- {:<15} types={:<10} tokens={:<10}".format("word", types, tokens))
-        types = '{}/{}={:.2f}'.format(*label_encoder.char.get_type_stats())
-        tokens = '{}/{}={:.2f}'.format(*label_encoder.char.get_token_stats())
-        print("- {:<15} types={:<10} tokens={:<10}".format("char", types, tokens))
-        print()
-        print("::: Tasks :::")
-        print()
-        for task, le in label_encoder.tasks.items():
-            print("- {:<15} target={:<6} level={:<6} vocab={:<6}"
-                  .format(task, le.target, le.level, len(le)))
-        print()
+        label_encoder.summary()
 
     trainset = Dataset(settings, reader, label_encoder)
 
@@ -159,7 +120,7 @@ def run(settings):
             task.print_summary()
 
     # save model
-    fpath, infix = get_fname_infix(settings)
+    fpath, infix = settings.get_fname_infix()
     if not settings.run_test:
         fpath = model.save(fpath, infix=infix, settings=settings)
         print("Saved best model to: [{}]".format(fpath))
@@ -176,7 +137,7 @@ def run(settings):
                 scores.append('{}-{}-support:{}'.format(
                     acc, task, result[acc]['support']))
         path = '{}.results.{}.csv'.format(
-            settings.modelname, '-'.join(get_targets(settings)))
+            settings.modelname, '-'.join(settings.get_targets()))
         with open(path, 'a') as f:
             line = [infix, str(seed), str(running_time)]
             line += scores

@@ -2,6 +2,7 @@
 import os
 import yaml
 import json
+from datetime import datetime
 from json_minify import json_minify
 
 from pie import utils
@@ -10,9 +11,9 @@ from pie import utils
 DEFAULTPATH = os.sep.join([os.path.dirname(__file__), 'default_settings.json'])
 
 
-class Settings(dict):
+class SettingsDict(dict):
     def __init__(self, *args, **kwargs):
-        super(Settings, self).__init__(*args, **kwargs)
+        super(SettingsDict, self).__init__(*args, **kwargs)
         for arg in args:
             if isinstance(arg, dict):
                 for k, v in arg.items():
@@ -29,15 +30,30 @@ class Settings(dict):
         self.__setitem__(key, value)
 
     def __setitem__(self, key, value):
-        super(Settings, self).__setitem__(key, value)
+        super(SettingsDict, self).__setitem__(key, value)
         self.__dict__.update({key: value})
 
     def __delattr__(self, item):
         self.__delitem__(item)
 
     def __delitem__(self, key):
-        super(Settings, self).__delitem__(key)
+        super(SettingsDict, self).__delitem__(key)
         del self.__dict__[key]
+
+
+class Settings(SettingsDict):
+    """
+    Subclass to hold settings specific functions defined over default settings
+    """
+    def get_targets(self):
+        return [task['name'] for task in self.tasks if task.get('target')]
+
+    def get_fname_infix(self):
+        # fname
+        fname = os.path.join(self.modelpath, self.modelname)
+        timestamp = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
+        infix = '+'.join(self.get_targets()) + '-' + timestamp
+        return fname, infix
 
 
 def merge_task_defaults(settings):

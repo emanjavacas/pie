@@ -7,6 +7,7 @@ import unittest
 from pie.models import SimpleModel
 from pie.data import MultiLabelEncoder, Reader, Dataset
 from pie.settings import settings_from_file
+from pie import utils
 
 
 testpath = os.path.join(os.path.dirname(__file__), 'testconfig.json')
@@ -16,13 +17,14 @@ reader = Reader(settings, settings.input_path)
 label_encoder.fit_reader(reader)
 dataset = Dataset(settings, label_encoder, reader)
 
+EMB_DIM, HIDDEN_SIZE, NUM_LAYERS = 64, 100, 1
+
 
 class TestModelSerialization(unittest.TestCase):
     def setUp(self):
-        emb_dim, hidden_size, num_layers = 64, 100, 1
         self.model = SimpleModel(
             label_encoder, settings.tasks,
-            emb_dim, emb_dim, hidden_size, num_layers)
+            EMB_DIM, EMB_DIM, HIDDEN_SIZE, NUM_LAYERS)
 
     def test_serialization(self):
         model = self.model
@@ -39,3 +41,26 @@ class TestModelSerialization(unittest.TestCase):
                 self.assertTrue(m in m2)
                 for p1, p2 in zip(m1[m].parameters(), m2[m].parameters()):
                     self.assertTrue(torch.allclose(p1, p2))
+
+
+class TestSeed(unittest.TestCase):
+    def test_seed(self):
+        seed = utils.set_random_seed()
+        m1 = SimpleModel(
+            label_encoder, settings.tasks,
+            EMB_DIM, EMB_DIM, HIDDEN_SIZE, NUM_LAYERS)
+        utils.set_random_seed(seed)
+        m2 = SimpleModel(
+            label_encoder, settings.tasks,
+            EMB_DIM, EMB_DIM, HIDDEN_SIZE, NUM_LAYERS)
+
+        for p1, p2 in zip(m1.parameters(), m2.parameters()):
+            self.assertTrue(torch.allclose(p1, p2), "Check seeded initialization")
+
+        m3 = SimpleModel(
+            label_encoder, settings.tasks,
+            EMB_DIM, EMB_DIM, HIDDEN_SIZE, NUM_LAYERS)
+
+        for (pname, p1), (_, p2) in zip(m1.named_parameters(), m3.named_parameters()):
+            if 'rnn' in pname and 'bias' not in pname:
+                self.assertFalse(torch.allclose(p1, p2), "Check random initialization")
