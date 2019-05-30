@@ -1,4 +1,8 @@
 
+import json
+
+import tqdm
+
 from pie import utils
 from pie.data import Reader, MultiLabelEncoder, Dataset
 from pie.models import SimpleModel
@@ -7,19 +11,28 @@ from pie.tagger import Tagger
 from pie.settings import settings_from_file
 
 
-def tag_reader(tagger, reader, **kwargs):
-    for _, (inp, tasks) in reader.readsents():
-        tag, ttasks = tagger.tag([inp], [len(inp)], **kwargs)
-        tag_inp, tag_tasks = zip(*tag[0])
-        for idx, tok in enumerate(inp):
-            tag_tok, tag_tasks = tag[idx]
-            tag_tasks = {t: tag_tasks[tidx] for tidx, t in enumerate(ttasks)}
-            assert tok == tag_tok
-            output_tasks = []
-            for t in sorted(tasks):
-                output_tasks.append(tag_tasks[t] if t in tag_tasks else tasks[t][idx])
-            yield tok, output_tasks
-        yield None
+def tag_reader(tagger, reader, batch_size=50, **kwargs):
+    """
+    Use a model to overwrite a particular set of tasks of an input train file
+    with the output of a models trained for those particular tasks
+    """
+    sorted_tasks = sorted(reader.check_tasks())
+    total = reader.get_nsents() // batch_size
+    for sents in tqdm.tqdm(utils.chunks(reader.readsents(), batch_size), total=total):
+        _, sents = zip(*sents)  # discard sentence metadata
+        (sents, tasks) = zip(*sents)  # unwrap sentence data
+        tag, ttasks = tagger.tag(sents, **kwargs)
+        for sent, sent_tasks, tag_sent in zip(sents, tasks, tag):
+            assert len(sent) == len(tag_sent)
+            for idx, (tok, tag_tok) in enumerate(zip(sent, tag_sent)):
+                tag_tok, tag_tasks = tag_tok
+                assert tag_tok == tok
+                tag_tasks = dict(zip(ttasks, tag_tasks))
+                output = []
+                for t in sorted_tasks:
+                    output.append(tag_tasks[t] if t in tag_tasks else sent_tasks[t][idx])
+                yield tok, output
+            yield None
 
 
 def run(settings, jackknife_n=5, serialize=True):
@@ -36,8 +49,9 @@ def run(settings, jackknife_n=5, serialize=True):
 
     with open(utils.ensure_ext(fpath, 'jackknife.json', infix), 'w') as logf, \
             open(utils.ensure_ext(fpath, 'jackknife.tab', infix), 'w') as outf:
+
         # write target header
-        outf.write('\t'.join(sorted(reader.check_tasks())) + '\n')
+        outf.write('\t'.join(['token'] + sorted(reader.check_tasks())) + '\n')
 
         for split, (train, test) in enumerate(reader.jackknife(jackknife_n)):
             print("::: Starting split {}/{} :::\n".format(split + 1, jackknife_n))
@@ -61,11 +75,12 @@ def run(settings, jackknife_n=5, serialize=True):
             scores = trainer.train_epochs(settings.epochs, devset=devset)
 
             # store split performance
-            logf.write({'scores': scores, 'split': split + 1})
+            logf.write(json.dumps({'scores': scores, 'split': split + 1}) + '\n')
 
             # tag the split
-            model.eval()
-            for line in tag_reader(Tagger().add_model(model), test):
+            print("::: Tagging split {}/{} :::\n".format(split + 1, jackknife_n))
+            for line in tag_reader(
+                    Tagger().add_model(model), test, batch_size=settings.batch_size):
                 if line is not None:
                     tok, output_tasks = line
                     outf.write('\t'.join([tok, *output_tasks]) + '\n')
@@ -75,7 +90,7 @@ def run(settings, jackknife_n=5, serialize=True):
             # (maybe) store and free up mem
             model.to('cpu')
             if serialize:
-                model.save(fpath, infix + 'jackknife-{}'.format(split + 1), settings)
+                model.save(fpath, infix + '-jackknife-{}'.format(split + 1), settings)
 
     # train on full
     model.to(settings.device)
@@ -87,9 +102,9 @@ def run(settings, jackknife_n=5, serialize=True):
 
     # tag devset
     print("Tagging devset")
-    model.eval()
     with open(utils.ensure_ext(fpath, 'tab', 'jackknife-dev'), 'w') as outf:
-        for line in tag_reader(Tagger().add_model(model), devreader):
+        for line in tag_reader(
+                Tagger().add_model(model), devreader, batch_size=settings.batch_size):
             if line is not None:
                 tok, output_tasks = line
                 outf.write('\t'.join([tok, *output_tasks]) + '\n')

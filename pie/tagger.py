@@ -57,15 +57,20 @@ class Tagger():
 
         return self
 
-    def tag(self, sents, lengths, **kwargs):
+    def tag(self, sents, lengths=None, **kwargs):
         # add dummy input tasks (None)
         batch = list(zip(sents, itertools.repeat(None)))
+        # get lengths
+        if lengths is None:
+            lengths = [len(sent) for sent in sents]
         # [token1, token2, ...]
         tokens = [token for sent in sents for token in sent]
         # output
         output = {}
+
         for model, tasks in self.models:
             model.to(self.device)
+            model.eval()
             inp, _ = pack_batch(model.label_encoder, batch, self.device)
 
             # inference
