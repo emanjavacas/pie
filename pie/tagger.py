@@ -24,39 +24,38 @@ FULLSTOP = r'([^\.]+\.)'
 WORD = r'([{}])'.format(string.punctuation)
 
 
-def simple_tokenizer(text, lower):
+def simple_tokenizer(text):
     section, fullstop = regexsplitter(SECTION), regexsplitter(FULLSTOP)
     word = regexsplitter(WORD)
     for line in section(text):
         for sentence in fullstop(line):
-            sentence = [w for raw in sentence.split() for w in word(raw)]
-            if lower:
-                sentence = [w.lower() for w in sentence]
-            yield sentence
+            yield [w for raw in sentence.split() for w in word(raw)]
 
 
-def lines_from_file(fpath, lower=False):
+def lines_from_file(fpath):
     with open(fpath) as f:
         for line in f:
-            for sentence in simple_tokenizer(line, lower):
+            for sentence in simple_tokenizer(line):
                 yield sentence, len(sentence)
 
 
 class Tagger():
-    def __init__(self, device='cpu', batch_size=100, lower=False):
+    def __init__(self, device='cpu', batch_size=100):
         self.device = device
         self.batch_size = batch_size
-        self.lower = lower
         self.models = []
 
-    def add_model(self, model_path, *tasks):
-        model = BaseModel.load(model_path)
+    def add_model(self, model, *tasks):
+        if isinstance(model, str):
+            model = BaseModel.load(model)
+
         for task in tasks:
             if task not in model.label_encoder.tasks:
-                raise ValueError("Model [{}] doesn't have task: {}".format(
-                    model_path, task))
+                raise ValueError("Model [{}] doesn't have task: {}".format(model, task))
 
         self.models.append((model, tasks))
+
+        return self
 
     def tag(self, sents, lengths, **kwargs):
         # add dummy input tasks (None)
@@ -81,8 +80,9 @@ class Tagger():
                     post = []
                     assert len(tokens) == len(preds[task])
                     for tok, hyp in zip(tokens, preds[task]):
-                        pred = model.label_encoder.tasks[task].preprocessor_fn \
-                               .inverse_transform(hyp, tok)
+                        pred = model.label_encoder.tasks[task] \
+                                                  .preprocessor_fn \
+                                                  .inverse_transform(hyp, tok)
                         post.append(pred)
                     preds[task] = post
                 # append
@@ -105,14 +105,20 @@ class Tagger():
 
         return tagged, tasks
 
+    def tag_reader(self, reader, **kwargs):
+        sents, lengths = [], []
+        for _, (sent, tasks) in reader.readsents():
+            sents.append(sent)
+            lengths.append(len(sent))
+
+        return self.tag(sents, lengths, **kwargs)
+
     def tag_file(self, fpath, sep='\t', **kwargs):
         _, ext = os.path.splitext(fpath)
         header = False
 
         with open(utils.ensure_ext(fpath, ext, 'pie'), 'w+') as f:
-
-            for chunk in utils.chunks(
-                    lines_from_file(fpath, self.lower), self.batch_size):
+            for chunk in utils.chunks(lines_from_file(fpath), self.batch_size):
                 sents, lengths = zip(*chunk)
                 tagged, tasks = self.tag(sents, lengths, **kwargs)
 

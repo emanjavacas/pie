@@ -7,5 +7,6 @@
   "batch_size": 10,
   "breakline_ref": "pos",
   "breakline_data": "$.",
+  "shuffle": true,
   "word_vocabsize": 100000 // needed for testing, otherwise we get UNKs
 }

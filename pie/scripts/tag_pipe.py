@@ -5,9 +5,9 @@ from pie import utils
 from pie.tagger import Tagger, simple_tokenizer
 
 
-def run(model_spec, device, batch_size, lower, beam_width, use_beam, tokenize):
+def run(model_spec, device, batch_size, beam_width, use_beam, tokenize):
     with utils.shutup():
-        tagger = Tagger(device=device, batch_size=batch_size, lower=lower)
+        tagger = Tagger(device=device, batch_size=batch_size)
 
         for model, tasks in model_spec:
             tagger.add_model(model, *tasks)
@@ -19,7 +19,7 @@ def run(model_spec, device, batch_size, lower, beam_width, use_beam, tokenize):
             continue
 
         if tokenize:
-            line = simple_tokenizer(line, lower)
+            line = simple_tokenizer(line)
         else:
             line = line.split()
 
@@ -44,10 +44,8 @@ if __name__ == '__main__':
     parser.add_argument('--use_beam', action='store_true')
     parser.add_argument('--batch_size', type=int, default=50)
     parser.add_argument('--beam_width', default=10, type=int)
-    parser.add_argument('--lower', action='store_true')
     parser.add_argument('--tokenize', action='store_true')
     args = parser.parse_args()
     run(model_spec=args.model_spec, device=args.device,
-        batch_size=args.batch_size,
-        lower=args.lower, beam_width=args.beam_width,
+        batch_size=args.batch_size, beam_width=args.beam_width,
         use_beam=args.use_beam, tokenize=args.tokenize)

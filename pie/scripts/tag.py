@@ -4,8 +4,8 @@ from pie import utils
 from pie.tagger import Tagger
 
 
-def run(model_spec, input_path, device, batch_size, lower, beam_width, use_beam):
-    tagger = Tagger(device=device, batch_size=batch_size, lower=lower)
+def run(model_spec, input_path, device, batch_size, beam_width, use_beam):
+    tagger = Tagger(device=device, batch_size=batch_size)
 
     for model, tasks in model_spec:
         tagger.add_model(model, *tasks)
@@ -27,9 +27,8 @@ if __name__ == '__main__':
     parser.add_argument('--device', default='cpu')
     parser.add_argument('--use_beam', action='store_true')
     parser.add_argument('--beam_width', default=10, type=int)
-    parser.add_argument('--lower', action='store_true')
     args = parser.parse_args()
 
     run(model_spec=args.model_spec, input_path=args.input_path,
         device=args.device, batch_size=args.batch_size,
-        lower=args.lower, beam_width=args.beam_width, use_beam=args.use_beam)
+        beam_width=args.beam_width, use_beam=args.use_beam)
