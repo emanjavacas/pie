@@ -35,11 +35,12 @@ def run(settings, jackknife_n=5, serialize=True):
     fpath, infix = settings.get_fname_infix()
 
     with open(utils.ensure_ext(fpath, 'jackknife.json', infix), 'w') as logf, \
-            open(utils.ensure_ext(fpath, 'tab', '-jackknife-train'), 'w') as outf:
+            open(utils.ensure_ext(fpath, 'jackknife.tab', infix), 'w') as outf:
         # write target header
         outf.write('\t'.join(sorted(reader.check_tasks())) + '\n')
 
         for split, (train, test) in enumerate(reader.jackknife(jackknife_n)):
+            print("::: Starting split {}/{} :::\n".format(split + 1, jackknife_n))
             # model
             model = SimpleModel(
                 label_encoder, settings.tasks,
@@ -74,7 +75,7 @@ def run(settings, jackknife_n=5, serialize=True):
             # (maybe) store and free up mem
             model.to('cpu')
             if serialize:
-                model.save(fpath, infix + '-jackknife-{}'.format(split + 1), settings)
+                model.save(fpath, infix + 'jackknife-{}'.format(split + 1), settings)
 
     # train on full
     model.to(settings.device)
@@ -87,7 +88,7 @@ def run(settings, jackknife_n=5, serialize=True):
     # tag devset
     print("Tagging devset")
     model.eval()
-    with open(utils.ensure_ext(fpath, 'tab', '-jackknife-dev'), 'w') as outf:
+    with open(utils.ensure_ext(fpath, 'tab', 'jackknife-dev'), 'w') as outf:
         for line in tag_reader(Tagger().add_model(model), devreader):
             if line is not None:
                 tok, output_tasks = line
@@ -100,6 +101,6 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('config_path')
-    parser.add_argument('jackknife_n', type=int, default=5)
+    parser.add_argument('--jackknife_n', type=int, default=5)
     args = parser.parse_args()
     run(settings_from_file(args.config_path), jackknife_n=args.jackknife_n)
