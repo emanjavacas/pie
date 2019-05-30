@@ -1,7 +1,9 @@
 
-import click
 # Can be run with python -m pie.scripts.group
 import pie.utils
+import pie.settings
+
+import click
 
 
 @click.group()
@@ -83,7 +85,20 @@ def evaluate(model_path, test_path, train_path, settings, batch_size,
 def train(config_path):
     """ Train a model using the file at [CONFIG_PATH]"""
     import pie.scripts.train
-    pie.scripts.train.run(config_path=config_path)
+    pie.scripts.train.run(pie.settings.settings_from_file(config_path))
+
+
+@pie_cli.command("optimize")
+@click.argument('config_path')
+@click.argument('opt_path')
+@click.argument('n_iter', default=20, type=int)
+def train(config_path, opt_path, n_iter):
+    """ Train a model using the file at [CONFIG_PATH]"""
+    import pie.scripts.opt
+    pie.scripts.opt.run(
+        pie.settings.settings_from_file(config_path),
+        pie.scripts.opt.read_opt(opt_path),
+        n_iter)
 
 
 if __name__ == "__main__":
