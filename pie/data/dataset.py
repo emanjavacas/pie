@@ -263,7 +263,6 @@ class MultiLabelEncoder(object):
         self.char = LabelEncoder(max_size=char_max_size, min_freq=char_min_freq,
                                  name='char', level='char', eos=char_eos, bos=char_bos)
         self.tasks = {}
-        self.nsents = None
 
     def __repr__(self):
         return (
@@ -289,7 +288,10 @@ class MultiLabelEncoder(object):
         # check <eos> <bos> (not suitable for linear models)
         if meta['level'].lower() != 'char' and (meta.get('eos') or meta.get('bos')):
             raise ValueError(
-                '[Task: {task}] => `bos` and `eos` options are only compatible with char-level tasks but got level: "{level}". Aborting!!!'.format(task=name, level=meta['level']))
+                (
+                    '[Task: {task}] => `bos` and `eos` options are only compatible'
+                    ' with char-level tasks but got level: "{level}"'
+                ).format(task=name, level=meta['level']))
 
         return self
 
@@ -332,6 +334,8 @@ class MultiLabelEncoder(object):
         self.char.compute_vocab()
         for le in self.tasks.values():
             le.compute_vocab()
+
+        return self
 
     def fit_reader(self, reader):
         """

@@ -38,7 +38,7 @@ class choice:
 
 def parse_opt(obj, opt_key):
     """
-    Parses the opt file into a (possibly deep) dictionary where the leaves are 
+    Parses the opt file into a (possibly deep) dictionary where the leaves are
     ready-to-use distributions
     """
     opt = {}
