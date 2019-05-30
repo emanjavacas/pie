@@ -147,6 +147,7 @@ def tmpfile(parent='/tmp/'):
 
 
 def add_weights_to_tar(state_dict, path, tar):
+    import torch
     f = io.BytesIO()
     torch.save(state_dict, f)
     tinf = tarfile.TarInfo(name=path)

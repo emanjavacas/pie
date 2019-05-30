@@ -7,31 +7,7 @@ from pie import torch_utils
 from pie import initialization
 
 from .lstm import CustomBiLSTM
-
-
-class Highway(torch.nn.Module):
-    def __init__(self, input_dim, num_layers=1, activation=torch.nn.functional.relu):
-        super(Highway, self).__init__()
-
-        self.layers = torch.nn.ModuleList(
-            [torch.nn.Linear(input_dim, input_dim * 2) for _ in range(num_layers)])
-        self.activation = activation
-
-        for layer in self.layers:
-            layer.bias[input_dim:].data.fill_(1)
-
-    def forward(self, inputs):
-        current_input = inputs
-
-        for layer in self.layers:
-            projected_input = layer(current_input)
-            linear_part = current_input
-            nonlinear_part, gate = projected_input.chunk(2, dim=-1)
-            nonlinear_part = self.activation(nonlinear_part)
-            gate = torch.sigmoid(gate)
-            current_input = gate * linear_part + (1 - gate) * nonlinear_part
-
-        return current_input
+from .highway import Highway
 
 
 class CNNEmbedding(nn.Module):

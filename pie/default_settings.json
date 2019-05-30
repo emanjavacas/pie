@@ -46,6 +46,7 @@
       "decoder": "attentional", // type of the decoder (linear, attentional, crf)
       "context": "none", // (only for char-level) add sentential context
       // (none, word, sentence, both)
+      "conditions": [], // name of other tasks that this task will be conditioned on
       "layer": -1, // define at what sentence encoder layer we do this task
       "settings": {
 	// encoder settings ("max_size", "min_freq", "preprocessor", "eos", "bos")
@@ -69,16 +70,20 @@
 	"patience": 2, "threshold": 0.001
       },
 
-      "default": "copy" // while processing the files if the field is missing predict
+      "default": "copy", // while processing the files if the field is missing predict
       // the input token or something else:
       // - "copy" for copy over the token form
       // - "UNK" predict "UNK"
+      "read_only": false // encode task but don't model it
     }
   ],
 
   // task defaults for any given auxiliary task (can be overwritten by a task definition)
   "task_defaults": {
-    "level": "token", "layer": -1, "decoder": "linear", "context": "sentence"
+    "level": "token",
+    "layer": -1,
+    "decoder": "linear",
+    "context": "sentence"
   },
 
   // general task schedule params (can be overwritten in the "settings" entry of each)
@@ -98,7 +103,7 @@
   // * Training
   "buffer_size": 10000, // maximum number of sentence in memory at any given time
   "minimize_pad": false, // preprocess data to have similar sentence lengths inside batch
-  "epochs": 5, // number of epochs
+  "epochs": 500, // number of epochs
   "batch_size": 50, // batch size
   "shuffle": true, // whether to shuffle input batches
   "device": "cpu", // device to be used for training (use cuda:device_number for GPU)
@@ -129,6 +134,8 @@
   "merge_type": "concat", // how to merge word-level and char-level embs (mixer or concat)
   "scorer": "general", // attention type (one of "general", "dot" and "bahdanau")
   "linear_layers": 1, // number of layers for linear decoders
+  "cond_emb_dim": 64, // embedding dimension of each conditioning tag embeddings
+  "cond_out_dim": 64, // output embedding dimension of resulting general tag embedding
   "hidden_size": 300, // sentence encoding dimension
   "num_layers": 1, // num recurrent layers for the sentence encoder
   "cell": "LSTM" // cell type for rnns

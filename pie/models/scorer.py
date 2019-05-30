@@ -10,9 +10,9 @@ from pie import utils
 from pie import constants
 
 
-def get_ambiguous_tokens(trainset, label_encoder):
+def get_ambiguous_tokens(reader, label_encoder):
     ambs = defaultdict(Counter)
-    for _, (inp, tasks) in trainset.reader.readsents():
+    for _, (inp, tasks) in reader.readsents():
         trues = label_encoder.preprocess(tasks[label_encoder.target], inp)
         for tok, true in zip(inp, trues):
             ambs[tok][true] += 1
@@ -20,9 +20,9 @@ def get_ambiguous_tokens(trainset, label_encoder):
     return set(tok for tok in ambs if len(ambs[tok]) > 1)
 
 
-def get_known_tokens(trainset):
+def get_known_tokens(reader):
     known = set()
-    for _, (inp, _) in trainset.reader.readsents():
+    for _, (inp, _) in reader.readsents():
         for tok in inp:
             known.add(tok)
     return known
@@ -49,8 +49,8 @@ class Scorer(object):
         self.label_encoder = label_encoder
         self.known_tokens = self.amb_tokens = None
         if trainset:
-            self.known_tokens = get_known_tokens(trainset)
-            self.amb_tokens = get_ambiguous_tokens(trainset, label_encoder)
+            self.known_tokens = get_known_tokens(trainset.reader)
+            self.amb_tokens = get_ambiguous_tokens(trainset.reader, label_encoder)
         self.preds = []
         self.trues = []
         self.tokens = []
