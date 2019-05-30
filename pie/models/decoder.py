@@ -17,7 +17,7 @@ class ConditionEmbedding(nn.Module):
     """
     Embed tags and project onto a fixed-size tag embedding
     """
-    def __init__(self, label_encoders, emb_dim, out_features, dropout=0):
+    def __init__(self, label_encoders, emb_dim, out_features, dropout=0.0):
         self.dropout = dropout
         super().__init__()
 
@@ -443,8 +443,7 @@ class AttentionalDecoder(nn.Module):
         if context is not None:
             # (beam * batch x context_dim)
             context = context.repeat(width, 1)
-        if self.conds:
-            conds = self.conds(**conds).repeat(width, 1)
+        conds = self.conds(**conds).repeat(width, 1) if self.conds else None
 
         for _ in range(max_seq_len):
             if all(not beam.active for beam in beams):

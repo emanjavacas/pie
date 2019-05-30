@@ -62,12 +62,12 @@ class TaskScheduler(object):
             tasks[task['name']]['target'] = task.get('target', False)
             # add task data for lm loss
             if settings.include_lm:
-                tasks['lm_fwd'] = settings.lm_schedule
-                tasks['lm_bwd'] = settings.lm_schedule
+                tasks['lm_fwd'] = dict(settings.lm_schedule)
+                tasks['lm_bwd'] = dict(settings.lm_schedule)
 
         for task, tdata in tasks.items():
             # set step counter
-            tdata['step'] = 0
+            tdata['steps'] = 0
             # set default task mode
             tdata['mode'] = tdata.get('mode', 'max')
             # set initial weight
@@ -212,6 +212,7 @@ class Trainer(object):
             print(self.task_scheduler)
             print()
             print("::: LR schedule :::")
+            print()
             print(self.lr_scheduler)
             print()
 

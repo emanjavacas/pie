@@ -332,6 +332,8 @@ class MultiLabelEncoder(object):
         for le in self.tasks.values():
             le.compute_vocab()
 
+        return self
+
     def fit_reader(self, reader):
         """
         fit reader in a non verbose way (to warn about parsing issues)
