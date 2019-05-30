@@ -85,11 +85,11 @@ class TabReader(BaseReader):
     max_sent_len : int, break lines to this length if they'd become longer
     tasks[task].default : str, method to use to fill in missing values
     """
-    def __init__(self, settings, fpath, line_parser=LineParser):
+    def __init__(self, settings, fpath, line_parser=LineParser, **kwargs):
         self.header = settings.header  # needed for get_tasks
         self.tasks_order = settings.tasks_order
         self.sep = settings.sep
-        super(TabReader, self).__init__(settings, fpath)
+        super(TabReader, self).__init__(settings, fpath, **kwargs)
         self.line_parser = line_parser
         self.breakline_ref = settings.breakline_ref
         self.breakline_data = settings.breakline_data

@@ -16,6 +16,7 @@ class BaseReader(object):
     Abstract reader class
     """
     def __init__(self, settings, fpath):
+        self.include = self.exclude = None
         self.fpath = fpath
         self.tasks = tuple(self.get_tasks())
         self.tasks_defaults = {task['name']: task.get("default")
@@ -33,7 +34,7 @@ class BaseReader(object):
 
         raise MissingDefaultException(task)
 
-    def readsents(self, silent=True, only_tokens=False):
+    def readsents_(self, silent=True, only_tokens=False):
         """
         Generator over dataset sentences. Each output is a tuple of (Input, Tasks)
         objects with, where each entry is a list of strings.
@@ -60,6 +61,29 @@ class BaseReader(object):
 
             except StopIteration:
                 break
+
+    def readsents(self, **kwargs):
+        if self.include is None and self.exclude is None:
+            yield from self.readsents_(**kwargs)
+
+        elif self.include is None:
+            start, end = self.exclude
+            for idx, data in enumerate(self.readsents_(**kwargs)):
+                if idx >= start and idx < end:
+                    continue
+                yield data
+
+        else:
+            start, end = self.include
+            for idx, data in enumerate(self.readsents_(**kwargs)):
+                if idx >= start and idx < end:
+                    yield data
+
+    def set_include(self, start, end):
+        self.include = start, end
+
+    def set_exclude(self, start, end):
+        self.exclude = start, end
 
     def check_tasks(self, expected=None):
         """

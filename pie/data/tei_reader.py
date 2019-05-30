@@ -26,8 +26,8 @@ class TEIReader(BaseReader):
     """
     TEI reader for BaB files
     """
-    def __init__(self, settings, fpath):
-        super(TEIReader, self).__init__(settings, fpath)
+    def __init__(self, settings, fpath, **kwargs):
+        super(TEIReader, self).__init__(settings, fpath, **kwargs)
 
         self.max_sent_len = settings.max_sent_len
 

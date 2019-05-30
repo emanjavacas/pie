@@ -1,5 +1,6 @@
 
-import os
+import math
+import copy
 import random
 
 from pie.utils import get_filenames
@@ -113,6 +114,24 @@ class Reader(object):
         Get an iterator over sentences of plain tokens
         """
         return TokenIterator(self)
+
+    def jackknife(self, n):
+        """
+        Get subreaders over `n` folds
+        """
+        if len(self.readers) > 1:
+            raise ValueError("Jackknife only works on single-file readers")
+
+        total = self.get_nsents()
+        prop = math.ceil(total / n)
+        for start in range(0, total, prop):
+            end = min(total, start + prop)
+            train, test = copy.deepcopy(self), copy.deepcopy(self)
+            train.readers[0].set_exclude(start, end)
+            test.readers[0].set_include(start, end)
+            test.shuffle = False
+
+            yield train, test
 
 
 class TokenIterator():

@@ -81,8 +81,8 @@ class CONLLReader(BaseReader):
 
     LINE_NUM	FORM	LEMMA	POS	PPOS	MORPH	HEAD	DEP	_	_
     """
-    def __init__(self, settings, fpath):
-        super(CONLLReader, self).__init__(settings, fpath)
+    def __init__(self, settings, fpath, **kwargs):
+        super(CONLLReader, self).__init__(settings, fpath, **kwargs)
         self.max_sent_len = settings.max_sent_len
 
     def _parse_morph(self, morph):
