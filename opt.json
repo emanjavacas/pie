@@ -29,8 +29,8 @@
       "name": "pos",
       "target": true,
       "decoder": {
-	"opt": "choice",
-	"params": ["linear", "crf"]
+    	"opt": "choice",
+    	"params": ["linear", "crf"]
       }
     },
     {

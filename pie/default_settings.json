@@ -103,7 +103,7 @@
   // * Training
   "buffer_size": 10000, // maximum number of sentence in memory at any given time
   "minimize_pad": false, // preprocess data to have similar sentence lengths inside batch
-  "epochs": 5, // number of epochs
+  "epochs": 500, // number of epochs
   "batch_size": 50, // batch size
   "shuffle": true, // whether to shuffle input batches
   "device": "cpu", // device to be used for training (use cuda:device_number for GPU)

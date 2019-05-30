@@ -289,7 +289,10 @@ class MultiLabelEncoder(object):
         # check <eos> <bos> (not suitable for linear models)
         if meta['level'].lower() != 'char' and (meta.get('eos') or meta.get('bos')):
             raise ValueError(
-                '[Task: {task}] => `bos` and `eos` options are only compatible with char-level tasks but got level: "{level}". Aborting!!!'.format(task=name, level=meta['level']))
+                ('[Task: {task}] => `bos` and `eos` options are '
+                'only compatible with char-level tasks but got '
+                'level: "{level}". Aborting!!!').format(
+                    task=name, level=meta['level']))
 
         return self
 
