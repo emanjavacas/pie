@@ -48,7 +48,7 @@ def run(settings, jackknife_n=5, serialize=True):
     fpath, infix = settings.get_fname_infix()
 
     with open(utils.ensure_ext(fpath, 'jackknife.json', infix), 'w') as logf, \
-            open(utils.ensure_ext(fpath, 'jackknife.tab', infix), 'w') as outf:
+            open(utils.ensure_ext(fpath, 'jackknife-train.tab', infix), 'w') as outf:
 
         # write target header
         outf.write('\t'.join(['token'] + sorted(reader.check_tasks())) + '\n')
@@ -93,6 +93,7 @@ def run(settings, jackknife_n=5, serialize=True):
                 model.save(fpath, infix + '-jackknife-{}'.format(split + 1), settings)
 
     # train on full
+    model.train()
     model.to(settings.device)
     trainset = Dataset(settings, reader, label_encoder)
     scores = Trainer(settings, model, trainset, reader.get_nsents()).train_epochs(
@@ -102,7 +103,8 @@ def run(settings, jackknife_n=5, serialize=True):
 
     # tag devset
     print("Tagging devset")
-    with open(utils.ensure_ext(fpath, 'tab', 'jackknife-dev'), 'w') as outf:
+    with open(utils.ensure_ext(fpath, 'jackknife-dev.tab', infix), 'w') as outf:
+        outf.write('\t'.join(['token'] + sorted(reader.check_tasks())) + '\n')
         for line in tag_reader(
                 Tagger().add_model(model), devreader, batch_size=settings.batch_size):
             if line is not None:
