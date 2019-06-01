@@ -305,9 +305,8 @@ class MultiLabelEncoder(object):
 
         for task in settings.tasks:
             if tasks is not None and task['settings']['target'] not in tasks:
-                logging.warning(
-                    "Ignoring task [{}]: no available data".format(task['target']))
-                continue
+                raise ValueError("No available data for task [{}]".format(
+                        task['settings']['target']))
             le.add_task(task['name'], level=task['level'], **task['settings'])
 
         return le

@@ -100,12 +100,25 @@ def parse_env_settings(defaults):
 
 
 def check_settings(settings):
-    # - check at least and at most one target
     has_target = False
+    tasks = set(task['name'] for task in settings.tasks)
+
     for task in settings.tasks:
+        # - check input char embeddings for attentional decoder
+        if task['decoder'] == 'attentional':
+            if settings.cemb_type.lower() not in ('rnn', 'cnn'):
+                raise ValueError("Attentional decoder needs character embeddings")
+        # - check conditions
+        for task2 in task.get('conditions', []):
+            if task2 not in tasks:
+                raise ValueError("Task '{}' requires task '{}'".format(task, task2))
+        # - check at least and at most one target
         if len(settings.tasks) == 1:
             task['target'] = True
         if task.get('target', False):
+            # - check target
+            if task.get('read_only'):
+                raise ValueError("Target task cannot be 'read_only'")
             if has_target:
                 raise ValueError("Got more than one target task")
             has_target = True

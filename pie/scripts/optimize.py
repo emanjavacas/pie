@@ -7,7 +7,7 @@ from json_minify import json_minify
 import scipy.stats as stats
 
 from pie import utils
-from pie.settings import settings_from_file, Settings
+from pie import settings
 
 
 # available distributions
@@ -60,6 +60,8 @@ def parse_opt(obj, opt_key):
                     raise ValueError("Unknown distribution: ", v[opt_key])
             else:
                 opt[param] = parse_opt(v, opt_key)
+        else:
+            opt[param] = v
 
     return opt
 
@@ -85,6 +87,8 @@ def sample_from_config(opt):
             output[param] = sample_from_config(dist)
         elif isinstance(dist, list):
             output[param] = [sample_from_config(d) for d in dist]
+        elif isinstance(dist, (str, float, int, bool)):
+            output[param] = dist  # no sampling
         else:
             output[param] = dist.rvs()
 
@@ -98,23 +102,24 @@ def run(config, opt, n_iter):
         print()
         print("::: Starting optimization run {} :::".format(i + 1))
         print()
-        sampled_config = sample_from_config(opt)
-        merged = utils.recursive_merge(dict(config), sampled_config, overwrite=True)
-        print(yaml.dump(dict(config)))
-        print(yaml.dump(merged))
-        train.run(Settings(merged))
+        sampled = sample_from_config(opt)
+        merged = settings.Settings(
+            utils.recursive_merge(dict(config), sampled, overwrite=True))
+        print("::: Sampled config :::")
+        print(yaml.dump(dict(merged)))
+        train.run(settings.check_settings(settings.merge_task_defaults(merged)))
 
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('config_path', default='config.json')
-    parser.add_argument('opt_path')
+    parser.add_argument('opt_path', help='Path to optimization file (see opt.json)')
     parser.add_argument('--n_iter', type=int, default=20)
     args = parser.parse_args()
 
     with utils.shutup():
-        config = settings_from_file(args.config_path)
+        config = settings.settings_from_file(args.config_path)
 
     opt = read_opt(args.opt_path)
 

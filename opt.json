@@ -1,0 +1,70 @@
+
+{
+  "lr": {
+    "opt": "truncnorm",
+    "params": {
+      "mu": 0.0025,
+      "std": 0.002,
+      "lower": 0.0001,
+      "upper": 1
+    }
+  },
+
+  "dropout": {
+    "opt": "truncnorm",
+    "params": {
+      "mu": 0.2,
+      "std": 0.15,
+      "upper": 0.5
+    }
+  },
+
+  "custom_cemb_cell": {
+    "opt": "choice",
+    "params": [true, false]
+  },
+
+  "tasks": [ // tasks from main config file get overwritten by this tasks
+    {
+      "name": "pos",
+      "target": true,
+      "decoder": {
+    	"opt": "choice",
+    	"params": ["linear", "crf"]
+      }
+    },
+    {
+      "name": "morph"
+    }
+  ],
+
+  "include_lm": {
+    "opt": "choice",
+    "params": [true, false]
+  },
+
+  "num_layers": {
+    "opt": "choice",
+    "params": [1, 2]
+  },
+
+  "cemb_dim": {
+    "opt": "normint",
+    "params": {
+      "mu": 100,
+      "std": 50,
+      "lower": 50,
+      "upper": 500
+    }
+  },
+
+  "hidden_size": {
+    "opt": "normint",
+    "params": {
+      "mu": 150,
+      "std": 100,
+      "lower": 50,
+      "upper": 500
+    }
+  }
+}

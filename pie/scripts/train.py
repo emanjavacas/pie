@@ -17,7 +17,6 @@ import torch
 
 def run(settings):
     seed = utils.set_random_seed()
-
     # datasets
     reader = Reader(settings, settings.input_path)
     tasks = reader.check_tasks(expected=None)
@@ -47,17 +46,21 @@ def run(settings):
         logging.warning("No devset: cannot monitor/optimize training")
 
     # model
-    model = SimpleModel(label_encoder, settings.tasks,
-                        settings.wemb_dim, settings.cemb_dim, settings.hidden_size,
-                        settings.num_layers, dropout=settings.dropout,
-                        cell=settings.cell, cemb_type=settings.cemb_type,
-                        cemb_layers=settings.cemb_layers,
-                        custom_cemb_cell=settings.custom_cemb_cell,
-                        linear_layers=settings.linear_layers,
-                        scorer=settings.scorer,
-                        word_dropout=settings.word_dropout,
-                        lm_shared_softmax=settings.lm_shared_softmax,
-                        include_lm=settings.include_lm)
+    model = SimpleModel(
+        label_encoder, settings.tasks,
+        settings.wemb_dim, settings.cemb_dim, settings.hidden_size, settings.num_layers,
+        cell=settings.cell,
+        # dropout
+        dropout=settings.dropout, word_dropout=settings.word_dropout,
+        # word embeddings
+        merge_type=settings.merge_type, cemb_type=settings.cemb_type,
+        cemb_layers=settings.cemb_layers, custom_cemb_cell=settings.custom_cemb_cell,
+        # lm joint loss
+        include_lm=settings.include_lm, lm_shared_softmax=settings.lm_shared_softmax,
+        # decoder
+        scorer=settings.scorer, linear_layers=settings.linear_layers,
+        cond_emb_dim=settings.cond_emb_dim, cond_out_dim=settings.cond_out_dim
+    )
 
     # pretrain(/load pretrained) embeddings
     if model.wemb is not None:
@@ -151,4 +154,4 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('config_path', nargs='?', default='config.json')
     args = parser.parse_args()
-    run(settings_from_file(args.config_path))
+    run(args.config_path)
