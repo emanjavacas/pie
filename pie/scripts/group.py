@@ -15,14 +15,9 @@ def pie_cli():
 @click.option('--device', default='cpu', help="Device to use to run the network")
 def webapp(model_spec, batch_size, device):
     """ Run the webapp """
-    import pie.scripts.app
-    app = pie.scripts.app.run(device=device, batch_size=batch_size, model_file=model_spec)
-    print(
-        """
-This application should not be used in production.
-The webserver given here is only for development purposes
-""")
-    app.run()
+    # Until further version, we should explain what's going on
+    print("Not supported anymore, do pip install flask_pie")
+    raise Exception("The web version of pie has moved to github.com/hipster-philology/flask_pie")
 
 
 @pie_cli.command()

@@ -29,10 +29,6 @@ with open(os.path.join(here, 'requirements.txt')) as f:
 # What packages are optional?
 EXTRAS = {
     # 'fancy feature': ['django'],
-    'webapp': [
-        "flask==1.0.2",
-        "gunicorn==19.9.0"
-    ]
 }
 
 # The rest you shouldn't have to touch too much :)
