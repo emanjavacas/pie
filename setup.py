@@ -19,7 +19,7 @@ DESCRIPTION = 'A Framework for Joint Learning of Sequence Labeling Tasks'
 URL = 'https://github.com/emanjavacas/pie'
 AUTHOR = ' Enrique Manjavacas; Mike Kestemont'
 REQUIRES_PYTHON = '>=3.6.0'
-VERSION = "0.2.3"
+VERSION = "0.2.4"
 
 # What packages are required for this module to be executed?
 
@@ -29,10 +29,6 @@ with open(os.path.join(here, 'requirements.txt')) as f:
 # What packages are optional?
 EXTRAS = {
     # 'fancy feature': ['django'],
-    'webapp': [
-        "flask==1.0.2",
-        "gunicorn==19.9.0"
-    ]
 }
 
 # The rest you shouldn't have to touch too much :)
