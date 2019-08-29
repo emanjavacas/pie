@@ -95,7 +95,7 @@ class Scorer(object):
 
         # compute scores for unknown input tokens
         unk_trues, unk_preds, amb_trues, amb_preds = [], [], [], []
-        unk_targ_trues, unk_targ_preds = [], []
+        unk_trg_trues, unk_trg_preds = [], []
         for true, pred, token in zip(self.trues, self.preds, self.tokens):
             if self.known_tokens and token not in self.known_tokens:
                 unk_trues.append(true)
@@ -106,8 +106,8 @@ class Scorer(object):
             # token-level encoding doesn't have unknown targets (only OOV)
             if self.label_encoder.known_tokens:
                 if true not in self.label_encoder.known_tokens:
-                    unk_targ_trues.append(true)
-                    unk_targ_preds.append(pred)
+                    unk_trg_trues.append(true)
+                    unk_trg_preds.append(pred)
 
         support = len(unk_trues)
         if support > 0:
@@ -117,9 +117,9 @@ class Scorer(object):
             output['ambiguous-tokens'] = compute_scores(amb_trues, amb_preds)
 
         # compute scores for unknown targets
-        support = len(unk_targ_trues)
+        support = len(unk_trg_trues)
         if support > 0:
-            output['unknown-targets'] = compute_scores(unk_targ_trues, unk_targ_preds)
+            output['unknown-targets'] = compute_scores(unk_trg_trues, unk_trg_preds)
 
         return output
 
