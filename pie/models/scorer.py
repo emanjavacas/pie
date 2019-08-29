@@ -5,7 +5,7 @@ from termcolor import colored
 from terminaltables import github_table
 from collections import Counter, defaultdict
 
-from sklearn.metrics import precision_score, recall_score, accuracy_score
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from pie import utils
 from pie import constants
 
@@ -34,8 +34,9 @@ def compute_scores(trues, preds):
         return round(float(score), 4)
 
     with utils.shutup():
-        p = format_score(precision_score(trues, preds, average='macro'))
-        r = format_score(recall_score(trues, preds, average='macro'))
+        p, r, f1, _ = precision_recall_fscore_support(trues, preds, average="macro")
+        p = format_score(p)
+        r = format_score(r)
         a = format_score(accuracy_score(trues, preds))
 
     return {'accuracy': a, 'precision': p, 'recall': r, 'support': len(trues)}
