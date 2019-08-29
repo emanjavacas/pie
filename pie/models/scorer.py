@@ -74,17 +74,21 @@ class Scorer(object):
             raise ValueError("Unequal input lengths. Hyps {}, targets {}, tokens {}"
                              .format(len(hyps), len(targets), len(tokens)))
 
-        for pred, true, token in zip(hyps, targets, tokens):
-            if self.label_encoder.preprocessor_fn is not None:
+        if not self.label_encoder.preprocessor_fn:
+            self.preds.extend(hyps)
+            self.trues.extend(targets)
+            self.tokens.extend(tokens)
+        else:
+            for pred, true, token in zip(hyps, targets, tokens):
                 true = self.label_encoder.preprocessor_fn.inverse_transform(true, token)
                 try:
                     pred = self.label_encoder.preprocessor_fn.inverse_transform(
                         pred, token)
                 except:
                     pred = constants.INVALID
-            self.preds.append(pred)
-            self.trues.append(true)
-            self.tokens.append(token)
+                self.preds.append(pred)
+                self.trues.append(true)
+                self.tokens.append(token)
 
     def get_scores(self):
         """
