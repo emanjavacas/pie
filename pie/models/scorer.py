@@ -255,16 +255,25 @@ class Scorer(object):
 
         return '\n'.join(summary)
 
-    def print_summary(self, full=False, most_common=100, confusion_matrix=False):
+    def print_summary(self, full=False, most_common=100, confusion_matrix=False, scores=None):
         """
         Get evaluation summary
+
+        :param full: Get full report with error summary
+        :param confusion_matrix: Get a confusion matrix
+        :param most_common: Limit the full report to the number indicated
+        :param scores: If scores are already computed, get passed here
         """
+
         print()
         print("::: Evaluation report for task: {} :::".format(self.label_encoder.name))
         print()
 
+        if scores is None:
+            scores = self.get_scores()
+
         # print scores
-        print(yaml.dump(self.get_scores(), default_flow_style=False))
+        print(yaml.dump(scores, default_flow_style=False))
 
         if full:
             print()
@@ -276,3 +285,4 @@ class Scorer(object):
                 print(self.get_classification_summary(most_common=most_common))
         if confusion_matrix:
             print((github_table.GithubFlavoredMarkdownTable(self.get_confusion_matrix_table())).table)
+
