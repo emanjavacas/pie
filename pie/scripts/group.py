@@ -54,7 +54,7 @@ def tag_pipe(model_spec, device, batch_size, lower, beam_width, use_beam, tokeni
 @pie_cli.command("eval")
 @click.argument('model_path')
 @click.argument('test_path', nargs=-1)
-@click.argument('train_path')
+@click.option('--train_path', help="File used to compute unknown tokens/targets", default=None)
 @click.option('--settings', help="Settings file used for training")
 @click.option('--batch_size', type=int, default=500)
 @click.option('--buffer_size', type=int, default=100000)

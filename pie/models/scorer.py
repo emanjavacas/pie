@@ -5,7 +5,7 @@ from termcolor import colored
 from terminaltables import github_table
 from collections import Counter, defaultdict
 
-from sklearn.metrics import precision_score, recall_score, accuracy_score
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from pie import utils
 from pie import constants
 
@@ -34,8 +34,9 @@ def compute_scores(trues, preds):
         return round(float(score), 4)
 
     with utils.shutup():
-        p = format_score(precision_score(trues, preds, average='macro'))
-        r = format_score(recall_score(trues, preds, average='macro'))
+        p, r, f1, _ = precision_recall_fscore_support(trues, preds, average="macro")
+        p = format_score(p)
+        r = format_score(r)
         a = format_score(accuracy_score(trues, preds))
 
     return {'accuracy': a, 'precision': p, 'recall': r, 'support': len(trues)}
@@ -73,17 +74,21 @@ class Scorer(object):
             raise ValueError("Unequal input lengths. Hyps {}, targets {}, tokens {}"
                              .format(len(hyps), len(targets), len(tokens)))
 
-        for pred, true, token in zip(hyps, targets, tokens):
-            if self.label_encoder.preprocessor_fn is not None:
+        if not self.label_encoder.preprocessor_fn:
+            self.preds.extend(hyps)
+            self.trues.extend(targets)
+            self.tokens.extend(tokens)
+        else:
+            for pred, true, token in zip(hyps, targets, tokens):
                 true = self.label_encoder.preprocessor_fn.inverse_transform(true, token)
                 try:
                     pred = self.label_encoder.preprocessor_fn.inverse_transform(
                         pred, token)
                 except:
                     pred = constants.INVALID
-            self.preds.append(pred)
-            self.trues.append(true)
-            self.tokens.append(token)
+                self.preds.append(pred)
+                self.trues.append(true)
+                self.tokens.append(token)
 
     def get_scores(self):
         """
@@ -94,6 +99,7 @@ class Scorer(object):
 
         # compute scores for unknown input tokens
         unk_trues, unk_preds, amb_trues, amb_preds = [], [], [], []
+        unk_trg_trues, unk_trg_preds = [], []
         for true, pred, token in zip(self.trues, self.preds, self.tokens):
             if self.known_tokens and token not in self.known_tokens:
                 unk_trues.append(true)
@@ -101,6 +107,12 @@ class Scorer(object):
             if self.amb_tokens and token in self.amb_tokens:
                 amb_trues.append(true)
                 amb_preds.append(pred)
+            # token-level encoding doesn't have unknown targets (only OOV)
+            if self.label_encoder.known_tokens:
+                if true not in self.label_encoder.known_tokens:
+                    unk_trg_trues.append(true)
+                    unk_trg_preds.append(pred)
+
         support = len(unk_trues)
         if support > 0:
             output['unknown-tokens'] = compute_scores(unk_trues, unk_preds)
@@ -109,16 +121,9 @@ class Scorer(object):
             output['ambiguous-tokens'] = compute_scores(amb_trues, amb_preds)
 
         # compute scores for unknown targets
-        if self.label_encoder.known_tokens:
-            # token-level encoding doesn't have unknown targets (only OOV)
-            unk_trues, unk_preds = [], []
-            for true, pred in zip(self.trues, self.preds):
-                if true not in self.label_encoder.known_tokens:
-                    unk_trues.append(true)
-                    unk_preds.append(pred)
-            support = len(unk_trues)
-            if support > 0:
-                output['unknown-targets'] = compute_scores(unk_trues, unk_preds)
+        support = len(unk_trg_trues)
+        if support > 0:
+            output['unknown-targets'] = compute_scores(unk_trg_trues, unk_trg_preds)
 
         return output
 
@@ -250,16 +255,25 @@ class Scorer(object):
 
         return '\n'.join(summary)
 
-    def print_summary(self, full=False, most_common=100, confusion_matrix=False):
+    def print_summary(self, full=False, most_common=100, confusion_matrix=False, scores=None):
         """
         Get evaluation summary
+
+        :param full: Get full report with error summary
+        :param confusion_matrix: Get a confusion matrix
+        :param most_common: Limit the full report to the number indicated
+        :param scores: If scores are already computed, get passed here
         """
+
         print()
         print("::: Evaluation report for task: {} :::".format(self.label_encoder.name))
         print()
 
+        if scores is None:
+            scores = self.get_scores()
+
         # print scores
-        print(yaml.dump(self.get_scores(), default_flow_style=False))
+        print(yaml.dump(scores, default_flow_style=False))
 
         if full:
             print()
@@ -271,3 +285,4 @@ class Scorer(object):
                 print(self.get_classification_summary(most_common=most_common))
         if confusion_matrix:
             print((github_table.GithubFlavoredMarkdownTable(self.get_confusion_matrix_table())).table)
+
