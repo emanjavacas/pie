@@ -1,4 +1,5 @@
 # Can be run with python -m pie.scripts.evaluate
+import os.path
 from pie import utils
 
 
@@ -33,10 +34,12 @@ def run(model_path, test_path, train_path,
     if train_path:
         trainset = Dataset(
             settings, Reader(settings, train_path), model.label_encoder)
-    elif hasattr(settings, "input_path") and settings.input_path:
+    elif hasattr(settings, "input_path") and settings.input_path and os.path.exists(settings.input_path):
         print("--- Using train set from settings")
         trainset = Dataset(
             settings, Reader(settings, settings.input_path), model.label_encoder)
+    else:
+        print("--- Not using trainset to evaluate known/unknown tokens")
 
     if not len(test_path) and hasattr(settings, "test_path"):
         print("--- Using test set from settings")
