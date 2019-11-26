@@ -6,7 +6,7 @@ numpy==1.14.3
 termcolor==1.1.0
 scikit_learn==0.19.1
 terminaltables==3.1.0
-torch>=1.0.1,<=1.2.0
+torch>=1.0.1,<1.2.0
 pyyaml==5.1b3
 typing==3.6.6
 click==7.0
