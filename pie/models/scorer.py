@@ -6,6 +6,8 @@ from terminaltables import github_table
 from collections import Counter, defaultdict
 
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+from sklearn.utils.multiclass import unique_labels
+import numpy as np
 from pie import utils
 from pie import constants
 
@@ -255,7 +257,8 @@ class Scorer(object):
 
         return '\n'.join(summary)
 
-    def print_summary(self, full=False, most_common=100, confusion_matrix=False, scores=None):
+    def print_summary(self, full=False, most_common=100, confusion_matrix=False, scores=None,
+                      report=False, markdown=True):
         """
         Get evaluation summary
 
@@ -266,23 +269,109 @@ class Scorer(object):
         """
 
         print()
-        print("::: Evaluation report for task: {} :::".format(self.label_encoder.name))
+        if markdown:
+            print("## " + self.label_encoder.name)
+        else:
+            print("::: Evaluation report for task: {} :::".format(self.label_encoder.name))
         print()
 
         if scores is None:
             scores = self.get_scores()
 
         # print scores
-        print(yaml.dump(scores, default_flow_style=False))
+        if markdown:
+            print(self.scores_in_markdown(scores))
+        else:
+            print(yaml.dump(scores, default_flow_style=False))
 
         if full:
             print()
-            print("::: Error summary for task: {} :::".format(self.label_encoder.name))
+            if markdown:
+                print("### Error summary for task {}".format(self.label_encoder.name))
+            else:
+                print("::: Error summary for task: {} :::".format(self.label_encoder.name))
             print()
             if self.label_encoder.level == 'char':
                 print(self.get_transduction_summary(most_common=most_common))
             else:
                 print(self.get_classification_summary(most_common=most_common))
+
+        if report:
+            print()
+            if markdown:
+                print("### {} Classification report".format(self.label_encoder.name))
+            else:
+                print("::: Classification report :::")
+            print()
+            print(self.get_classification_report())
+
         if confusion_matrix:
+            print()
+            if markdown:
+                print("### {} Confusion Matrix".format(self.label_encoder.name))
+            else:
+                print("::: Confusion Matrix :::")
+            print()
             print((github_table.GithubFlavoredMarkdownTable(self.get_confusion_matrix_table())).table)
 
+    def get_classification_report(self):
+        return classification_report(
+            y_true=self.trues,
+            y_pred=self.preds
+        )
+
+    @staticmethod
+    def scores_in_markdown(scores):
+        measures = ["accuracy", "precision", "recall", "support"]
+        table = [[""]+measures]
+        for key in scores:
+            table.append([key, *[scores[key][meas] for meas in measures]])
+
+        return (github_table.GithubFlavoredMarkdownTable(table)).table
+
+
+def classification_report(y_true, y_pred, digits=2):
+    """ Generate a classification report similar to
+    sklearn.metrics.classification_report but in markdown
+
+    :param y_true: List of GT values
+    :param y_pred: List of predictions
+    :param digits: Number of float digits
+    :return: Github Markdown Table
+    """
+    floatfmt = "{0:" + '.{:}f'.format(digits) + "}"
+
+    labels = unique_labels(y_true, y_pred)
+    target_names = [str(key) for key in labels]
+
+    last_line_heading = 'avg / total'
+    headers = ["target", "precision", "recall", "f1-score", "support"]
+
+    p, r, f1, s = precision_recall_fscore_support(
+        y_true, y_pred,
+        average=None
+    )
+
+    tbl_rows = list(zip(
+        target_names,
+        *[
+            map(
+                lambda x: floatfmt.format(x),
+                nb_list.tolist()
+            )
+            for nb_list in [p, r, f1]
+        ],
+        *[
+            list(map(str, s.tolist()))
+        ]
+    ))
+
+    # compute averages
+    last_row = (last_line_heading,
+                floatfmt.format(np.average(p)),
+                floatfmt.format(np.average(r)),
+                floatfmt.format(np.average(f1)),
+                str(np.sum(s)))
+    tbl_rows.append(last_row)
+
+    return (github_table.GithubFlavoredMarkdownTable([headers]+tbl_rows)).table
