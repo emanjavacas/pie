@@ -231,9 +231,9 @@ def word_dropout(inp, p, training, encoder):
     # PyTorch 1.2 and 1.3 :
     #   - Deprecated masked_fill_ used with int.
     #   - Mask should be booleans in general
-    mask = ((1 - torch.bernoulli(mask / (p + mask))) == 1)
+    mask = (1 - torch.bernoulli(mask / (p + mask))).bool()
     # don't drop padding
-    mask.masked_fill_((inp.eq(encoder.get_pad()) == 1), 0)
+    mask.masked_fill_(inp.eq(encoder.get_pad()).bool(), 0)
     # set words to unknowns
     return inp.masked_fill(mask, encoder.get_unk())
 

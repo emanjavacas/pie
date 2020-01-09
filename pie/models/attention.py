@@ -164,7 +164,7 @@ class Attention(nn.Module):
         mask = mask.unsqueeze(0).expand_as(weights)
         # weights = weights * mask.float()
         # Torch 1.1 -> 1.2: (1 - mask) becomes ~(mask)
-        weights.masked_fill_(~(mask), -float('inf'))
+        weights.masked_fill_(~mask, -float('inf'))
 
         # normalize
         weights = F.softmax(weights, dim=2)
