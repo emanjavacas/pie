@@ -1,3 +1,8 @@
+/models/
+.idea
+test.py
+test/data/test-data.tab
+
 # When flask is installed, produce a flask binary file
 flask
 # If one of these kind of file should be added, then it should be force added.
