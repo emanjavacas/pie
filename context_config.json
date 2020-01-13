@@ -69,11 +69,9 @@
   "report_freq":400,
   "checks_per_epoch":1,
   "pretrain_embeddings": false,
-  "load_pretrained_embeddings": "embeddings/fr/frw2v_150.txt",
-  "load_pretrained_encoder":"",
-  "wemb_dim":300,
+  "wemb_dim":768,
   "freeze_embeddings":false,
-  "cemb_dim":0,
+  "cemb_dim":200,
   "cemb_type":"cnn",
   "custom_cemb_cell":false,
   "cemb_layers":2,
@@ -87,6 +85,9 @@
   "config_path":"config_fr-class-pos-crf.json",
   "transformer": {
     "tokenizer_class": "CamembertTokenizer",
-    "tokenizer_path": "camembert-base"
-  }
+    "tokenizer_path": "camembert-base",
+    "transformer_model": "CamembertModel",
+    "transformer_path": "camembert-base"
+  },
+  "wemb_type": "transformer"
 }

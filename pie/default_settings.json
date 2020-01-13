@@ -134,6 +134,9 @@
   // * Transformer related parameters
   "transformer": {
     "tokenizer_class": "CamembertTokenizer", // Class to import from transformers package to tokenize
-    "tokenizer_path": "camembert-base"// Path to initiate the tokenizer
-  }
+    "tokenizer_path": "camembert-base", // Path to initiate the tokenizer
+    "transformer_model": "RobertaModel",
+    "transformer_path": "camembert-base"
+  },
+  "wemb_type": "default"
 }

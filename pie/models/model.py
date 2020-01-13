@@ -63,7 +63,8 @@ class SimpleModel(BaseModel):
         self.linear_layers = linear_layers
 
         # extended kwargs
-        self.context_embedding = kwargs.get("context_embedding", None)
+        self.wemb_type = kwargs.get("wemb_type", "default")
+        print(kwargs)
 
         # only during training
         self.init_rnn = init_rnn
@@ -72,10 +73,23 @@ class SimpleModel(BaseModel):
         # Embeddings
         self.wemb = None
         if self.wemb_dim > 0:
-            self.wemb = nn.Embedding(len(label_encoder.word), wemb_dim,
-                                     padding_idx=label_encoder.word.get_pad())
-            # init embeddings
-            initialization.init_embeddings(self.wemb)
+            if self.wemb_type == "default":
+                self.wemb = nn.Embedding(len(label_encoder.word), wemb_dim,
+                                         padding_idx=label_encoder.word.get_pad())
+                # init embeddings
+                initialization.init_embeddings(self.wemb)
+            elif self.wemb_type == "transformer":
+                if "transformer_class" not in kwargs or "transformer_path" not in kwargs:
+                    print("You need to set up transformer_class and transformer_path in your settings")
+                    raise Exception()
+                try:
+                    import transformers
+                except ImportError:
+                    print("You need the package transformers to be installed")
+                    raise Exception()
+                self.wemb = getattr(transformers, kwargs["transformer_class"]).from_pretrained(
+                    kwargs["transformer_path"]
+                )
 
         self.cemb = None
         if cemb_type.upper() == 'RNN':

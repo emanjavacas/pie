@@ -110,7 +110,11 @@ def run(config_path):
                         scorer=settings.scorer,
                         word_dropout=settings.word_dropout,
                         lm_shared_softmax=settings.lm_shared_softmax,
-                        include_lm=settings.include_lm)
+                        include_lm=settings.include_lm,
+                        wemb_type=settings.wemb_type,
+                        transformer_class=settings.transformer["transformer_model"],
+                        transformer_path=settings.transformer["transformer_path"]
+                        )
 
     # pretrain(/load pretrained) embeddings
     if model.wemb is not None:

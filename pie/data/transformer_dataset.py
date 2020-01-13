@@ -37,9 +37,9 @@ class ContextEncoder(LabelEncoder):
     def get_pad(self):
         return self.tokenizer.pad_token_id
 
-    def encode(self, sentence: List[str]):
-        encoded = self.tokenizer.encode([self.start_token] + sentence, add_special_tokens=False)
-        assert len(sentence) + 1 == len(encoded[-1]), "Length of encoded and input should not vary, except for" \
+    def transform(self, seq: List[str]):
+        encoded = self.tokenizer.encode([self.start_token] + seq, add_special_tokens=False)
+        assert len(seq) + 1 == len(encoded), "Length of encoded and input should not vary, except for" \
                                                           "sentence beginning"
         return encoded
 
@@ -70,9 +70,9 @@ class TransformerMultiLabelEncoder(MultiLabelEncoder):
 
             # input data
             word.append(self.word.transform(inp))
+            context.append(self.context.transform(inp))
             for w in inp:
                 char.append(self.char.transform(w))
-            context.append(self.context.encode(inp))
 
             # task data
             if tasks is None:
