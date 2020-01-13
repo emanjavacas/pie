@@ -48,6 +48,7 @@ class SimpleModel(BaseModel):
         self.cemb_dim = cemb_dim
         self.hidden_size = hidden_size
         self.num_layers = num_layers
+
         # kwargs
         self.cell = cell
         self.dropout = dropout
@@ -60,6 +61,10 @@ class SimpleModel(BaseModel):
         self.lm_shared_softmax = lm_shared_softmax
         self.custom_cemb_cell = custom_cemb_cell
         self.linear_layers = linear_layers
+
+        # extended kwargs
+        self.context_embedding = kwargs.get("context_embedding", None)
+
         # only during training
         self.init_rnn = init_rnn
         super().__init__(label_encoder, tasks)

@@ -130,5 +130,10 @@
   "linear_layers": 1, // number of layers for linear decoders
   "hidden_size": 300, // sentence encoding dimension
   "num_layers": 1, // num recurrent layers for the sentence encoder
-  "cell": "LSTM" // cell type for rnns
+  "cell": "LSTM", // cell type for rnns
+  // * Transformer related parameters
+  "transformer": {
+    "tokenizer_class": "CamembertTokenizer", // Class to import from transformers package to tokenize
+    "tokenizer_path": "camembert-base"// Path to initiate the tokenizer
+  }
 }

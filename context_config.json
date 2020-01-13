@@ -1,0 +1,92 @@
+{
+  "verbose":true,
+  "modelname":"fr-class-pos-crf",//based on historical default config provided by E. Manjavacas; by mail on the 22/12/2018
+  "modelpath":"./models",
+  "run_test":false,
+  "input_path":"./datasets/classical_data/train/*",
+  "test_path":"./datasets/classical_data/test/*",
+  "dev_path":"./datasets/classical_data/dev/*",
+  "breakline_ref":"lemma",
+  "breakline_data":"[.?!]",
+  "max_sent_len":35,
+  "max_sents":10000000,
+  "char_max_size":500,
+  "word_max_size":50000,
+  "char_min_freq":1,
+  "word_min_freq":1,
+  "char_eos":true,
+  "char_bos":true,
+  "header":false,
+  "sep":"\t",
+  "tasks_order":[
+    "lemma", "pos", "MODE", "TEMPS", "PERS.", "NOMB.", "GENRE", "CAS"
+  ],
+  "tasks":[
+    {
+      "name": "pos",
+      "level": "token",
+      "target": true,
+      "decoder": "crf",
+      "layer": -1,
+      "schedule": {
+        "patience":6,
+        "threshold":0.001,
+        "target":true
+      },
+      "default": "copy"
+    } //TODO: add auxiliary tasks ? Lemma ? Morphs ?
+  ],
+  "task_defaults":{
+    "level":"token",
+    "layer":-1,
+    "decoder":"linear",
+    "context":"sentence"
+  },
+  "patience":5,
+  "factor":0.5,
+  "threshold":0,
+  "min_weight":0,
+  "include_lm":true,
+  "lm_shared_softmax":true,
+  "lm_schedule":{
+    "patience":2,
+    "factor":0.5,
+    "weight":0.2,
+    "mode":"min"
+  },
+  "buffer_size":10000,
+  "minimize_pad":false,
+  "dropout":0.25,
+  "word_dropout":0,
+  "epochs":100,
+  "batch_size":80,
+  "shuffle":true,
+  "optimizer":"Adam",
+  "lr":0.001,
+  "lr_factor":0.75,
+  "lr_patience":2,
+  "clip_norm":5.0,
+  "report_freq":400,
+  "checks_per_epoch":1,
+  "pretrain_embeddings": false,
+  "load_pretrained_embeddings": "embeddings/fr/frw2v_150.txt",
+  "load_pretrained_encoder":"",
+  "wemb_dim":300,
+  "freeze_embeddings":false,
+  "cemb_dim":0,
+  "cemb_type":"cnn",
+  "custom_cemb_cell":false,
+  "cemb_layers":2,
+  "merge_type":"concat",
+  "scorer":"general",
+  "linear_layers":1,
+  "hidden_size":150,
+  "num_layers":1,
+  "cell":"GRU",
+  "device":"cuda",
+  "config_path":"config_fr-class-pos-crf.json",
+  "transformer": {
+    "tokenizer_class": "CamembertTokenizer",
+    "tokenizer_path": "camembert-base"
+  }
+}

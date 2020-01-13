@@ -530,7 +530,6 @@ def pack_batch(label_encoder, batch, device=None):
     Transform batch data to tensors
     """
     (word, char), tasks = label_encoder.transform(batch)
-
     word = torch_utils.pad_batch(word, label_encoder.word.get_pad(), device=device)
     char = torch_utils.pad_batch(char, label_encoder.char.get_pad(), device=device)
 
