@@ -90,7 +90,7 @@ class SimpleModel(BaseModel):
                 self.wemb = getattr(transformers, kwargs["transformer_class"]).from_pretrained(
                     kwargs["transformer_path"]
                 )
-                self.wemb.eval()
+                torch_utils.freeze_model(self.wemb)
 
         self.cemb = None
         if cemb_type.upper() == 'RNN':

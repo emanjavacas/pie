@@ -46,7 +46,7 @@
   "factor":0.5,
   "threshold":0,
   "min_weight":0,
-  "include_lm":true,
+  "include_lm":false,
   "lm_shared_softmax":true,
   "lm_schedule":{
     "patience":2,
@@ -61,7 +61,7 @@
   "epochs":100,
   "batch_size":80,
   "shuffle":true,
-  "optimizer":"AdamW",
+  "optimizer":"Adam",
   "lr":0.001,
   "lr_factor":0.75,
   "lr_patience":2,

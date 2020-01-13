@@ -311,3 +311,10 @@ def viterbi_decode(tag_sequence, transition):
     viterbi_path.reverse()
     
     return viterbi_path, viterbi_score
+
+
+def freeze_model(model):
+    """ Freeze a model """
+    for name, param in model.named_parameters():
+        param.requires_grad = False
+
