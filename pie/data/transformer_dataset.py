@@ -147,14 +147,14 @@ class TransformerDataset(Dataset):
         """
         Transform batch data to tensors
         """
+        device = device or self.device
         (context, char), tasks = self.label_encoder.transform(batch)
         char = torch_utils.pad_batch(char, self.label_encoder.char.get_pad(), device=device)
-        context = torch_utils.pad_batch(context, self.label_encoder.context.get_pad(), device=device)
-
+        context, context_len = torch_utils.pad_batch(context, self.label_encoder.context.get_pad(), device=device)
+        context_len = context_len - torch.ones(context.shape[1], device=device, dtype=torch.int64)  #  Reduce by one to ignore SOS !
         output_tasks = {}
         for task, data in tasks.items():
             output_tasks[task] = torch_utils.pad_batch(
                 data, self.label_encoder.tasks[task].get_pad(), device=device)
 
-        return (context, char), output_tasks
-
+        return ((context, context_len), char), output_tasks

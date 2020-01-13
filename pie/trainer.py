@@ -178,8 +178,13 @@ class Trainer(object):
         self.verbose = settings.verbose
         self.dataset = dataset
         self.model = model
-        self.optimizer = getattr(optim, settings.optimizer)(
-            model.parameters(), lr=settings.lr)
+        if settings.optimizer.startswith("AdamW"):
+            from transformers import optimization
+            self.optimizer = getattr(optimization, settings.optimizer)(
+                model.parameters(), lr=settings.lr)
+        else:
+            self.optimizer = getattr(optim, settings.optimizer)(
+                model.parameters(), lr=settings.lr)
         self.clip_norm = settings.clip_norm
 
         self.report_freq = settings.report_freq

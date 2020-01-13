@@ -133,8 +133,8 @@ class CRFDecoder(nn.Module):
     def forward(self, enc_outs):
         "get logits of the input features"
         # (seq_len x batch x vocab)
-        if self.highway is None:
-            enc_out = self.highway(enc_outs)
+        if self.highway is not None:
+            enc_outs = self.highway(enc_outs)
         logits = self.projection(enc_outs)
 
         return F.log_softmax(logits, -1)

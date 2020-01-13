@@ -224,9 +224,8 @@ class SimpleModel(BaseModel):
                     word, self.word_dropout, self.training, self.label_encoder.word)
                 wemb = self.wemb(word)
             elif self.wemb_type == "transformer":
-                wemb, sentence = self.wemb(word) # last hidden, sentence
-                wemb = wemb[1:, :] # Remove SOS
-                print(wemb.shape)
+                wemb, sentence = self.wemb(word)  # last hidden, sentence
+                wemb = wemb[1:, :]  # Remove SOS
         if self.cemb is not None:
             # cemb_outs: (seq_len x batch x emb_dim)
             cemb, cemb_outs = self.cemb(char, clen, wlen)
@@ -264,6 +263,8 @@ class SimpleModel(BaseModel):
 
         # Embedding
         wemb, cemb, cemb_outs = self.embedding(word, wlen, char, clen)
+        word = word[1:, :]  # Remove starting
+
         if wemb is None:
             emb = cemb
         elif cemb is None:
