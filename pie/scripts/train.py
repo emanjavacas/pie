@@ -67,7 +67,12 @@ def run(config_path):
         print()
 
     # label encoder
-    label_encoder = MultiLabelEncoder.from_settings(settings, tasks=tasks)
+    Encoder_class, Datasetclass = MultiLabelEncoder, Dataset
+    if settings.wemb_type == "transformer":
+        from pie.data.transformer_dataset import TransformerMultiLabelEncoder, TransformerDataset
+        Encoder_class, Datasetclass = TransformerMultiLabelEncoder, TransformerDataset
+
+    label_encoder = Encoder_class.from_settings(settings, tasks=tasks)
     if settings.verbose:
         print("::: Fitting data :::")
         print()
@@ -91,7 +96,7 @@ def run(config_path):
                   .format(task, le.target, le.level, len(le)))
         print()
 
-    trainset = Dataset(settings, reader, label_encoder)
+    trainset = Datasetclass(settings, reader, label_encoder)
 
     devset = None
     if settings.dev_path:

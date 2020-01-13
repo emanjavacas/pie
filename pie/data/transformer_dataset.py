@@ -59,7 +59,7 @@ class TransformerMultiLabelEncoder(MultiLabelEncoder):
 
     def transform(self, sents):
         # Repeating the code, even though it'd make more sense to reuse, in the end we avoid repeating the loop
-        word, char, context, tasks_dict = [], [], [], defaultdict(list)
+        context, char, tasks_dict = [], [], defaultdict(list)
 
         for inp in sents:
             tasks = None
@@ -69,7 +69,6 @@ class TransformerMultiLabelEncoder(MultiLabelEncoder):
                 inp, tasks = inp
 
             # input data
-            word.append(self.word.transform(inp))
             context.append(self.context.transform(inp))
             for w in inp:
                 char.append(self.char.transform(w))
@@ -90,7 +89,7 @@ class TransformerMultiLabelEncoder(MultiLabelEncoder):
                 else:
                     raise ValueError("Wrong level {}: task {}".format(le.level, le.name))
 
-        return (word, char, context), tasks_dict
+        return (context, char), tasks_dict
 
     @classmethod
     def from_settings(cls, settings, tasks=None):
@@ -144,12 +143,11 @@ class TransformerMultiLabelEncoder(MultiLabelEncoder):
 
 
 class TransformerDataset(Dataset):
-    def pack_batch(self, batch, device=None) -> Tuple[Tuple[torch.tensor, torch.tensor, torch.tensor], torch.tensor]:
+    def pack_batch(self, batch, device=None) -> Tuple[Tuple[torch.tensor, torch.tensor], torch.tensor]:
         """
         Transform batch data to tensors
         """
-        (word, char, context), tasks = self.label_encoder.transform(batch)
-        word = torch_utils.pad_batch(word, self.label_encoder.word.get_pad(), device=device)
+        (context, char), tasks = self.label_encoder.transform(batch)
         char = torch_utils.pad_batch(char, self.label_encoder.char.get_pad(), device=device)
         context = torch_utils.pad_batch(context, self.label_encoder.context.get_pad(), device=device)
 
@@ -158,5 +156,5 @@ class TransformerDataset(Dataset):
             output_tasks[task] = torch_utils.pad_batch(
                 data, self.label_encoder.tasks[task].get_pad(), device=device)
 
-        return (word, char, context), output_tasks
+        return (context, char), output_tasks
 

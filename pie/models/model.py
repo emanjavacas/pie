@@ -90,6 +90,7 @@ class SimpleModel(BaseModel):
                 self.wemb = getattr(transformers, kwargs["transformer_class"]).from_pretrained(
                     kwargs["transformer_path"]
                 )
+                self.wemb.eval()
 
         self.cemb = None
         if cemb_type.upper() == 'RNN':
@@ -217,10 +218,15 @@ class SimpleModel(BaseModel):
     def embedding(self, word, wlen, char, clen):
         wemb, cemb, cemb_outs = None, None, None
         if self.wemb is not None:
-            # set words to unknown with prob `p` depending on word frequency
-            word = torch_utils.word_dropout(
-                word, self.word_dropout, self.training, self.label_encoder.word)
-            wemb = self.wemb(word)
+            if self.wemb_type == "default":
+                # set words to unknown with prob `p` depending on word frequency
+                word = torch_utils.word_dropout(
+                    word, self.word_dropout, self.training, self.label_encoder.word)
+                wemb = self.wemb(word)
+            elif self.wemb_type == "transformer":
+                wemb, sentence = self.wemb(word) # last hidden, sentence
+                wemb = wemb[1:, :] # Remove SOS
+                print(wemb.shape)
         if self.cemb is not None:
             # cemb_outs: (seq_len x batch x emb_dim)
             cemb, cemb_outs = self.cemb(char, clen, wlen)
