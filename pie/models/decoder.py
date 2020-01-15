@@ -217,6 +217,7 @@ class CRFDecoder(nn.Module):
 
         # mask on padding (batch x seq_len)
         mask = torch_utils.make_length_mask(lengths).float()
+        # Mask is not used !
 
         # variables
         trans = logits.new(vocab + 2, vocab + 2).fill_(-10000.)
@@ -225,7 +226,8 @@ class CRFDecoder(nn.Module):
         tag_sequence = logits.new(seq_len + 2, vocab + 2)
 
         # iterate over batches
-        for logits_b, len_b in zip(logits.t(), lengths):
+        # Breaking change on .t() at some point I guess had .t() not work on 3D tensor. Explicited .transpose(0,1)
+        for logits_b, len_b in zip(logits.transpose(0, 1), lengths):
             seq_len = len_b.item()
             # get this batch logits
             tag_sequence.fill_(-10000)
