@@ -46,7 +46,7 @@
   "factor":0.5,
   "threshold":0,
   "min_weight":0,
-  "include_lm":false,
+  "include_lm":true,
   "lm_shared_softmax":true,
   "lm_schedule":{
     "patience":2,
@@ -89,5 +89,5 @@
     "transformer_model": "CamembertModel",
     "transformer_path": "camembert-base"
   },
-  "wemb_type": "transformer"
+  "wemb_type": "default"
 }

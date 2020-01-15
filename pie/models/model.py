@@ -258,12 +258,18 @@ class SimpleModel(BaseModel):
             pass
 
     def loss(self, batch_data, *target_tasks):
-        ((word, wlen), (char, clen)), tasks = batch_data
         output = {}
 
-        # Embedding
-        wemb, cemb, cemb_outs = self.embedding(word, wlen, char, clen)
-        word = word[1:, :]  # Remove starting
+        if self.wemb_type == "transformer":
+            ((word, wlen), (cont, context_len), (char, clen)), tasks = batch_data
+            # Embedding
+            wemb, cemb, cemb_outs = self.embedding(cont, context_len, char, clen)
+            # word = word[1:, :]  # Remove starting
+
+        else:
+            ((word, wlen), (char, clen)), tasks = batch_data
+            # Embedding
+            wemb, cemb, cemb_outs = self.embedding(word, wlen, char, clen)
 
         if wemb is None:
             emb = cemb
@@ -329,10 +335,18 @@ class SimpleModel(BaseModel):
     def predict(self, inp, *tasks, use_beam=False, beam_width=10, **kwargs):
         tasks = set(self.label_encoder.tasks if not len(tasks) else tasks)
         preds = {}
-        (word, wlen), (char, clen) = inp
 
-        # Embedding
-        wemb, cemb, cemb_outs = self.embedding(word, wlen, char, clen)
+        if self.wemb_type == "transformer":
+            ((word, wlen), (cont, context_len), (char, clen)) = inp
+            # Embedding
+            wemb, cemb, cemb_outs = self.embedding(cont, context_len, char, clen)
+            # word = word[1:, :]  # Remove starting
+
+        else:
+            ((word, wlen), (char, clen)) = inp
+            # Embedding
+            wemb, cemb, cemb_outs = self.embedding(word, wlen, char, clen)
+
         if wemb is None:
             emb = cemb
         elif cemb is None:
