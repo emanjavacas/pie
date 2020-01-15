@@ -2,7 +2,7 @@
   "verbose":true,
   "modelname":"fr-class-pos-crf",//based on historical default config provided by E. Manjavacas; by mail on the 22/12/2018
   "modelpath":"./models",
-  "run_test":false,
+  "run_test":true,
   "input_path":"./datasets/classical_data/train/*",
   "test_path":"./datasets/classical_data/test/*",
   "dev_path":"./datasets/classical_data/dev/*",
@@ -71,7 +71,7 @@
   "pretrain_embeddings": false,
   "wemb_dim":768,
   "freeze_embeddings":false,
-  "cemb_dim":200,
+  "cemb_dim":300,
   "cemb_type":"cnn",
   "custom_cemb_cell":false,
   "cemb_layers":2,
