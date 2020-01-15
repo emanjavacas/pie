@@ -67,12 +67,12 @@ def run(config_path):
         print()
 
     # label encoder
-    Encoder_class, Datasetclass = MultiLabelEncoder, Dataset
+    EncoderClass, DatasetClass = MultiLabelEncoder, Dataset
     if settings.wemb_type == "transformer":
         from pie.data.transformer_dataset import TransformerMultiLabelEncoder, TransformerDataset
-        Encoder_class, Datasetclass = TransformerMultiLabelEncoder, TransformerDataset
+        EncoderClass, DatasetClass = TransformerMultiLabelEncoder, TransformerDataset
 
-    label_encoder = Encoder_class.from_settings(settings, tasks=tasks)
+    label_encoder = EncoderClass.from_settings(settings, tasks=tasks)
     if settings.verbose:
         print("::: Fitting data :::")
         print()
@@ -96,11 +96,11 @@ def run(config_path):
                   .format(task, le.target, le.level, len(le)))
         print()
 
-    trainset = Datasetclass(settings, reader, label_encoder)
+    trainset = DatasetClass(settings, reader, label_encoder)
 
     devset = None
     if settings.dev_path:
-        devset = Dataset(settings, Reader(settings, settings.dev_path), label_encoder)
+        devset = DatasetClass(settings, Reader(settings, settings.dev_path), label_encoder)
     else:
         logging.warning("No devset: cannot monitor/optimize training")
 
@@ -177,7 +177,7 @@ def run(config_path):
 
     if settings.test_path:
         print("Evaluating model on test set")
-        testset = Dataset(settings, Reader(settings, settings.test_path), label_encoder)
+        testset = DatasetClass(settings, Reader(settings, settings.test_path), label_encoder)
         for task in model.evaluate(testset, trainset).values():
             task.print_summary()
 

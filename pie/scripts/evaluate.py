@@ -30,13 +30,19 @@ def run(model_path, test_path, train_path,
     settings.buffer_size = buffer_size
     settings.device = device
 
+    # label encoder
+    DatasetClass = Dataset
+    if settings.wemb_type == "transformer":
+        from pie.data.transformer_dataset import TransformerDataset
+        DatasetClass = TransformerDataset
+
     trainset = None
     if train_path:
-        trainset = Dataset(
+        trainset = DatasetClass(
             settings, Reader(settings, train_path), model.label_encoder)
     elif hasattr(settings, "input_path") and settings.input_path and os.path.exists(settings.input_path):
         print("--- Using train set from settings")
-        trainset = Dataset(
+        trainset = DatasetClass(
             settings, Reader(settings, settings.input_path), model.label_encoder)
     else:
         print("--- Not using trainset to evaluate known/unknown tokens")
@@ -45,7 +51,7 @@ def run(model_path, test_path, train_path,
         print("--- Using test set from settings")
         test_path = (settings.test_path, )
 
-    testset = Dataset(settings, Reader(settings, *test_path), model.label_encoder)
+    testset = DatasetClass(settings, Reader(settings, *test_path), model.label_encoder)
 
     for task in model.evaluate(testset, trainset).values():
         task.print_summary(full=full, confusion_matrix=confusion, report=report, markdown=markdown)
