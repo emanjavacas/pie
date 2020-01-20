@@ -167,8 +167,20 @@ class BaseModel(nn.Module):
                      "Model commit is {}, whereas current `pie` commit is {}.").format(
                          fpath, commit, pie.__commit__))
 
+            # load settings
+            try:
+                settings = Settings(
+                    json.loads(utils.get_gzip_from_tar(tar, 'settings.zip')))
+            except Exception:
+                logging.warn("Couldn't load settings for model {}!".format(fpath))
+
             # load label encoder
-            le = MultiLabelEncoder.load_from_string(
+            EncoderClass = MultiLabelEncoder
+            if settings.wemb_type == "transformer":
+                from pie.data.transformer_dataset import TransformerMultiLabelEncoder
+                EncoderClass = TransformerMultiLabelEncoder
+
+            le = EncoderClass.load_from_string(
                 utils.get_gzip_from_tar(tar, 'label_encoder.zip'))
 
             # load tasks
@@ -177,18 +189,23 @@ class BaseModel(nn.Module):
             # load model parameters
             params = json.loads(utils.get_gzip_from_tar(tar, 'parameters.zip'))
 
+            if params['kwargs'].get("wemb_type", None) == "transformer" or settings.wemb_type == "transformer":
+                params["kwargs"].update({
+                    "transformer_class": settings.transformer["transformer_model"],
+                    "transformer_path": settings.transformer["transformer_path"],
+                    "wemb_type": "transformer"
+                })
+
             # instantiate model
             model_type = getattr(pie.models, utils.get_gzip_from_tar(tar, 'class.zip'))
             with utils.shutup():
-                model = model_type(le, tasks, *params['args'], **params['kwargs'])
+                model = model_type(
+                    le, tasks,
+                    *params['args'],
+                    **params['kwargs']
+                )
 
-            # load settings
-            try:
-                settings = Settings(
-                    json.loads(utils.get_gzip_from_tar(tar, 'settings.zip')))
-                model._settings = settings
-            except Exception:
-                logging.warn("Couldn't load settings for model {}!".format(fpath))
+            model._settings = settings
 
             # load state_dict
             with utils.tmpfile() as tmppath:

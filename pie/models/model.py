@@ -64,7 +64,6 @@ class SimpleModel(BaseModel):
 
         # extended kwargs
         self.wemb_type = kwargs.get("wemb_type", "default")
-        print(kwargs)
 
         # only during training
         self.init_rnn = init_rnn
@@ -213,7 +212,8 @@ class SimpleModel(BaseModel):
                            'cemb_layers': self.cemb_layers,
                            'include_lm': self.include_lm,
                            'scorer': self.scorer,
-                           'custom_cemb_cell': self.custom_cemb_cell}}
+                           'custom_cemb_cell': self.custom_cemb_cell,
+                           "wemb_type": self.wemb_type}}
 
     def embedding(self, word, wlen, char, clen):
         wemb, cemb, cemb_outs = None, None, None
