@@ -78,7 +78,7 @@
   "merge_type":"concat",
   "scorer":"general",
   "linear_layers":1,
-  "hidden_size":150,
+  "hidden_size":200,
   "num_layers":1,
   "cell":"GRU",
   "device":"cuda",
@@ -89,5 +89,5 @@
     "transformer_model": "CamembertModel",
     "transformer_path": "camembert-base"
   },
-  "wemb_type": "default"
+  "wemb_type": "transformer"
 }
