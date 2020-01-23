@@ -17,9 +17,9 @@ here = os.path.abspath(os.path.dirname(__file__))
 NAME = 'nlp-pie'
 DESCRIPTION = 'A Framework for Joint Learning of Sequence Labeling Tasks'
 URL = 'https://github.com/emanjavacas/pie'
-AUTHOR = ' Enrique Manjavacas; Mike Kestemont'
+AUTHOR = 'Enrique Manjavacas; Mike Kestemont; Thibault Clerice'
 REQUIRES_PYTHON = '>=3.6.0'
-VERSION = "0.2.5"
+VERSION = "0.2.6"
 
 # What packages are required for this module to be executed?
 
