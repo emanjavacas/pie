@@ -16,6 +16,9 @@ import torch
 
 
 def run(settings):
+    if isinstance(settings, str):
+        settings = settings_from_file(settings)
+
     seed = utils.set_random_seed()
     # datasets
     reader = Reader(settings, settings.input_path)
