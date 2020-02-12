@@ -109,16 +109,16 @@ class TabReader(BaseReader):
             for line_num, line in enumerate(f):
                 line = line.strip()
 
-                # break
+                # Empty line as chunk break
                 if not line and len(parser.inp) > 0:
+                        yield parser.inp, parser.tasks
+                        parser.reset()
+                        continue
+                # brealine configuration as chunk break
+                elif parser.check_breakline():
                     yield parser.inp, parser.tasks
                     parser.reset()
-                    continue
-
-                if parser.check_breakline():
-                    yield parser.inp, parser.tasks
-                    parser.reset()
-
+                # max size as chunk break
                 elif len(parser.inp) > self.max_sent_len:
                     inp = parser.inp[:self.max_sent_len]
                     tasks = {}
@@ -127,10 +127,11 @@ class TabReader(BaseReader):
                     yield inp, tasks
                     parser.reset(self.max_sent_len)
 
-                try:
-                    parser.add(line, line_num)
-                except LineParseException as e:
-                    yield e
+                if line:
+                    try:
+                        parser.add(line, line_num)
+                    except LineParseException as e:
+                        yield e
 
             if len(parser.inp) > 0:
                 yield parser.inp, parser.tasks
