@@ -2,9 +2,8 @@
 # Can be run with python -m pie.scripts.train
 import time
 import os
-import logging
 from datetime import datetime
-
+import logging
 
 import pie
 from pie.settings import settings_from_file
@@ -42,6 +41,8 @@ def run(config_path):
         torch.cuda.manual_seed(seed)
 
     settings = settings_from_file(config_path)
+    if settings.verbose:
+        logging.basicConfig(level=logging.INFO)
 
     # check settings
     # - check at least and at most one target
