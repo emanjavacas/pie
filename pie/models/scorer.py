@@ -339,6 +339,16 @@ class Scorer(object):
 
         return (github_table.GithubFlavoredMarkdownTable(table)).table
 
+    @property
+    def dict(self):
+        return {
+            "known_tokens": self.known_tokens,
+            "amb_tokens": self.amb_tokens,
+            "preds": self.preds,
+            "trues": self.trues,
+            "tokens": self.tokens
+        }
+
 
 def classification_report(y_true, y_pred, digits=2):
     """ Generate a classification report similar to

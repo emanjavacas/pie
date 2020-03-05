@@ -1,5 +1,6 @@
 # Can be run with python -m pie.scripts.evaluate
 import os.path
+import json
 from pie import utils
 
 
@@ -10,7 +11,7 @@ from pie.settings import load_default_settings, settings_from_file
 
 def run(model_path, test_path, train_path,
         settings, batch_size, buffer_size, device, model_info, full, confusion,
-        report, markdown):
+        report, markdown, export_scorer: bool = False, export_name: str = "full_report.json"):
 
     model = BaseModel.load(model_path).to(device)
     if model_info:
@@ -46,9 +47,20 @@ def run(model_path, test_path, train_path,
         test_path = (settings.test_path, )
 
     testset = Dataset(settings, Reader(settings, *test_path), model.label_encoder)
-
-    for task in model.evaluate(testset, trainset).values():
+    all_scorers = {"tasks": {}, "known_tokens": []}
+    for task_name, task in model.evaluate(testset, trainset).items():
         task.print_summary(full=full, confusion_matrix=confusion, report=report, markdown=markdown)
+
+        if export_scorer:
+            all_scorers["tasks"][task_name] = task.dict
+            if not all_scorers["known_tokens"]:
+                all_scorers["known_tokens"] = list(task.dict["known_tokens"])
+            all_scorers["tasks"][task_name]["amb_tokens"] = list(task.dict["amb_tokens"])
+            del all_scorers["tasks"][task_name]["known_tokens"]
+
+    if export_scorer:
+        with open(export_name, "w") as target_io:
+            json.dump(all_scorers, target_io)
 
 
 if __name__ == '__main__':
@@ -67,10 +79,13 @@ if __name__ == '__main__':
     parser.add_argument('--confusion', default=False, action="store_true")
     parser.add_argument('--report', default=False, action="store_true", help="Get full report on each class")
     parser.add_argument('--markdown', default=False, action="store_true", help="Use Markdown")
+    parser.add_argument('--export', default=False, action="store_true", help="Get a json export of all results "
+                                                                             "for further analysis")
+    parser.add_argument('--export-name', default="full_report.json", help="Name of the export file")
     args = parser.parse_args()
     run(model_path=args.model_path, test_path=args.test_path,
         train_path=args.train_path, settings=args.settings,
         batch_size=args.batch_size, buffer_size=args.buffer_size,
         device=args.device, model_info=args.model_info,
         full=args.full, confusion=args.confusion, report=args.report,
-        markdown=args.markdown)
+        markdown=args.markdown, export_scorer=args.export, export_name=args.export_name)
