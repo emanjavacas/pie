@@ -58,7 +58,7 @@
             // Additional schedule parameters can be passed to control the extent of learning
             // of each task. There are 2 types of tasks: target and auxiliary tasks
             // depending on the value of "target" (if true then task is target else auxiliary).
-            "target": true, // whether this is the target task (there can only be one)
+            "target": true, // whether this is the target task (there can only be one),
 
             // For target tasks, "patience", "threshold" control early stopping (how many steps
             // without improvement over the threshold we need before stopping learning).
@@ -69,7 +69,9 @@
             // (whether the task dev score is being minimized "min" or maximized "max")
             "schedule": {
                 "patience": 2,
-                "threshold": 0.001
+                "threshold": 0.001,
+                "evaluation": "accuracy"  // Can be "accuracy" or "balanced-accuracy"
+                                          // which is better for unbalanced classes1
             },
             "default": "copy" // while processing the files if the field is missing predict
                               // the input token or something else:
@@ -83,7 +85,11 @@
         "level": "token",
         "layer": -1,
         "decoder": "linear",
-        "context": "sentence"
+        "context": "sentence",
+        "schedule": {
+            "evaluation": "accuracy" // Can be "accuracy", "precision", "recall", "f1", "balanced-accuracy"
+                                     // which is better for unbalanced classes
+        }
     },
 
     // general task schedule params (can be overwritten in the "settings" entry of each)
