@@ -77,8 +77,10 @@ if __name__ == '__main__':
     parser.add_argument('--model_info', action='store_true')
     parser.add_argument('--full', action='store_true')
     parser.add_argument('--confusion', default=False, action="store_true")
-    parser.add_argument('--report', default=False, action="store_true", help="Get full report on each class")
-    parser.add_argument('--markdown', default=False, action="store_true", help="Use Markdown")
+    parser.add_argument('--report', default=False,
+                        action="store_true", help="Get full report on each class")
+    parser.add_argument('--markdown', default=False,
+                        action="store_true", help="Use Markdown")
     args = parser.parse_args()
     run(model_path=args.model_path, test_path=args.test_path,
         train_path=args.train_path, settings=args.settings,
