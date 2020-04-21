@@ -253,6 +253,8 @@ class Trainer(object):
 
         self.model.eval()
 
+        stored_scores = {}
+
         with torch.no_grad():
             dev_loss = self.evaluate(devset)
             print()
@@ -261,13 +263,14 @@ class Trainer(object):
             print('\n'.join('{}: {:.3f}'.format(k, v) for k, v in dev_loss.items()))
             print()
             summary = self.model.evaluate(devset, self.dataset)
-            for task in summary.values():
-                task.print_summary()
+            for task_name, scorer in summary.items():
+                stored_scores[task_name] = scorer.get_scores()
+                scorer.print_summary(scores=stored_scores[task_name])
 
         self.model.train()
         dev_scores = {}
-        for task, scorer in summary.items():
-            dev_scores[task] = scorer.get_scores()['all']['accuracy']
+        for task, scored in stored_scores.items():
+            dev_scores[task] = scored['all']['accuracy']
         # add lm scores
         if 'lm_fwd' in dev_loss or 'lm_bwd' in dev_loss:
             dev_scores['lm_fwd'] = dev_loss['lm_fwd']

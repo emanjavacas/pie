@@ -1,3 +1,0 @@
-flask==1.0.2
-gunicorn==19.9.0
-typing==3.6.6

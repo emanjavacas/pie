@@ -163,7 +163,8 @@ class Attention(nn.Module):
         # (batch x src_seq_len) => (trg_seq_len x batch x src_seq_len)
         mask = mask.unsqueeze(0).expand_as(weights)
         # weights = weights * mask.float()
-        weights.masked_fill_(1 - mask, -float('inf'))
+        # Torch 1.1 -> 1.2: (1 - mask) becomes ~(mask)
+        weights.masked_fill_(~mask, -float('inf'))
 
         # normalize
         weights = F.softmax(weights, dim=2)
