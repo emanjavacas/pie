@@ -85,5 +85,18 @@ def train(config_path):
     pie.scripts.train.run(config_path=config_path)
 
 
+@pie_cli.command("info")
+@click.argument("model_file", type=click.Path(exists=True, file_okay=True, dir_okay=False, readable=True))
+def info(model_file):
+    from pie.models import BaseModel
+    import pprint
+    m = BaseModel.load(model_file)
+    bar = "=====================\n"
+    click.echo(bar+"Settings", color="red")
+    pprint.pprint(m._settings)
+    click.echo(bar+"Architecture", color="red")
+    click.echo(repr(m))
+
+
 if __name__ == "__main__":
     pie_cli()
