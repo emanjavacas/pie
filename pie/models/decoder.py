@@ -44,11 +44,9 @@ class LinearDecoder(nn.Module):
         # linear
         initialization.init_linear(self.decoder)
 
-    def forward(self, enc_outs, **conds):
+    def forward(self, enc_outs):
         if self.highway is not None:
             enc_outs = self.highway(enc_outs)
-        if self.conds:
-            enc_outs = torch.cat([enc_outs, self.conds(**conds)], -1)
         linear_out = self.decoder(enc_outs)
 
         return linear_out
