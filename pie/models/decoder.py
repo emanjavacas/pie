@@ -94,12 +94,15 @@ class LinearDecoder(nn.Module):
         ==========
         enc_outs : torch.tensor(seq_len x batch x hidden_size)
         """
+        if self.highway is not None:
+            enc_outs = self.highway(enc_outs)
         probs = F.softmax(self.decoder(enc_outs), dim=-1)
         probs, preds = torch.max(probs.transpose(0, 1), dim=-1)
 
         output_probs, output_preds = [], []
         for idx, length in enumerate(lengths.tolist()):
-            output_preds.append(self.label_encoder.inverse_transform(preds[idx])[:length])
+            output_preds.append(
+                self.label_encoder.inverse_transform(preds[idx])[:length])
             output_probs.append(probs[idx].tolist())
 
         return output_preds, output_probs
@@ -210,6 +213,8 @@ class CRFDecoder(nn.Module):
         return torch.mean(Z - score)
 
     def predict(self, enc_outs, lengths):
+        if self.highway is None:
+            enc_out = self.highway(enc_outs)
         # (seq_len x batch x vocab)
         logits = self.projection(enc_outs)
         seq_len, _, vocab = logits.size()
