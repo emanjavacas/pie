@@ -2,8 +2,8 @@
 # Can be run with python -m pie.scripts.train
 import time
 import os
-import logging
 from datetime import datetime
+import logging
 
 import pie
 from pie.settings import settings_from_file
@@ -42,6 +42,9 @@ def run(settings):
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
+
+    if settings.verbose:
+        logging.basicConfig(level=logging.INFO)
 
     # datasets
     reader = Reader(settings, settings.input_path)

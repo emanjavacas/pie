@@ -12,22 +12,27 @@ from pie import utils
 from pie import constants
 
 
-def get_ambiguous_tokens(reader, label_encoder):
-    ambs = defaultdict(Counter)
-    for _, (inp, tasks) in reader.readsents():
-        trues = label_encoder.preprocess(tasks[label_encoder.target], inp)
-        for tok, true in zip(inp, trues):
-            ambs[tok][true] += 1
+def get_known_and_ambigous_tokens(trainset, label_encoders):
+    """ Retrieve known and ambiguous token for all label encoders, for one dataset
 
-    return set(tok for tok in ambs if len(ambs[tok]) > 1)
-
-
-def get_known_tokens(reader):
+    :param trainset: Trainset
+    :param label_encoders: List of label encoders
+    :return: Known set of tokens, ambiguous token par task (Dict[task, Set[str])
+    """
     known = set()
-    for _, (inp, _) in reader.readsents():
-        for tok in inp:
+    ambs = defaultdict(lambda: defaultdict(Counter))
+    order_label = [label.target for label in label_encoders]
+    for _, (inp, tasks) in trainset.reader.readsents():
+        task_trues = [
+            label.preprocess(tasks[label.target], inp)
+            for label in label_encoders
+        ]
+        for tok, task_true in zip(inp, zip(*task_trues)):
+            for task, true in zip(order_label, task_true):
+                ambs[task][tok][true] += 1
             known.add(tok)
-    return known
+    ambs = {t: set(tok for tok in ambs[t] if len(ambs[t][tok]) > 1) for t in ambs}
+    return known, ambs
 
 
 def compute_scores(trues, preds):
@@ -48,15 +53,17 @@ class Scorer(object):
     """
     Accumulate predictions over batches and compute evaluation scores
     """
-    def __init__(self, label_encoder, trainset=None):
+    def __init__(self, label_encoder):
         self.label_encoder = label_encoder
         self.known_tokens = self.amb_tokens = None
-        if trainset:
-            self.known_tokens = get_known_tokens(trainset.reader)
-            self.amb_tokens = get_ambiguous_tokens(trainset.reader, label_encoder)
         self.preds = []
         self.trues = []
         self.tokens = []
+
+    def set_known_and_amb(self, known_tokens, amb_tokens):
+        """ Set known tokens as well as ambiguous tokens """
+        self.known_tokens = known_tokens
+        self.amb_tokens = amb_tokens
 
     def serialize_preds(self, path):
         """
@@ -349,24 +356,13 @@ def classification_report(y_true, y_pred, digits=2):
     last_line_heading = 'avg / total'
     headers = ["target", "precision", "recall", "f1-score", "support"]
 
-    p, r, f1, s = precision_recall_fscore_support(
-        y_true, y_pred,
-        average=None
-    )
+    p, r, f1, s = precision_recall_fscore_support(y_true, y_pred, average=None)
 
     tbl_rows = list(zip(
-        target_names,
-        *[
-            map(
-                lambda x: floatfmt.format(x),
-                nb_list.tolist()
-            )
-            for nb_list in [p, r, f1]
-        ],
-        *[
-            list(map(str, s.tolist()))
-        ]
-    ))
+        target_names, 
+        *[map(lambda x: floatfmt.format(x), nb_list.tolist())
+          for nb_list in [p, r, f1]],
+        *[list(map(str, s.tolist()))]))
 
     # compute averages
     last_row = (last_line_heading,
