@@ -5,13 +5,13 @@ import os
 import logging
 from datetime import datetime
 
-
 import pie
 from pie.settings import settings_from_file
 from pie.trainer import Trainer
 from pie import initialization
 from pie.data import Dataset, Reader, MultiLabelEncoder
 from pie.models import SimpleModel, get_pretrained_embeddings
+from pie import optimize
 
 # set seeds
 import random
@@ -31,8 +31,10 @@ def get_fname_infix(settings):
     return fname, infix
 
 
-def run(config_path):
+def run(settings):
     now = datetime.now()
+
+    # set seed
     seed = now.hour * 10000 + now.minute * 100 + now.second
     print("Using seed:", seed)
     random.seed(seed)
@@ -40,21 +42,6 @@ def run(config_path):
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
-
-    settings = settings_from_file(config_path)
-
-    # check settings
-    # - check at least and at most one target
-    has_target = False
-    for task in settings.tasks:
-        if len(settings.tasks) == 1:
-            task['target'] = True
-        if task.get('target', False):
-            if has_target:
-                raise ValueError("Got more than one target task")
-            has_target = True
-    if not has_target:
-        raise ValueError("Needs at least one target task")
 
     # datasets
     reader = Reader(settings, settings.input_path)
@@ -100,17 +87,19 @@ def run(config_path):
         logging.warning("No devset: cannot monitor/optimize training")
 
     # model
-    model = SimpleModel(label_encoder, settings.tasks,
-                        settings.wemb_dim, settings.cemb_dim, settings.hidden_size,
-                        settings.num_layers, dropout=settings.dropout,
-                        cell=settings.cell, cemb_type=settings.cemb_type,
-                        cemb_layers=settings.cemb_layers,
-                        custom_cemb_cell=settings.custom_cemb_cell,
-                        linear_layers=settings.linear_layers,
-                        scorer=settings.scorer,
-                        word_dropout=settings.word_dropout,
-                        lm_shared_softmax=settings.lm_shared_softmax,
-                        include_lm=settings.include_lm)
+    model = SimpleModel(
+        label_encoder, settings.tasks,
+        settings.wemb_dim, settings.cemb_dim, settings.hidden_size,
+        settings.num_layers, cell=settings.cell,
+        # dropout
+        dropout=settings.dropout, word_dropout=settings.word_dropout,
+        # word embeddings
+        merge_type=settings.merge_type, cemb_type=settings.cemb_type,
+        cemb_layers=settings.cemb_layers, custom_cemb_cell=settings.custom_cemb_cell,
+        # lm joint loss
+        include_lm=settings.include_lm, lm_shared_softmax=settings.lm_shared_softmax,
+        # decoder
+        scorer=settings.scorer, linear_layers=settings.linear_layers)
 
     # pretrain(/load pretrained) embeddings
     if model.wemb is not None:
@@ -185,8 +174,10 @@ def run(config_path):
             scorer = scorers[task]
             result = scorer.get_scores()
             for acc in result:
-                scores.append('{}:{:.6f}'.format(task, result[acc]['accuracy']))
-                scores.append('{}-support:{}'.format(task, result[acc]['support']))
+                scores.append('{}-{}:{:.6f}'.format(
+                    acc, task, result[acc]['accuracy']))
+                scores.append('{}-{}-support:{}'.format(
+                    acc, task, result[acc]['support']))
         path = '{}.results.{}.csv'.format(
             settings.modelname, '-'.join(get_targets(settings)))
         with open(path, 'a') as f:
@@ -201,5 +192,14 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('config_path', nargs='?', default='config.json')
+    parser.add_argument('--opt_path', help='Path to optimization file (see opt.json)')
+    parser.add_argument('--n_iter', type=int, default=20)
     args = parser.parse_args()
-    run(config_path=args.config_path)
+
+    settings = settings_from_file(args.config_path)
+
+    if args.opt_path:
+        opt = optimize.read_opt(args.opt_path)
+        optimize.run_optimize(run, settings, opt, args.n_iter)
+    else:
+        run(settings)

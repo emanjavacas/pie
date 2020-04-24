@@ -29,7 +29,8 @@ class BaseModel(nn.Module):
         # prepare input task data from task settings
         if isinstance(tasks, list):
             tasks = {task['name']: task for task in tasks}
-        self.tasks = tasks
+        # drop read-only tasks
+        self.tasks = {t: task for t, task in tasks.items() if not task.get('read_only')}
         super().__init__()
 
     def loss(self, batch_data):
@@ -62,7 +63,8 @@ class BaseModel(nn.Module):
         assert not self.training, "Ooops! Inference in training mode. Call model.eval()"
 
         scorers = {}
-        for task, le in self.label_encoder.tasks.items():
+        for task in self.tasks:
+            le = self.label_encoder.tasks[task]
             scorers[task] = Scorer(le, trainset)
 
         with torch.no_grad():
@@ -123,9 +125,7 @@ class BaseModel(nn.Module):
             utils.add_gzip_to_tar(string, path, tar)
 
             # serialize weights
-            with utils.tmpfile() as tmppath:
-                torch.save(self.state_dict(), tmppath)
-                tar.add(tmppath, arcname='state_dict.pt')
+            utils.add_weights_to_tar(self.state_dict(), 'state_dict.pt', tar)
 
             # serialize current pie commit
             if pie.__commit__ is not None:
@@ -191,10 +191,8 @@ class BaseModel(nn.Module):
                 logging.warn("Couldn't load settings for model {}!".format(fpath))
 
             # load state_dict
-            with utils.tmpfile() as tmppath:
-                tar.extract('state_dict.pt', path=tmppath)
-                dictpath = os.path.join(tmppath, 'state_dict.pt')
-                model.load_state_dict(torch.load(dictpath, map_location='cpu'))
+            model.load_state_dict(
+                torch.load(tar.extractfile('state_dict.pt'), map_location='cpu'))
 
         model.eval()
 

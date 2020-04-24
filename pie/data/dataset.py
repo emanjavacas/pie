@@ -22,14 +22,14 @@ class LabelEncoder(object):
     """
     def __init__(self, level='token', name=None, target=None, lower=False,
                  preprocessor=None, max_size=None, min_freq=1,
-                 pad=True, eos=False, bos=False, **meta):
+                 pad=True, eos=False, bos=False, reserved=(), **meta):
 
         if level.lower() not in ('token', 'char'):
             raise ValueError("`level` must be 'token' or 'char'. Got ", level)
 
         self.meta = meta  # dictionary with other task-relevant information
-        self.eos = constants.EOS if eos else None
         self.pad = constants.PAD if pad else None
+        self.eos = constants.EOS if eos else None
         self.bos = constants.BOS if bos else None
         self.lower = lower
         self.preprocessor = preprocessor
@@ -40,7 +40,7 @@ class LabelEncoder(object):
         self.level = level.lower()
         self.target = target
         self.name = name
-        self.reserved = (constants.UNK,)  # always use <unk>
+        self.reserved = reserved + (constants.UNK,)  # always use <unk>
         self.reserved += tuple([sym for sym in [self.eos, self.pad, self.bos] if sym])
         self.freqs = Counter()
         self.known_tokens = set()  # for char-level dicts, keep word-level known tokens
@@ -289,7 +289,10 @@ class MultiLabelEncoder(object):
         # check <eos> <bos> (not suitable for linear models)
         if meta['level'].lower() != 'char' and (meta.get('eos') or meta.get('bos')):
             raise ValueError(
-                '[Task: {task}] => `bos` and `eos` options are only compatible with char-level tasks but got level: "{level}". Aborting!!!'.format(task=name, level=meta['level']))
+                ('[Task: {task}] => `bos` and `eos` options are '
+                'only compatible with char-level tasks but got '
+                'level: "{level}". Aborting!!!').format(
+                    task=name, level=meta['level']))
 
         return self
 
@@ -303,9 +306,8 @@ class MultiLabelEncoder(object):
 
         for task in settings.tasks:
             if tasks is not None and task['settings']['target'] not in tasks:
-                logging.warning(
-                    "Ignoring task [{}]: no available data".format(task['target']))
-                continue
+                raise ValueError("No available data for task [{}]".format(
+                        task['settings']['target']))
             le.add_task(task['name'], level=task['level'], **task['settings'])
 
         return le
@@ -332,6 +334,8 @@ class MultiLabelEncoder(object):
         self.char.compute_vocab()
         for le in self.tasks.values():
             le.compute_vocab()
+
+        return self
 
     def fit_reader(self, reader):
         """

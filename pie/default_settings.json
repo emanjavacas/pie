@@ -69,37 +69,41 @@
 	"patience": 2, "threshold": 0.001
       },
 
-      "default": "copy" // while processing the files if the field is missing predict
+      "default": "copy", // while processing the files if the field is missing predict
       // the input token or something else:
       // - "copy" for copy over the token form
       // - "UNK" predict "UNK"
+      "read_only": false // encode task but don't model it
     }
   ],
 
   // task defaults for any given auxiliary task (can be overwritten by a task definition)
   "task_defaults": {
-    "level": "token", "layer": -1, "decoder": "linear", "context": "sentence"
+    "level": "token",
+    "layer": -1,
+    "decoder": "linear",
+    "context": "sentence"
   },
 
   // general task schedule params (can be overwritten in the "settings" entry of each)
-  "patience": 1000000, // default task schedule patience
+  "patience": 100, // task patience (global early stopping patience for target task)
   "factor": 1, // default task schedule factor
   "threshold": 0, // default task schedule thresholed
   "min_weight": 0, // default task schedule min_weight
 
   // * Joint LM-loss
   "include_lm": false, // whether to include autoregressive loss
-  "lm_shared_softmax": false, // whether to share the output layer for both fwd and bwd lm
+  "lm_shared_softmax": true, // whether to share the output layer for both fwd and bwd lm
   "lm_schedule": {
     // settings for joint LM task in case `include_lm` is true
-    "patience": 100, "factor": 0.5, "weight": 0.2, "mode": "min"
+    "patience": 2, "factor": 0.5, "weight": 0.2, "mode": "min"
   },
 
   // * Training
   "buffer_size": 10000, // maximum number of sentence in memory at any given time
   "cache_dataset": false, // precompute batches and keep them in memory
   "minimize_pad": false, // preprocess data to have similar sentence lengths inside batch
-  "epochs": 5, // number of epochs
+  "epochs": 500, // number of epochs
   "batch_size": 50, // batch size
   "shuffle": true, // whether to shuffle input batches
   "device": "cpu", // device to be used for training (use cuda:device_number for GPU)
@@ -117,7 +121,8 @@
   "lr": 0.001,
   "lr_factor": 0.75, // lr schedule (decrease lr by this factor after `lr_patience` epochs
   // without improvement on dev-set data)
-  "lr_patience": 2, // patience for early stopping
+  "min_lr": 0.000001, // minimum learning rate
+  "lr_patience": 2, // patience for lr schedule
   "checks_per_epoch": 1, // check model on dev-set so many times during epoch
 
   // * Model hyperparameters

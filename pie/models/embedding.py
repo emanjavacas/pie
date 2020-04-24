@@ -6,8 +6,8 @@ import torch.nn.functional as F
 from pie import torch_utils
 from pie import initialization
 
-from .encoder import RNNEncoder
 from .lstm import CustomBiLSTM
+from .highway import Highway
 
 
 class CNNEmbedding(nn.Module):
@@ -15,7 +15,7 @@ class CNNEmbedding(nn.Module):
     Character-level Embeddings with Convolutions following Kim 2014.
     """
     def __init__(self, num_embeddings, embedding_dim, padding_idx=None,
-                 kernel_sizes=(5, 4, 3), out_channels=100):
+                 highway_layers=2, kernel_sizes=(5, 4, 3), out_channels=32):
         self.num_embeddings = num_embeddings
         self.embedding_dim = out_channels * len(kernel_sizes)
         self.kernel_sizes = kernel_sizes
@@ -27,17 +27,25 @@ class CNNEmbedding(nn.Module):
 
         convs = []
         for W in kernel_sizes:
-            wide_pad = (0, (W-1) // 2)
-            conv = nn.Conv2d(
-                1, out_channels, (embedding_dim, W), padding=wide_pad)
+            padding = ((W//2) - 1, W - (W//2), 0, 0)
+            conv = torch.nn.Sequential(
+                torch.nn.ZeroPad2d(padding),
+                torch.nn.Conv2d(1, out_channels, (embedding_dim, W)))
             convs.append(conv)
         self.convs = nn.ModuleList(convs)
+
+        self.highway = None
+        if highway_layers > 0:
+            self.highway = Highway(self.embedding_dim, highway_layers)
 
         self.init()
 
     def init(self):
         initialization.init_embeddings(self.emb)
-        for conv in self.convs:
+        for conv_seq in self.convs:
+            for conv in conv_seq:
+                if isinstance(conv, torch.nn.ZeroPad2d):
+                    continue
             initialization.init_conv(conv)
 
     def forward(self, char, nchars, nwords):
@@ -47,17 +55,17 @@ class CNNEmbedding(nn.Module):
         emb = emb.transpose(1, 2)  # (batch x emb_dim x seq_len)
         emb = emb.unsqueeze(1)     # (batch x 1 x emb_dim x seq_len)
 
-        conv_outs, maxlen = [], 0
+        conv_outs = []
         for conv in self.convs:
             # (batch x C_o x seq_len)
             conv_outs.append(F.relu(conv(emb).squeeze(2)))
-            maxlen = max(maxlen, conv_outs[-1].size(2))
 
-        conv_outs = [F.pad(out, (0, maxlen - out.size(2))) for out in conv_outs]
         # (batch * nwords x C_o * len(kernel_sizes) x seq_len)
         conv_outs = torch.cat(conv_outs, dim=1)
         # (batch * nwords  x C_o * len(kernel_sizes) x 1)
-        conv_out = F.max_pool1d(conv_outs, maxlen).squeeze(2)
+        conv_out = F.max_pool1d(conv_outs, conv_outs.size(2)).squeeze(2)
+        if self.highway is not None:
+            conv_out = self.highway(conv_out)
         conv_out = torch_utils.pad_flat_batch(
             conv_out, nwords, maxlen=max(nwords).item())
 
