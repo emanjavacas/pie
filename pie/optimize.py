@@ -7,7 +7,8 @@ from json_minify import json_minify
 import scipy.stats as stats
 
 from pie import utils
-from pie import settings
+from pie.settings import settings_from_file, check_settings, merge_task_defaults
+from pie.settings import Settings
 
 
 # available distributions
@@ -95,32 +96,14 @@ def sample_from_config(opt):
     return output
 
 
-def run(config, opt, n_iter):
-    import train
-
+def run_optimize(train_fn, config, opt, n_iter, **kwargs):
     for i in range(n_iter):
         print()
         print("::: Starting optimization run {} :::".format(i + 1))
         print()
         sampled = sample_from_config(opt)
-        merged = settings.Settings(
+        merged = Settings(
             utils.recursive_merge(dict(config), sampled, overwrite=True))
         print("::: Sampled config :::")
         print(yaml.dump(dict(merged)))
-        train.run(settings.check_settings(settings.merge_task_defaults(merged)))
-
-
-if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('config_path', default='config.json')
-    parser.add_argument('opt_path', help='Path to optimization file (see opt.json)')
-    parser.add_argument('--n_iter', type=int, default=20)
-    args = parser.parse_args()
-
-    with utils.shutup():
-        config = settings.settings_from_file(args.config_path)
-
-    opt = read_opt(args.opt_path)
-
-    run(config, opt, args.n_iter)
+        train_fn(check_settings(merge_task_defaults(merged)), **kwargs)

@@ -5,15 +5,15 @@ import os
 import logging
 from datetime import datetime
 
-
 import pie
-from pie import utils
 from pie.settings import settings_from_file
 from pie.trainer import Trainer
 from pie import initialization
 from pie.data import Dataset, Reader, MultiLabelEncoder
 from pie.models import SimpleModel, get_pretrained_embeddings
+from pie import optimize
 
+# set seeds
 import random
 import numpy
 import torch
@@ -32,12 +32,9 @@ def get_fname_infix(settings):
 
 
 def run(settings):
-    # read settings if input is path
-    if isinstance(settings, str):
-        settings = settings_from_file(settings)
-
-    # seeding
     now = datetime.now()
+
+    # set seed
     seed = now.hour * 10000 + now.minute * 100 + now.second
     print("Using seed:", seed)
     random.seed(seed)
@@ -92,8 +89,8 @@ def run(settings):
     # model
     model = SimpleModel(
         label_encoder, settings.tasks,
-        settings.wemb_dim, settings.cemb_dim, settings.hidden_size, settings.num_layers,
-        cell=settings.cell,
+        settings.wemb_dim, settings.cemb_dim, settings.hidden_size,
+        settings.num_layers, cell=settings.cell,
         # dropout
         dropout=settings.dropout, word_dropout=settings.word_dropout,
         # word embeddings
@@ -102,9 +99,7 @@ def run(settings):
         # lm joint loss
         include_lm=settings.include_lm, lm_shared_softmax=settings.lm_shared_softmax,
         # decoder
-        scorer=settings.scorer, linear_layers=settings.linear_layers,
-        cond_emb_dim=settings.cond_emb_dim, cond_out_dim=settings.cond_out_dim
-    )
+        scorer=settings.scorer, linear_layers=settings.linear_layers)
 
     # pretrain(/load pretrained) embeddings
     if model.wemb is not None:
@@ -197,5 +192,14 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('config_path', nargs='?', default='config.json')
+    parser.add_argument('--opt_path', help='Path to optimization file (see opt.json)')
+    parser.add_argument('--n_iter', type=int, default=20)
     args = parser.parse_args()
-    run(args.config_path)
+
+    settings = settings_from_file(args.config_path)
+
+    if args.opt_path:
+        opt = optimize.read_opt(args.opt_path)
+        optimize.run_optimize(run, settings, opt, args.n_iter)
+    else:
+        run(settings)
