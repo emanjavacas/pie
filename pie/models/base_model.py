@@ -17,7 +17,7 @@ from pie import utils
 from pie.data import MultiLabelEncoder
 from pie.settings import Settings
 
-from .scorer import Scorer
+from .scorer import Scorer, get_known_and_ambigous_tokens
 
 
 class BaseModel(nn.Module):
@@ -29,7 +29,25 @@ class BaseModel(nn.Module):
         # prepare input task data from task settings
         if isinstance(tasks, list):
             tasks = {task['name']: task for task in tasks}
+        self.tasks = tasks
+        self.known = set()
+        self.ambs = {task: set() for task in tasks}
+        self._fitted_trainset_scorer = False
         super().__init__()
+
+    def get_scorer(self, task, trainset=None):
+        """ Given a task, gets a scorer. Trainset can be user for computing unknown and ambiguous tokens.
+
+        :param task: Taskname (str)
+        :param trainset: Dataset for training
+        :return: Scorer
+        """
+        scorer = Scorer(self.label_encoder.tasks[task])
+        if not self._fitted_trainset_scorer and trainset:
+            self.known, self.ambs = get_known_and_ambigous_tokens(trainset, list(self.label_encoder.tasks.values()))
+            self._fitted_trainset_scorer = True
+        scorer.set_known_and_amb(self.known, self.ambs[task])
+        return scorer
 
     def loss(self, batch_data):
         """
@@ -60,10 +78,7 @@ class BaseModel(nn.Module):
         """
         assert not self.training, "Ooops! Inference in training mode. Call model.eval()"
 
-        scorers = {}
-        for task in self.tasks:
-            le = self.label_encoder.tasks[task]
-            scorers[task] = Scorer(le, trainset)
+        scorers = {task: self.get_scorer(task, trainset) for task in self.tasks}
 
         with torch.no_grad():
             for (inp, tasks), (rinp, rtasks) in tqdm.tqdm(

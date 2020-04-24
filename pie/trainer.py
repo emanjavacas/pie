@@ -323,7 +323,10 @@ class Trainer(object):
 
             if self.check_freq > 0 and b > 0 and b % self.check_freq == 0:
                 if devset is not None:
+                    rep_start = time.time()
                     scores = self.run_check(devset)
+                    logging.info("Evaluation time: {} sec".format(time.time() - rep_start))
+                    rep_start = time.time()
 
         return scores
 

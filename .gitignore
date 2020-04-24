@@ -1,5 +1,7 @@
 # When flask is installed, produce a flask binary file
 flask
+# Tired of ignoring it
+.idea 
 # If one of these kind of file should be added, then it should be force added.
 #   Otherwise, it allows for clean development.
 *.csv

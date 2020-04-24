@@ -190,6 +190,7 @@ class CRFDecoder(nn.Module):
 
         # mask on padding (batch x seq_len)
         mask = torch_utils.make_length_mask(lengths).float()
+        # Mask is not used !
 
         # variables
         trans = logits.new(vocab + 2, vocab + 2).fill_(-10000.)
