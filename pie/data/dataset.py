@@ -459,10 +459,12 @@ class Dataset(object):
         self.device = settings.device
         self.shuffle = settings.shuffle
         self.minimize_pad = settings.minimize_pad
+        self.cache_dataset = settings.cache_dataset
 
         # data
         self.reader = reader
         self.label_encoder = label_encoder
+        self.cached = []
 
     @staticmethod
     def get_nelement(batch):
@@ -510,6 +512,23 @@ class Dataset(object):
                 - char : tensor(length, batch_size * words), padded lengths
             * (tasks) dictionary with tasks
         """
+        if self.cache_dataset:
+            if not self.cached:
+                self.cache_batches()
+            if self.shuffle:
+                random.shuffle(self.cached)
+
+            for batch, raw in self.cached:
+                # move to device
+                batch = tuple(list(wrap_device(batch, self.device)))
+                if return_raw:
+                    yield batch, raw
+                else:
+                    yield batch
+        else:
+            yield from self.batch_generator_(return_raw=return_raw)
+
+    def batch_generator_(self, return_raw=False):
         buf = []
         for (fpath, line_num), data in self.reader.readsents():
 
@@ -523,6 +542,14 @@ class Dataset(object):
 
         if len(buf) > 0:
             yield from self.prepare_buffer(buf, return_raw=return_raw)
+
+    def cache_batches(self):
+        if self.cached:
+            return
+
+        buf = [data for _, data in self.reader.readsents()]
+        for batch, raw in self.prepare_buffer(buf, return_raw=True, device='cpu'):
+            self.cached.append((batch, raw))
 
 
 def pack_batch(label_encoder, batch, device=None):
