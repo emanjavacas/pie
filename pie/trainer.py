@@ -54,9 +54,6 @@ class TaskScheduler(object):
         tasks = {}
         # preprocess tasks
         for task in settings.tasks:
-            # ignore read-only
-            if task.get('read_only'):
-                continue
             # add schedule and target
             tasks[task['name']] = task.get('schedule', {})
             tasks[task['name']]['target'] = task.get('target', False)

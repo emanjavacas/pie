@@ -29,8 +29,6 @@ class BaseModel(nn.Module):
         # prepare input task data from task settings
         if isinstance(tasks, list):
             tasks = {task['name']: task for task in tasks}
-        # drop read-only tasks
-        self.tasks = {t: task for t, task in tasks.items() if not task.get('read_only')}
         super().__init__()
 
     def loss(self, batch_data):

@@ -100,9 +100,6 @@ def check_settings(settings):
         if len(settings.tasks) == 1:
             task['target'] = True
         if task.get('target', False):
-            # - check target
-            if task.get('read_only'):
-                raise ValueError("Target task cannot be 'read_only'")
             if has_target:
                 raise ValueError("Got more than one target task")
             has_target = True
