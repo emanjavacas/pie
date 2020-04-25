@@ -96,14 +96,43 @@ def sample_from_config(opt):
     return output
 
 
-def run_optimize(train_fn, config, opt, n_iter, **kwargs):
+def run_optimize(train_fn, settings, opt, n_iter, **kwargs):
+    """
+    Run random search over given `settings` resampling parameters as
+    specified by `opt` for `n_iter` using `train_fn` function.
+
+    - train_fn: a function that takes settings and any other possible kwargs
+        and runs a training procedure
+    - settings: a Settings object fully determining a training run
+    - opt: a sampling file specifying parameters to resample each run,
+        including a distribution to sample from. The contents are read from
+        a json file with the following structure.
+        { "lr": {
+            "opt": "truncnorm",
+            "params": {
+                "mu": 0.0025, "std": 0.002, "lower": 0.0001, "upper": 1
+                }
+            }
+        }
+        "opt" specifies the distribution, and "params" the required parameters
+        for that distribution:
+            - "truncnorm": truncated normal
+               - params: mu, std, lower, upper
+            - "choice": uniform over given options
+               - params: list of options
+            - "normint": same as "truncnorm" but output is round up to an integer
+
+        Other distributions can be implemented in the future.
+
+    - n_iter: int, number of iterations to run
+    """
     for i in range(n_iter):
         print()
         print("::: Starting optimization run {} :::".format(i + 1))
         print()
         sampled = sample_from_config(opt)
         merged = Settings(
-            utils.recursive_merge(dict(config), sampled, overwrite=True))
-        print("::: Sampled config :::")
+            utils.recursive_merge(dict(settings), sampled, overwrite=True))
+        print("::: Sampled settings :::")
         print(yaml.dump(dict(merged)))
         train_fn(check_settings(merge_task_defaults(merged)), **kwargs)
