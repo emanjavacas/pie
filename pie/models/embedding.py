@@ -165,6 +165,52 @@ def EmbeddingConcat():
     return func
 
 
+def build_embeddings(label_encoder, wemb_dim,
+                     cemb_dim, cemb_type, custom_cemb_cell, cemb_layers, cell, init_rnn,
+                     merge_type, dropout):
+    """
+    Utility function to build embedding layers
+    """
+    wemb = None
+    if wemb_dim > 0:
+        wemb = nn.Embedding(len(label_encoder.word), wemb_dim,
+                            padding_idx=label_encoder.word.get_pad())
+        # init embeddings
+        initialization.init_embeddings(wemb)
+
+    cemb = None
+    if cemb_type.upper() == 'RNN':
+        cemb = RNNEmbedding(len(label_encoder.char), cemb_dim,
+                            padding_idx=label_encoder.char.get_pad(),
+                            custom_lstm=custom_cemb_cell, dropout=dropout,
+                            num_layers=cemb_layers, cell=cell, init_rnn=init_rnn)
+    elif cemb_type.upper() == 'CNN':
+        cemb = CNNEmbedding(len(label_encoder.char), cemb_dim,
+                            padding_idx=label_encoder.char.get_pad())
+
+    merger = None
+    if cemb is not None and wemb is not None:
+        if merge_type.lower() == 'mixer':
+            if cemb.embedding_dim != wemb.embedding_dim:
+                raise ValueError("EmbeddingMixer needs equal embedding dims")
+            merger = EmbeddingMixer(wemb_dim)
+            in_dim = wemb_dim
+        elif merge_type == 'concat':
+            merger = EmbeddingConcat()
+            in_dim = wemb_dim + cemb.embedding_dim
+        else:
+            raise ValueError("Unknown merge method: {}".format(merge_type))
+    elif cemb is None:
+        in_dim = wemb_dim
+    else:
+        in_dim = cemb.embedding_dim
+
+    return (wemb, cemb, merger), in_dim
+
+
+def get_embeddings()
+
+
 if __name__ == '__main__':
     from pie.settings import settings_from_file
     from pie.data import Dataset

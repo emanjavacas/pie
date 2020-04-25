@@ -5,7 +5,7 @@ import torch.nn.functional as F
 
 from pie import torch_utils, initialization
 
-from .embedding import RNNEmbedding, CNNEmbedding, EmbeddingMixer, EmbeddingConcat
+from .embedding import build_embeddings
 from .decoder import AttentionalDecoder, LinearDecoder, CRFDecoder
 from .encoder import RNNEncoder
 from .base_model import BaseModel
@@ -73,41 +73,10 @@ class SimpleModel(BaseModel):
         super().__init__(label_encoder, tasks)
 
         # Embeddings
-        self.wemb = None
-        if self.wemb_dim > 0:
-            self.wemb = nn.Embedding(len(label_encoder.word), wemb_dim,
-                                     padding_idx=label_encoder.word.get_pad())
-            # init embeddings
-            initialization.init_embeddings(self.wemb)
-
-        self.cemb = None
-        if cemb_type.upper() == 'RNN':
-            self.cemb = RNNEmbedding(
-                len(label_encoder.char), cemb_dim,
-                padding_idx=label_encoder.char.get_pad(),
-                custom_lstm=custom_cemb_cell, dropout=dropout,
-                num_layers=cemb_layers, cell=cell, init_rnn=init_rnn)
-        elif cemb_type.upper() == 'CNN':
-            self.cemb = CNNEmbedding(
-                len(label_encoder.char), cemb_dim,
-                padding_idx=label_encoder.char.get_pad())
-
-        self.merger = None
-        if self.cemb is not None and self.wemb is not None:
-            if merge_type.lower() == 'mixer':
-                if self.cemb.embedding_dim != self.wemb.embedding_dim:
-                    raise ValueError("EmbeddingMixer needs equal embedding dims")
-                self.merger = EmbeddingMixer(wemb_dim)
-                in_dim = wemb_dim
-            elif merge_type == 'concat':
-                self.merger = EmbeddingConcat()
-                in_dim = wemb_dim + self.cemb.embedding_dim
-            else:
-                raise ValueError("Unknown merge method: {}".format(merge_type))
-        elif self.cemb is None:
-            in_dim = wemb_dim
-        else:
-            in_dim = self.cemb.embedding_dim
+        (self.wemb, self.cemb, self.merger), in_dim = build_embeddings(
+            label_encoder, wemb_dim,
+            cemb_dim, cemb_type, custom_cemb_cell, cemb_layers, cell, init_rnn,
+            merge_type, dropout)
 
         # Encoder
         self.encoder = None
@@ -185,7 +154,8 @@ class SimpleModel(BaseModel):
                 self.lm_bwd_decoder = LinearDecoder(label_encoder.word, hidden_size)
 
     def get_args_and_kwargs(self):
-        return {'args': (self.wemb_dim, self.cemb_dim, self.hidden_size, self.num_layers),
+        return {'args': (self.wemb_dim, self.cemb_dim,
+                         self.hidden_size, self.num_layers),
                 'kwargs': {'dropout': self.dropout,
                            'word_dropout': self.word_dropout,
                            'cell': self.cell,
@@ -207,6 +177,13 @@ class SimpleModel(BaseModel):
         if self.cemb is not None:
             # cemb_outs: (seq_len x batch x emb_dim)
             cemb, cemb_outs = self.cemb(char, clen, wlen)
+
+        if wemb is None:
+            emb = cemb
+        elif cemb is None:
+            emb = wemb
+        else:
+            emb = self.merger(wemb, cemb)
 
         return wemb, cemb, cemb_outs
 
@@ -241,12 +218,6 @@ class SimpleModel(BaseModel):
 
         # Embedding
         wemb, cemb, cemb_outs = self.embedding(word, wlen, char, clen)
-        if wemb is None:
-            emb = cemb
-        elif cemb is None:
-            emb = wemb
-        else:
-            emb = self.merger(wemb, cemb)
 
         # Encoder
         emb = F.dropout(emb, p=self.dropout, training=self.training)
@@ -313,12 +284,6 @@ class SimpleModel(BaseModel):
 
         # Embedding
         wemb, cemb, cemb_outs = self.embedding(word, wlen, char, clen)
-        if wemb is None:
-            emb = cemb
-        elif cemb is None:
-            emb = wemb
-        else:
-            emb = self.merger(wemb, cemb)
 
         # Encoder
         enc_outs = None
