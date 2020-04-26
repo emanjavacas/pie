@@ -149,9 +149,9 @@ class EmbeddingMixer(nn.Module):
         alpha_in = torch.cat([wembs, cembs], dim=-1)
         # ((seq_len x) batch)
         if wembs.dim() == 3:
-            alpha = F.sigmoid(torch.einsum('do,mbd->mb', [self.alpha, alpha_in]))
+            alpha = torch.sigmoid(torch.einsum('do,mbd->mb', [self.alpha, alpha_in]))
         else:
-            alpha = F.sigmoid(torch.einsum('do,bd->b', [self.alpha, alpha_in]))
+            alpha = torch.sigmoid(torch.einsum('do,bd->b', [self.alpha, alpha_in]))
 
         wembs = alpha.unsqueeze(-1).expand_as(wembs) * wembs
         cembs = (1 - alpha).unsqueeze(-1).expand_as(cembs) * cembs
