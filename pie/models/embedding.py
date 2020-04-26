@@ -200,15 +200,12 @@ def build_embeddings(label_encoder, wemb_dim,
             in_dim = wemb_dim + cemb.embedding_dim
         else:
             raise ValueError("Unknown merge method: {}".format(merge_type))
-    elif cemb is None:
-        in_dim = wemb_dim
-    else:
+    elif cemb is not None:
         in_dim = cemb.embedding_dim
+    else:
+        in_dim = wemb_dim
 
     return (wemb, cemb, merger), in_dim
-
-
-def get_embeddings()
 
 
 if __name__ == '__main__':

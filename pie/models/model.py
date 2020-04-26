@@ -185,7 +185,7 @@ class SimpleModel(BaseModel):
         else:
             emb = self.merger(wemb, cemb)
 
-        return wemb, cemb, cemb_outs
+        return emb, (wemb, cemb, cemb_outs)
 
     def init_from_encoder(self, encoder):
         # wemb
@@ -217,7 +217,7 @@ class SimpleModel(BaseModel):
         output = {}
 
         # Embedding
-        wemb, cemb, cemb_outs = self.embedding(word, wlen, char, clen)
+        emb, (wemb, cemb, cemb_outs) = self.embedding(word, wlen, char, clen)
 
         # Encoder
         emb = F.dropout(emb, p=self.dropout, training=self.training)
@@ -283,7 +283,7 @@ class SimpleModel(BaseModel):
         (word, wlen), (char, clen) = inp
 
         # Embedding
-        wemb, cemb, cemb_outs = self.embedding(word, wlen, char, clen)
+        emb, (wemb, cemb, cemb_outs) = self.embedding(word, wlen, char, clen)
 
         # Encoder
         enc_outs = None
