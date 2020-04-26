@@ -31,7 +31,7 @@ class Highway(nn.Module):
         current = inp
         for layer in self.layers:
             inp, gate = layer(current).chunk(2, dim=-1)
-            inp, gate = getattr(F, self.act)(inp), F.sigmoid(gate)
+            inp, gate = getattr(F, self.act)(inp), torch.sigmoid(gate)
             current = gate * current + (1 - gate) * inp
 
         return current
