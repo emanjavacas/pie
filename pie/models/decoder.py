@@ -413,7 +413,7 @@ class AttentionalDecoder(nn.Module):
             # expose beam dim for swaping
             if isinstance(hidden, tuple):
                 hidden = hidden[0].view(self.num_layers, width, batch, -1), \
-                         hidden[0].view(self.num_layers, width, batch, -1)
+                         hidden[1].view(self.num_layers, width, batch, -1)
             else:
                 hidden = hidden.view(self.num_layers, width, batch, -1)
 
@@ -432,7 +432,11 @@ class AttentionalDecoder(nn.Module):
                     hidden[:, :, i].copy_(hidden[:, :, i].index_select(1, sbeam))
 
             # collapse beam and batch
-            hidden = hidden.view(self.num_layers, width * batch, -1)
+            if isinstance(hidden, tuple):
+                hidden = hidden[0].view(self.num_layers, width * batch, -1), \
+                         hidden[1].view(self.num_layers, width * batch, -1)
+            else:
+                hidden = hidden.view(self.num_layers, width * batch, -1)
 
         scores, hyps = [], []
         for beam in beams:
