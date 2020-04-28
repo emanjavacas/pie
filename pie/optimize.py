@@ -136,3 +136,15 @@ def run_optimize(train_fn, settings, opt, n_iter, **kwargs):
         print("::: Sampled settings :::")
         print(yaml.dump(dict(merged)))
         train_fn(check_settings(merge_task_defaults(merged)), **kwargs)
+
+
+if __name__ == '__main__':
+    from pie.settings import settings_from_file
+    settings = settings_from_file("./transformer-lemma.json")
+    opt = read_opt("opt-transformer.json")
+    for _ in range(10):
+        sampled = sample_from_config(opt)
+        d = Settings(utils.recursive_merge(dict(settings), sampled, overwrite=True))
+        for k in opt:
+            print(k, d[k])
+            print()

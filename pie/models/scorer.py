@@ -358,11 +358,10 @@ def classification_report(y_true, y_pred, digits=2):
 
     p, r, f1, s = precision_recall_fscore_support(y_true, y_pred, average=None)
 
-    tbl_rows = list(zip(
-        target_names, 
-        *[map(lambda x: floatfmt.format(x), nb_list.tolist())
-          for nb_list in [p, r, f1]],
-        *[list(map(str, s.tolist()))]))
+    formatted = []
+    for nb_list in [p, r, f1]:
+        formatted.append([floatfmt.format(x) for x in nb_list.tolist()])
+    support = [str(x) for x in s.tolist()]
 
     # compute averages
     last_row = (last_line_heading,

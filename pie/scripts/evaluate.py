@@ -54,8 +54,8 @@ def run(model_path, test_path, train_path, # data
 
     testset = Dataset(settings, Reader(settings, *test_path), model.label_encoder)
 
-    for task in model.evaluate(
-            testset, trainset, use_beam=use_beam, beam_width=beam_width).values():
+    for task in model.evaluate(testset, trainset,
+                               use_beam=use_beam, beam_width=beam_width).values():
         task.print_summary(
             full=full, confusion_matrix=confusion, report=report, markdown=markdown)
 
