@@ -82,7 +82,8 @@ def evaluate(model_path, test_path, train_path, settings, batch_size,
 def train(config_path):
     """ Train a model using the file at [CONFIG_PATH]"""
     import pie.scripts.train
-    pie.scripts.train.run(config_path=config_path)
+    import pie.settings
+    pie.scripts.train.run(settings.settings_from_file(config_path))
 
 
 @pie_cli.command("info")

@@ -32,6 +32,13 @@ def sample_task(target, tasks, factor=2):
     return random.choices(tasks, weights)[0]
 
 
+def get_target_task(settings):
+    for task in settings.tasks:
+        if task.get('target'):
+            return task['name']
+    raise ValueError("No target task?")
+
+
 class EarlyStopException(Exception):
     def __init__(self, task, loss, state_dict):
         self.task = task
@@ -43,42 +50,36 @@ class TaskScheduler(object):
     """
     Track scores
     """
-    def __init__(self, tasks, patience, factor, threshold, min_weight,
-                 optimizer=None, lr_factor=1, lr_patience=100):
-        for task, values in tasks.items():
-            tasks[task] = {'steps': 0, **values}
-            # set task mode
-            if 'mode' not in tasks[task]:
-                tasks[task]['mode'] = 'max'
-            # set initial weight
-            if 'weight' not in tasks[task]:
-                tasks[task]['weight'] = 1.0
-            # set initial best
-            if tasks[task]['mode'] == 'max':
-                tasks[task]['best'] = -float('inf')
-            else:
-                tasks[task]['best'] = float('inf')
+    def __init__(self, settings):
+        tasks = {}
+        # preprocess tasks
+        for task in settings.tasks:
+            # add schedule and target
+            tasks[task['name']] = task.get('schedule', {})
+            tasks[task['name']]['target'] = task.get('target', False)
+            # add task data for lm loss
+            if settings.include_lm:
+                tasks['lm_fwd'] = dict(settings.lm_schedule)
+                tasks['lm_bwd'] = dict(settings.lm_schedule)
 
-        # lr schedule
-        self.optimizer = optimizer
-        self.lr_factor = lr_factor
-        self.lr_patience = lr_patience
-        self.lr_steps = 0
+        for task, tdata in tasks.items():
+            # set step counter
+            tdata['steps'] = 0
+            # set default task mode
+            tdata['mode'] = tdata.get('mode', 'max')
+            # set initial weight
+            tdata['weight'] = tdata.get('weight', 1.0)
+            # set initial best
+            tdata['best'] = -float('inf') if tdata['mode'] == 'max' else float('inf')
+
+        self.tasks = tasks
 
         # task schedule
-        self.tasks = tasks
-        self.patience = patience
-        self.factor = factor
-        self.threshold = threshold
-        self.min_weight = min_weight
+        self.patience = settings.patience
+        self.factor = settings.factor
+        self.threshold = settings.threshold
+        self.min_weight = settings.min_weight
         self.fid = '/tmp/{}'.format(str(uuid.uuid1()))
-
-    def get_lr(self):
-        # assumes single param group
-        return float(self.optimizer.param_groups[0]['lr'])
-
-    def set_lr(self, new_lr):
-        self.optimizer.param_groups[0]['lr'] = new_lr
 
     def __repr__(self):
         # task scheduler
@@ -92,12 +93,6 @@ class TaskScheduler(object):
             output += ' '.join('{}="{}"'.format(key, val) for key, val in values.items())
             output += '/>'
         output += '\n</TaskScheduler>'
-
-        # lr scheduler
-        if self.optimizer is not None:
-            output += '\n'
-            output += '<LrScheduler lr="{}" lr_steps="{}" lr_patience="{}"/>'.format(
-                round(self.get_lr(), 5), self.lr_steps, self.lr_patience)
 
         return output
 
@@ -129,13 +124,8 @@ class TaskScheduler(object):
                 if is_target:
                     # serialize model params
                     torch.save(model.state_dict(), self.fid)
-                    # lr schedule
-                    self.lr_steps = 0
             else:
                 self.tasks[task]['steps'] += 1
-                # lr schedule
-                if is_target:
-                    self.lr_steps += 1
 
             # check if we need to stop globally or downweight a task loss
             patience = self.tasks[task].get('patience', self.patience)
@@ -152,12 +142,23 @@ class TaskScheduler(object):
                     min_weight = self.tasks[task].get('min_weight', self.min_weight)
                     self.tasks[task]['weight'] = max(new_weight, min_weight)
 
-            # lr schedule
-            if is_target and self.lr_steps >= self.lr_patience:
-                self.set_lr(self.get_lr() * self.lr_factor)
-
     def get_weights(self):
         return {task: self.tasks[task]['weight'] for task in self.tasks}
+
+
+class LRScheduler(object):
+    def __init__(self, optimizer, **kwargs):
+        self.lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode='max', **kwargs)
+
+    def step(self, score):
+        self.lr_scheduler.step(score)
+
+    def __repr__(self):
+        return '<LrScheduler lr="{}" lr_steps="{}" lr_patience="{}"/>' \
+            .format(self.lr_scheduler.optimizer.param_groups[0]['lr'],
+                    self.lr_scheduler.num_bad_epochs,
+                    self.lr_scheduler.patience)
 
 
 class Trainer(object):
@@ -167,14 +168,14 @@ class Trainer(object):
     Settings
     ========
     optim
-    lr
+    lr (lr_factor, lr_patience, min_lr)
     clip_norm
     weights
     report_freq
     checks_per_epoch
     """
     def __init__(self, settings, model, dataset, num_instances):
-        self.tasks = settings.tasks
+        self.target_task = get_target_task(settings)
         self.verbose = settings.verbose
         self.dataset = dataset
         self.model = model
@@ -193,20 +194,10 @@ class Trainer(object):
         else:
             self.check_freq = 0  # no checks
 
-        tasks = {}
-        for task in settings.tasks:
-            tasks[task['name']] = task.get('schedule', {})
-            tasks[task['name']]['target'] = task.get('target', False)
-        if settings.include_lm:
-            tasks['lm_fwd'] = settings.lm_schedule
-            tasks['lm_bwd'] = settings.lm_schedule
-        self.task_scheduler = TaskScheduler(
-            # task schedule
-            tasks, settings.patience, settings.factor, settings.threshold,
-            settings.min_weight,
-            # lr schedule
-            optimizer=self.optimizer,
-            lr_factor=settings.lr_factor, lr_patience=settings.lr_patience)
+        self.task_scheduler = TaskScheduler(settings)
+        self.lr_scheduler = LRScheduler(
+            self.optimizer, factor=settings.lr_factor,
+            patience=settings.lr_patience, min_lr=settings.min_lr)
 
         if settings.verbose:
             print()
@@ -216,6 +207,10 @@ class Trainer(object):
             print("::: Task schedules :::")
             print()
             print(self.task_scheduler)
+            print()
+            print("::: LR schedule :::")
+            print()
+            print(self.lr_scheduler)
             print()
 
     def weight_loss(self, loss):
@@ -233,7 +228,7 @@ class Trainer(object):
         total_losses, total_batches = collections.defaultdict(float), 0
 
         # get all tasks
-        tasks = list(self.model.label_encoder.tasks)
+        tasks = list(self.model.tasks)
 
         for batch in tqdm.tqdm(dataset.batch_generator()):
             total_batches += 1
@@ -279,9 +274,12 @@ class Trainer(object):
             dev_scores['lm_bwd'] = dev_loss['lm_bwd']
 
         self.task_scheduler.step(dev_scores, self.model)
+        self.lr_scheduler.step(dev_scores[self.target_task])
 
         if self.verbose:
             print(self.task_scheduler)
+            print()
+            print(self.lr_scheduler)
             print()
 
         return dev_scores
@@ -294,7 +292,7 @@ class Trainer(object):
 
         for b, batch in enumerate(self.dataset.batch_generator()):
             # get loss
-            loss = self.model.loss(batch, get_batch_task(self.tasks))
+            loss = self.model.loss(batch, get_batch_task(self.model.tasks.values()))
 
             if not loss:
                 raise ValueError("Got empty loss, no tasks defined?")
