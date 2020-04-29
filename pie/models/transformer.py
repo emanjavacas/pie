@@ -22,43 +22,29 @@ from pie.models import (BaseModel, LinearDecoder, CRFDecoder,
 from pie import optimize
 
 
-def get_tokenizer_breakpoints(tokenizer):
-    breaks = []
-    for v, idx in tokenizer.get_vocab().items():
-        breaks.append(int(not v.startswith('Ġ')))
-    breaks = torch.tensor(breaks)
-    breaks[tokenizer.all_special_ids] = 0
-    return breaks
+def get_instance_spans(tokenizer, text):
+    index = []
+    tokens = []
+    for (i, token) in enumerate(text.split()):
+        index.append(len(tokens))
+        for sub_token in tokenizer.tokenize(token):
+            tokens.append(sub_token)
+    index.append(len(tokens))
+    spans = list(zip(index[:-1], index[1:]))
+    return spans
 
 
-def get_span_offsets(input_ids, breaks):
-    max_span_len = 0
-    spans, span = [], 0
-    for idx, i in enumerate(breaks[input_ids].tolist()[::-1]):
-        if i == 0:
-            start = len(input_ids) - idx - 1
-            spans.append((start,  start + span + 1))
-            max_span_len = max(max_span_len, span + 1)
-            span = 0
-        else:
-            span += 1
-    spans = spans[::-1]
-
-    return spans, max_span_len
-
-
-def get_spans(batch, input_ids, breaks):
-    span_offsets, max_span_len = zip(
-        *[get_span_offsets(inp, breaks) for inp in input_ids])
-    max_span_len = max(max_span_len)
-    max_spans = max(map(len, span_offsets))
+def get_spans(tokenizer, texts, batch):
+    spans = [get_instance_spans(tokenizer, inp) for inp in texts]
+    max_span_len = max(end - start for sent in spans for start, end in sent)
+    max_spans = max(map(len, spans))
     batch_size, _, emb_dim = batch.shape
     output = torch.zeros(
         batch_size, max_spans, max_span_len, emb_dim, device=batch.device)
     mask = torch.zeros(batch_size, max_spans, max_span_len)
 
     for i in range(batch_size):
-        for span, (start, end) in enumerate(span_offsets[i]):
+        for span, (start, end) in enumerate(spans[i]):
             output[i, span, 0:end-start].copy_(batch[i, start:end])
             mask[i, span, 0:end-start] = 1
 
@@ -66,12 +52,14 @@ def get_spans(batch, input_ids, breaks):
 
 
 def check_alignment(tokenizer, text):
-    input_ids = tokenizer.batch_encode_plus(text)['input_ids']
-    breaks = get_tokenizer_breakpoints(tokenizer)
-    spans, _ = get_span_offsets(input_ids[0], breaks)
-    tokens = tokenizer.convert_ids_to_tokens(input_ids[0])
-    for start, end in spans:
-        print(tokens[start:end])
+    spans = get_instance_spans(tokenizer, text)
+    orig_tokens = text.split()
+    assert len(spans) == len(orig_tokens)
+    tokens = tokenizer.tokenize(text)
+    output = []
+    for idx, (start, end) in enumerate(spans):
+        output.append((tokens[start:end], orig_tokens[idx]))
+    return output
 
 
 class TransformerDataset(Dataset):
@@ -80,20 +68,17 @@ class TransformerDataset(Dataset):
 
         self.tokenizer = tokenizer
         self.model = model
-        self.breaks = get_tokenizer_breakpoints(tokenizer).to(settings.device)
 
     def get_transformer_output(self, text, device):
         encoded = self.tokenizer.batch_encode_plus(
             text, return_tensors='pt', pad_to_max_length=True)
         encoded = {k: val.to(self.model.device) for k, val in encoded.items()}
         with torch.no_grad():
-            batch, _ = self.model(**encoded)
-        input_ids = self.tokenizer.batch_encode_plus(text)['input_ids']
+            batch = self.model(**encoded)[0]  # some models return 2 items, others 1
         # remove <s>, </s> tokens
         batch = batch[:, 1:-1]
-        input_ids = [inp[1:-1] for inp in input_ids]
         # get spans
-        context, mask = get_spans(batch, input_ids, self.breaks)
+        context, mask = get_spans(self.tokenizer, text, batch)
         context, mask = context.to(device), mask.to(device)
 
         return context, mask
@@ -347,7 +332,6 @@ def run(settings, transformer_path):
     total = sum(p.nelement() for p in model.parameters())
     print("{}/{} trainable/total".format(trainable, total))
     print()
-
 
     # training
     print("Starting training")
