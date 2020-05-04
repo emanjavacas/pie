@@ -82,7 +82,21 @@ def evaluate(model_path, test_path, train_path, settings, batch_size,
 def train(config_path):
     """ Train a model using the file at [CONFIG_PATH]"""
     import pie.scripts.train
-    pie.scripts.train.run(config_path=config_path)
+    import pie.settings
+    pie.scripts.train.run(settings.settings_from_file(config_path))
+
+
+@pie_cli.command("info")
+@click.argument("model_file", type=click.Path(exists=True, file_okay=True, dir_okay=False, readable=True))
+def info(model_file):
+    from pie.models import BaseModel
+    import pprint
+    m = BaseModel.load(model_file)
+    bar = "=====================\n"
+    click.echo(bar+"Settings", color="red")
+    pprint.pprint(m._settings)
+    click.echo(bar+"Architecture", color="red")
+    click.echo(repr(m))
 
 
 if __name__ == "__main__":

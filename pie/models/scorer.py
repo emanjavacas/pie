@@ -31,11 +31,8 @@ def get_known_and_ambigous_tokens(trainset, label_encoders):
             for task, true in zip(order_label, task_true):
                 ambs[task][tok][true] += 1
             known.add(tok)
-    return known, {task: set(
-        tok
-        for tok in ambs[task] if len(ambs[task][tok]) > 1)
-        for task in ambs
-    }
+    ambs = {t: set(tok for tok in ambs[t] if len(ambs[t][tok]) > 1) for t in ambs}
+    return known, ambs
 
 
 def compute_scores(trues, preds):
@@ -267,8 +264,8 @@ class Scorer(object):
 
         return '\n'.join(summary)
 
-    def print_summary(self, full=False, most_common=100, confusion_matrix=False, scores=None,
-                      report=False, markdown=True):
+    def print_summary(self, full=False, most_common=100, confusion_matrix=False,
+                      scores=None, report=False, markdown=True):
         """
         Get evaluation summary
 
@@ -282,7 +279,8 @@ class Scorer(object):
         if markdown:
             print("## " + self.label_encoder.name)
         else:
-            print("::: Evaluation report for task: {} :::".format(self.label_encoder.name))
+            print("::: Evaluation report for task: {} :::".format(
+                self.label_encoder.name))
         print()
 
         if scores is None:
@@ -290,7 +288,7 @@ class Scorer(object):
 
         # print scores
         if markdown:
-            print(self.scores_in_markdown(scores))
+            print(self.scores_in_markdown(scores) + '\n')
         else:
             print(yaml.dump(scores, default_flow_style=False))
 
@@ -299,7 +297,8 @@ class Scorer(object):
             if markdown:
                 print("### Error summary for task {}".format(self.label_encoder.name))
             else:
-                print("::: Error summary for task: {} :::".format(self.label_encoder.name))
+                print("::: Error summary for task: {} :::".format(
+                    self.label_encoder.name))
             print()
             if self.label_encoder.level == 'char':
                 print(self.get_transduction_summary(most_common=most_common))
@@ -322,18 +321,18 @@ class Scorer(object):
             else:
                 print("::: Confusion Matrix :::")
             print()
-            print((github_table.GithubFlavoredMarkdownTable(self.get_confusion_matrix_table())).table)
+            print(github_table.GithubFlavoredMarkdownTable(
+                self.get_confusion_matrix_table()).table)
 
     def get_classification_report(self):
         return classification_report(
             y_true=self.trues,
-            y_pred=self.preds
-        )
+            y_pred=self.preds)
 
     @staticmethod
     def scores_in_markdown(scores):
         measures = ["accuracy", "precision", "recall", "support"]
-        table = [[""]+measures]
+        table = [[""] + measures]
         for key in scores:
             table.append([key, *[scores[key][meas] for meas in measures]])
 
@@ -357,24 +356,12 @@ def classification_report(y_true, y_pred, digits=2):
     last_line_heading = 'avg / total'
     headers = ["target", "precision", "recall", "f1-score", "support"]
 
-    p, r, f1, s = precision_recall_fscore_support(
-        y_true, y_pred,
-        average=None
-    )
+    p, r, f1, s = precision_recall_fscore_support(y_true, y_pred, average=None)
 
-    tbl_rows = list(zip(
-        target_names,
-        *[
-            map(
-                lambda x: floatfmt.format(x),
-                nb_list.tolist()
-            )
-            for nb_list in [p, r, f1]
-        ],
-        *[
-            list(map(str, s.tolist()))
-        ]
-    ))
+    formatted = []
+    for nb_list in [p, r, f1]:
+        formatted.append([floatfmt.format(x) for x in nb_list.tolist()])
+    support = [str(x) for x in s.tolist()]
 
     # compute averages
     last_row = (last_line_heading,
@@ -384,4 +371,4 @@ def classification_report(y_true, y_pred, digits=2):
                 str(np.sum(s)))
     tbl_rows.append(last_row)
 
-    return (github_table.GithubFlavoredMarkdownTable([headers]+tbl_rows)).table
+    return github_table.GithubFlavoredMarkdownTable([headers] + tbl_rows).table

@@ -35,18 +35,36 @@ def simple_tokenizer(text, lower):
             yield sentence
 
 
-def lines_from_file(fpath, lower=False):
+def lines_from_file(fpath, lower=False, tokenize=False, max_sent_len=35):
+    """
+    lower : bool, whether to lowercase output
+    tokenize : bool, whether to use simple_tokenizer
+    max_sent_len : int, only applicable if tokenize is False
+    """
     with open(fpath) as f:
         for line in f:
-            for sentence in simple_tokenizer(line, lower):
-                yield sentence, len(sentence)
+            sentence = []
+            if not tokenize:
+                for w in line.split():
+                    if len(sentence) >= max_sent_len:
+                        yield sentence, len(sentence)
+                        sentence = []
+                    sentence.append(w.lower() if lower else w)
+            else:
+                for sentence in simple_tokenizer(line, lower):
+                    yield sentence, len(sentence)
+                sentence = []
+
+    if sentence: # yield remaining words when tokenize is False
+        yield sentence, len(sentence)
 
 
 class Tagger():
-    def __init__(self, device='cpu', batch_size=100, lower=False):
+    def __init__(self, device='cpu', batch_size=100, lower=False, tokenize=False):
         self.device = device
         self.batch_size = batch_size
         self.lower = lower
+        self.tokenize = tokenize
         self.models = []
 
     def add_model(self, model_path, *tasks):
@@ -67,6 +85,7 @@ class Tagger():
         output = {}
         for model, tasks in self.models:
             model.to(self.device)
+
             inp, _ = pack_batch(model.label_encoder, batch, self.device)
 
             # inference
@@ -110,11 +129,9 @@ class Tagger():
         header = False
 
         with open(utils.ensure_ext(fpath, ext, 'pie'), 'w+') as f:
-
-            for chunk in utils.chunks(
-                    lines_from_file(fpath, self.lower), self.batch_size):
-                sents, lengths = zip(*chunk)
-                tagged, tasks = self.tag(sents, lengths, **kwargs)
+            lines = lines_from_file(fpath, lower=self.lower, tokenize=self.tokenize)
+            for chunk in utils.chunks(lines, self.batch_size):
+                tagged, tasks = self.tag(*zip(*chunk), **kwargs)
 
                 for sent in tagged:
                     if not header:
@@ -123,4 +140,5 @@ class Tagger():
                     for token, tags in sent:
                         f.write(sep.join([token] + list(tags)) + '\n')
 
-                    f.write('\n')
+                    if self.tokenize:
+                        f.write('\n')
