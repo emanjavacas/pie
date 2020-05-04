@@ -327,7 +327,8 @@ class Trainer(object):
                 if devset is not None:
                     rep_start = time.time()
                     scores = self.run_check(devset)
-                    logging.info("Evaluation time: {} sec".format(time.time() - rep_start))
+                    logging.info("Evaluation time: {} sec".format(
+                        time.time() - rep_start))
                     rep_start = time.time()
 
         return scores

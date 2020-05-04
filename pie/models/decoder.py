@@ -99,7 +99,8 @@ class LinearDecoder(nn.Module):
 
         output_probs, output_preds = [], []
         for idx, length in enumerate(lengths.tolist()):
-            output_preds.append(self.label_encoder.inverse_transform(preds[idx])[:length])
+            output_preds.append(
+                self.label_encoder.inverse_transform(preds[idx])[:length])
             output_probs.append(probs[idx].tolist())
 
         return output_preds, output_probs
