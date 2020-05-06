@@ -138,7 +138,9 @@ class LabelEncoder(object):
         self.fitted = True
 
     def preprocess(self, tseq, rseq=None):
-        if self.lower:
+        if self.lower and self.level == 'token':
+            tseq = list(tseq.lower())
+        elif self.lower:
             tseq = [tok.lower() for tok in tseq]
 
         if self.preprocessor_fn is not None:
