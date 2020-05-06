@@ -109,11 +109,7 @@ class LabelEncoder(object):
         if self.fitted:
             raise ValueError("Already fitted")
 
-        postseq = seq
-        if self.preprocessor_fn is not None:
-            if rseq is None:
-                raise ValueError("Expected ref sequence for preprocessor")
-            postseq = self.preprocess(seq, rseq)
+        postseq = self.preprocess(seq, rseq)
 
         if self.level == 'token':
             self.freqs.update(postseq)
@@ -141,29 +137,42 @@ class LabelEncoder(object):
         self.table = {sym: idx for idx, sym in enumerate(self.inverse_table)}
         self.fitted = True
 
-    def preprocess(self, tseq, rseq):
-        "gets always called before transform"
+    def preprocess(self, tseq, rseq=None):
         if self.lower:
             tseq = [tok.lower() for tok in tseq]
 
-        if not self.preprocessor_fn:
-            return tseq
+        if self.preprocessor_fn is not None:
+            if rseq is None:
+                raise ValueError("Expected ref sequence for preprocessor")
 
-        return [self.preprocessor_fn.transform(t, r) for t, r in zip(tseq, rseq)]
+            return [self.preprocessor_fn.transform(t, r) for t, r in zip(tseq, rseq)]
 
-    def transform(self, seq):
+        return tseq
+
+    def transform(self, seq, rseq=None):
         if not self.fitted:
             raise ValueError("Vocabulary hasn't been computed yet")
 
-        output = []
-        if self.bos:
-            output.append(self.get_bos())
+        def transform_seq(s):
+            output = []
+            if self.bos:
+                output.append(self.get_bos())
 
-        for tok in seq:
-            output.append(self.table.get(tok, self.table[constants.UNK]))
+            for tok in s:
+                output.append(self.table.get(tok, self.table[constants.UNK]))
 
-        if self.eos:
-            output.append(self.get_eos())
+            if self.eos:
+                output.append(self.get_eos())
+
+            return output
+
+        # preprocess
+        seq = self.preprocess(seq, rseq)
+
+        if self.level == 'token':
+            output = transform_seq(seq)
+        else:
+            output = [transform_seq(w) for w in seq]
 
         return output
 
@@ -256,12 +265,14 @@ class MultiLabelEncoder(object):
     """
     Complex Label encoder for all tasks.
     """
-    def __init__(self, word_max_size=None, char_max_size=None,
-                 word_min_freq=1, char_min_freq=None, char_eos=True, char_bos=True):
+    def __init__(self, word_max_size=None, word_min_freq=1, word_lower=False,
+                 char_max_size=None, char_min_freq=None, char_lower=False,
+                 char_eos=True, char_bos=True):
         self.word = LabelEncoder(max_size=word_max_size, min_freq=word_min_freq,
-                                 name='word')
+                                 lower=word_lower, name='word')
         self.char = LabelEncoder(max_size=char_max_size, min_freq=char_min_freq,
-                                 name='char', level='char', eos=char_eos, bos=char_bos)
+                                 name='char', level='char', lower=char_lower,
+                                 eos=char_eos, bos=char_bos)
         self.tasks = {}
         self.nsents = None
 
@@ -290,8 +301,8 @@ class MultiLabelEncoder(object):
         if meta['level'].lower() != 'char' and (meta.get('eos') or meta.get('bos')):
             raise ValueError(
                 ('[Task: {task}] => `bos` and `eos` options are '
-                'only compatible with char-level tasks but got '
-                'level: "{level}". Aborting!!!').format(
+                 'only compatible with char-level tasks but got '
+                 'level: "{level}". Aborting!!!').format(
                     task=name, level=meta['level']))
 
         return self
@@ -300,14 +311,17 @@ class MultiLabelEncoder(object):
     def from_settings(cls, settings, tasks=None):
         le = cls(word_max_size=settings.word_max_size,
                  word_min_freq=settings.word_min_freq,
+                 word_lower=settings.word_lower,
                  char_max_size=settings.char_max_size,
                  char_min_freq=settings.char_min_freq,
-                 char_eos=settings.char_eos, char_bos=settings.char_bos)
+                 char_lower=settings.char_lower,
+                 char_eos=settings.char_eos,
+                 char_bos=settings.char_bos)
 
         for task in settings.tasks:
             if tasks is not None and task['settings']['target'] not in tasks:
                 raise ValueError("No available data for task [{}]".format(
-                        task['settings']['target']))
+                    task['settings']['target']))
             le.add_task(task['name'], level=task['level'], **task['settings'])
 
         return le
@@ -369,8 +383,7 @@ class MultiLabelEncoder(object):
 
             # input data
             word.append(self.word.transform(inp))
-            for w in inp:
-                char.append(self.char.transform(w))
+            char.extend(self.char.transform(inp))
 
             # task data
             if tasks is None:
@@ -378,15 +391,12 @@ class MultiLabelEncoder(object):
                 continue
 
             for le in self.tasks.values():
-                task_data = le.preprocess(tasks[le.target], inp)
+                task_data = le.transform(tasks[le.target], inp)
                 # add data
-                if le.level == 'token':
-                    tasks_dict[le.name].append(le.transform(task_data))
-                elif le.level == 'char':
-                    for w in task_data:
-                        tasks_dict[le.name].append(le.transform(w))
+                if le.level == 'char':
+                    tasks_dict[le.name].extend(task_data)
                 else:
-                    raise ValueError("Wrong level {}: task {}".format(le.level, le.name))
+                    tasks_dict[le.name].append(task_data)
 
         return (word, char), tasks_dict
 
