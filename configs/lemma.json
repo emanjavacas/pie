@@ -1,6 +1,6 @@
 {
   "modelpath": "models",
-  "modelname": "standard-pos", // any model prefix relevant to the experiment
+  "modelname": "standard-lemma", // any model prefix relevant to the experiment
 
   "report_freq": 200,
   "max_sent_len": 35,
