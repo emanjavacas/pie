@@ -4,6 +4,8 @@ import string
 import os
 import itertools
 
+import tqdm
+
 from pie.models import BaseModel
 from pie.data import pack_batch
 from pie import utils
@@ -24,47 +26,81 @@ FULLSTOP = r'([^\.]+\.)'
 WORD = r'([{}])'.format(string.punctuation)
 
 
-def simple_tokenizer(text, lower):
-    section, fullstop = regexsplitter(SECTION), regexsplitter(FULLSTOP)
+def simple_tokenizer(text):
+    section = regexsplitter(SECTION)
+    fullstop = regexsplitter(FULLSTOP)
     word = regexsplitter(WORD)
+
     for line in section(text):
-        for sentence in fullstop(line):
-            sentence = [w for raw in sentence.split() for w in word(raw)]
-            if lower:
-                sentence = [w.lower() for w in sentence]
-            yield sentence
+        for sent in fullstop(line):
+            yield [w for raw in sent.split() for w in word(raw)]
 
 
-def lines_from_file(fpath, lower=False, tokenize=False, max_sent_len=35):
+def get_sentences_vrt(fpath, max_sent_len):
+    with open(fpath) as f:
+        sent = []
+        for line in f:
+            line = line.strip()
+            if sent and not line or len(sent) >= max_sent_len:
+                yield sent
+                sent = []
+            w, *_ = line.split()
+            sent.append(w)
+        if sent:
+            yield sent
+
+
+def get_sentences_line(fpath, max_sent_len):
+    with open(fpath) as f:
+        sent = []
+        for line in f:
+            line = line.strip().split()
+            if not line and sent:
+                yield sent
+                sent = []
+            for w in line:
+                if len(sent) >= max_sent_len:
+                    yield sent
+                    sent = []
+                sent.append(w)
+            if sent:
+                yield sent
+                sent = []
+        if sent:
+            yield sent            
+
+
+def get_sentences(fpath, max_sent_len, vrt):
+    if vrt:
+        yield from get_sentences_vrt(fpath, max_sent_len)
+    else:
+        yield from get_sentences_line(fpath, max_sent_len)
+
+
+def lines_from_file(fpath, tokenize=False, max_sent_len=35, vrt=False):
     """
-    lower : bool, whether to lowercase output
     tokenize : bool, whether to use simple_tokenizer
     max_sent_len : int, only applicable if tokenize is False
     """
-    with open(fpath) as f:
-        for line in f:
-            sentence = []
-            if not tokenize:
-                for w in line.split():
-                    if len(sentence) >= max_sent_len:
-                        yield sentence, len(sentence)
-                        sentence = []
-                    sentence.append(w.lower() if lower else w)
-            else:
-                for sentence in simple_tokenizer(line, lower):
-                    yield sentence, len(sentence)
-                sentence = []
-
-    if sentence: # yield remaining words when tokenize is False
-        yield sentence, len(sentence)
+    if tokenize:
+        # ignore vrt
+        with open(fpath) as f:
+            for sent in simple_tokenizer(line):
+                yield sent, len(sent)
+    else:
+        for sent in get_sentences(fpath, max_sent_len, vrt):
+            yield sent, len(sent)
 
 
 class Tagger():
-    def __init__(self, device='cpu', batch_size=100, lower=False, tokenize=False):
+    def __init__(self, device='cpu', batch_size=100,
+                 lower=False, tokenize=False, vrt=False, max_sent_len=35):
         self.device = device
         self.batch_size = batch_size
         self.lower = lower
         self.tokenize = tokenize
+        self.vrt = vrt
+        self.max_sent_len = max_sent_len
         self.models = []
 
     def add_model(self, model_path, *tasks):
@@ -77,8 +113,12 @@ class Tagger():
         self.models.append((model, tasks))
 
     def tag(self, sents, lengths, **kwargs):
+        # lower if needed
+        batch_sents = sents
+        if self.lower:
+            batch_sents = [[w.lower() for w in sent] for sent in sents]
         # add dummy input tasks (None)
-        batch = list(zip(sents, itertools.repeat(None)))
+        batch = list(zip(batch_sents, itertools.repeat(None)))
         # [token1, token2, ...]
         tokens = [token for sent in sents for token in sent]
         # output
@@ -124,21 +164,27 @@ class Tagger():
 
         return tagged, tasks
 
-    def tag_file(self, fpath, sep='\t', **kwargs):
+    def tag_file(self, fpath, sep='\t', keep_boundaries=False, **kwargs):
         _, ext = os.path.splitext(fpath)
         header = False
 
         with open(utils.ensure_ext(fpath, ext, 'pie'), 'w+') as f:
-            lines = lines_from_file(fpath, lower=self.lower, tokenize=self.tokenize)
-            for chunk in utils.chunks(lines, self.batch_size):
-                tagged, tasks = self.tag(*zip(*chunk), **kwargs)
+            lines = lines_from_file(
+                fpath, tokenize=self.tokenize,
+                max_sent_len=self.max_sent_len, vrt=self.vrt)
+            lines = list(lines)
 
-                for sent in tagged:
-                    if not header:
-                        f.write(sep.join(['token'] + tasks) + '\n')
-                        header = True
-                    for token, tags in sent:
-                        f.write(sep.join([token] + list(tags)) + '\n')
+            with tqdm.tqdm(total=len(lines)) as pbar:
+                for chunk in utils.chunks(lines, self.batch_size):
 
-                    if self.tokenize:
-                        f.write('\n')
+                    tagged, tasks = self.tag(*zip(*chunk), **kwargs)
+                    pbar.update(n=len(tagged))
+
+                    for sent in tagged:
+                        if not header:
+                            f.write(sep.join(['token'] + tasks) + '\n')
+                            header = True
+                        for token, tags in sent:
+                            f.write(sep.join([token] + list(tags)) + '\n')
+                        if keep_boundaries:
+                            f.write('\n')
