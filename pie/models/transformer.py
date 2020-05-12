@@ -27,15 +27,15 @@ def get_instance_spans(tokenizer, text):
     tokens = []
     for (i, token) in enumerate(text.split()):
         index.append(len(tokens))
-        for sub_token in tokenizer.tokenize(token):
+        for sub_token in tokenizer.tokenize(token, add_prefix_space=True):
             tokens.append(sub_token)
     index.append(len(tokens))
     spans = list(zip(index[:-1], index[1:]))
     return spans
 
 
-def get_spans(tokenizer, texts, batch):
-    spans = [get_instance_spans(tokenizer, inp) for inp in texts]
+def get_spans(tokenizer, text, batch):
+    spans = [get_instance_spans(tokenizer, inp) for inp in text]
     max_span_len = max(end - start for sent in spans for start, end in sent)
     max_spans = max(map(len, spans))
     batch_size, _, emb_dim = batch.shape
