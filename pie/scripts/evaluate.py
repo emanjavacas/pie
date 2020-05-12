@@ -66,7 +66,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('model_path')
     parser.add_argument('test_path', help="unix string", nargs='+')
-    parser.add_argument('train_path',
+    parser.add_argument('--train_path',
                         help="needed to compute ambiguous and unknown tokens")
     parser.add_argument('--settings', help="settings file used for training")
     parser.add_argument('--batch_size', type=int, default=500)

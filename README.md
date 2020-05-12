@@ -3,6 +3,8 @@
 
 [![DOI](https://zenodo.org/badge/131014015.svg)](https://zenodo.org/badge/latestdoi/131014015)
 
+![Improving Lemmatization of Non-Standard Languages with Joint Learning (NAACL19 Paper)](https://www.aclweb.org/anthology/N19-1153/)
+
 PIE was primarily conceived to make experimentation on sequence labeling of variation-rich languages easy and user-friendly. PIE has been tested mostly for Lemmatization but other SoTA accuracies from other tasks like POS have been reproduced (cf. Plank et al ). PIE is *highly* configurable both in terms of input preprocessing and model definition, in principle not requiring users to write any code (instead experiments are defined with json files). It is highly modular and therefore easy to extend. It includes transductive lemmatization as an additional sequence labeling task and, finally, it is reasonably fast and memory efficient.
 
 Documentation is work in progress and it will improve over the following months. A good place to learn about its functionality is to check `pie/default_settings.json` which explains all input parameters and shows a full example of a config file (minus input data).

@@ -29,8 +29,9 @@ def random_dataset(nitems=10000):
     for item in src:
         label_encoder.add(item)
     label_encoder.compute_vocab()
-    src = [label_encoder.transform(s) for s in src]
-    trg = [label_encoder.transform(s) for s in trg]
+    src = label_encoder.transform(src)
+    trg = label_encoder.transform(trg)
+    print(src[0], trg[0])
 
     return list(zip(src, trg)), label_encoder
 
@@ -49,11 +50,13 @@ class EncoderDecoder(nn.Module):
 
     def forward(self, src, src_len, trg, trg_len):
         enc_outs = self.encoder(self.embs(src), src_len)
+        enc_outs = enc_outs[-1]
         logits = self.decoder(trg, trg_len, enc_outs, src_len)
         return self.decoder.loss(logits, trg)
 
     def predict(self, src, src_len):
         enc_outs = self.encoder(self.embs(src), src_len)
+        enc_outs = enc_outs[-1]
         hyps, scores = self.decoder.predict_beam(enc_outs, src_len, max_seq_len=50)
         return hyps, scores
 

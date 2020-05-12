@@ -1,11 +1,6 @@
 
 import os
 import json
-import yaml
-try:
-    from yaml import CDumper as Dumper
-except ImportError:
-    from yaml import Dumper
 import tarfile
 import logging
 
@@ -36,7 +31,7 @@ class BaseModel(nn.Module):
         super().__init__()
 
     def get_scorer(self, task, trainset=None):
-        """ Given a task, gets a scorer. Trainset can be user for computing
+        """ Given a task, gets a scorer. Trainset can be used for computing
         unknown and ambiguous tokens.
 
         :param task: Taskname (str)

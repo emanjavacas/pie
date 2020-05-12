@@ -1,0 +1,38 @@
+{
+  "modelpath": "models",
+  "modelname": "standard-pos", // any model prefix relevant to the experiment
+
+  "report_freq": 200,
+  "max_sent_len": 35,
+
+  "tasks": [
+    {
+      "name": "pos",
+      "target": true,
+      "decoder": "linear"
+    }
+  ],
+
+  "epochs": 100,
+  "batch_size": 25,
+  "dropout": 0.2,
+  "word_dropout": 0.2,
+  "clip_norm": 5,
+  "init_rnn": "xavier_uniform",
+  
+  "hidden_size": 100,
+  "num_layers": 1,
+  "cemb_dim": 100,
+  "cemb_type": "rnn",
+  "custom_cemb_cell": true,
+  "wemb_dim": 64,
+  "cemb_layers": 1,
+  "merge_type": "concat",
+  "scorer": "general",
+  "cell": "LSTM",
+
+  "optimizer": "Adam",
+  "lr": 0.002,
+  "lr_factor": 0.25,
+  "lr_patience": 2
+}
