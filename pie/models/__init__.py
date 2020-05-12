@@ -1,6 +1,7 @@
 
 from .base_model import BaseModel
 from .model import SimpleModel
+from .transformer import TransformerDataset, TransformerModel
 from .encoder import RNNEncoder
 from .embedding import CNNEmbedding, RNNEmbedding, EmbeddingConcat, EmbeddingMixer
 from .embedding import build_embeddings

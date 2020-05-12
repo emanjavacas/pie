@@ -1,25 +1,17 @@
 
-import random
 import logging
 from datetime import datetime
 
-import numpy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from transformers import AutoModel, AutoTokenizer
-
-import pie
 from pie import torch_utils
-from pie.settings import settings_from_file
-from pie.trainer import Trainer
-from pie import initialization
-from pie.data import Dataset, Reader, MultiLabelEncoder
+from pie.data import Dataset
 from pie.data.dataset import pack_batch
-from pie.models import (BaseModel, LinearDecoder, CRFDecoder,
-                        build_embeddings, AttentionalDecoder)
-from pie import optimize
+from .base_model import BaseModel
+from .decoder import (LinearDecoder, CRFDecoder, AttentionalDecoder)
+from .embedding import build_embeddings
 
 
 def get_instance_spans(tokenizer, text):
@@ -125,7 +117,7 @@ class SpanSelfAttention(nn.Module):
         return context
 
 
-class Model(BaseModel):
+class TransformerModel(BaseModel):
     def __init__(self, label_encoder, tasks, context_dim,
                  # input embeddings
                  wemb_dim=0, cemb_dim=0, cemb_type='RNN', custom_cemb_cell=False,
@@ -134,6 +126,14 @@ class Model(BaseModel):
                  linear_layers=1, dropout=0.0, scorer='general'):
         self.context_dim = context_dim
         self.linear_layers = linear_layers
+        self.wemb_dim = wemb_dim
+        self.cemb_dim = cemb_dim
+        self.cemb_type = cemb_type
+        self.custom_cemb_cell = custom_cemb_cell
+        self.cemb_layers = cemb_layers
+        self.cell = cell
+        self.merge_type = merge_type
+        self.scorer = scorer
         self.dropout = dropout
         super().__init__(label_encoder, tasks)
 
@@ -185,7 +185,12 @@ class Model(BaseModel):
 
     def get_args_and_kwargs(self):
         return {'args': (self.context_dim, ),
-                'kwargs': {'linear_layers': self.linear_layers}}
+                'kwargs': {'linear_layers': self.linear_layers,
+                           "wemb_dim": self.wemb_dim, "cemb_dim": self.cemb_dim,
+                           "cemb_type": self.cemb_type,
+                           "custom_cemb_cell": self.custom_cemb_cell,
+                           "cemb_layers": self.cemb_layers, "cell": self.cell,
+                           "merge_type": self.merge_type, "scorer": self.scorer}}
 
     def embedding(self, word, wlen, char, clen):
         wemb, cemb, cemb_outs = None, None, None
@@ -277,96 +282,26 @@ class Model(BaseModel):
         return preds
 
 
-def run(settings, transformer_path):
-    now = datetime.now()
-    seed = now.hour * 10000 + now.minute * 100 + now.second
-    print("Using seed:", seed)
-    random.seed(seed)
-    numpy.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
-
-    reader = Reader(settings, settings.input_path)
-    tasks = reader.check_tasks(expected=None)
-
-    label_encoder = MultiLabelEncoder.from_settings(settings, tasks=tasks)
-    label_encoder.fit_reader(reader)
-    if settings.verbose:
-        print("::: Tasks :::")
-        print()
-        for task, le in label_encoder.tasks.items():
-            print("- {:<15} target={:<6} level={:<6} vocab={:<6}"
-                  .format(task, le.target, le.level, len(le)))
-        print()
-
-    tokenizer = AutoTokenizer.from_pretrained(transformer_path)
-    transformer = AutoModel.from_pretrained(transformer_path)
-    trainset = TransformerDataset(
-        settings, reader, label_encoder, tokenizer, transformer)
-    devset = None
-    if settings.dev_path:
-        devset = TransformerDataset(
-            settings, Reader(settings, settings.dev_path), label_encoder,
-            tokenizer, transformer)
-    else:
-        logging.warning("No devset: cannot monitor/optimize training")
-
-    model = Model(label_encoder, settings.tasks, trainset.model.config.hidden_size,
-                  wemb_dim=settings.wemb_dim, cemb_dim=settings.cemb_dim,
-                  cemb_type=settings.cemb_type,
-                  custom_cemb_cell=settings.custom_cemb_cell,
-                  cemb_layers=settings.cemb_layers, cell=settings.cell,
-                  init_rnn=settings.init_rnn, merge_type=settings.merge_type,
-                  linear_layers=settings.linear_layers, dropout=settings.dropout,
-                  scorer=settings.scorer)
-    model.to(settings.device)
-
-    print("::: Model :::")
-    print()
-    print(model)
-    print()
-    print("::: Model parameters :::")
-    print()
-    trainable = sum(p.nelement() for p in model.parameters() if p.requires_grad)
-    total = sum(p.nelement() for p in model.parameters())
-    print("{}/{} trainable/total".format(trainable, total))
-    print()
-
-    # training
-    print("Starting training")
-    trainer = Trainer(settings, model, trainset, reader.get_nsents())
-    scores = None
-    try:
-        scores = trainer.train_epochs(settings.epochs, devset=devset)
-    except KeyboardInterrupt:
-        print("Stopping training")
-    finally:
-        model.eval()
-
-    if devset is not None:
-        scorers = model.evaluate(
-            devset, trainset=trainset, use_beam=True, beam_width=10)
-        for task, scorer in scorers.items():
-            print(task)
-            scorer.print_summary()
-            print()
-
-
-if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('config_path')
-    parser.add_argument('transformer_path')
-    parser.add_argument('--opt_path', help='Path to optimization file (see opt.json)')
-    parser.add_argument('--n_iter', type=int, default=20)
-    args = parser.parse_args()
-
-    settings = settings_from_file(args.config_path)
-
-    if args.opt_path:
-        opt = optimize.read_opt(args.opt_path)
-        optimize.run_optimize(
-            run, settings, opt, args.n_iter, transformer_path=args.transformer_path)
-    else:
-        run(settings, args.transformer_path)
+# transformer_path = '../latin-data/latin-model/v4/checkpoint-110000/'
+# from transformers import AutoModel, AutoTokenizer
+# tokenizer = AutoTokenizer.from_pretrained(transformer_path)
+# model = AutoModel.from_pretrained(transformer_path)
+# from pie.settings import settings_from_file
+# settings = settings_from_file('transformer-lemma.json')
+# from pie.data import Reader, MultiLabelEncoder
+# reader = Reader(settings, settings.input_path)
+# label_encoder = MultiLabelEncoder.from_settings(settings).fit_reader(reader)
+# r = reader.readsents()
+# sents = []
+# for _ in range(10):
+#     _, (inp, tasks) = next(r)
+#     sents.append(inp)
+# text = [' '.join(s) for s in sents]
+# encoded = tokenizer.batch_encode_plus(
+#     text, return_tensors='pt', pad_to_max_length=True)
+# encoded = {k: val.to(model.device) for k, val in encoded.items()}
+# with torch.no_grad():
+#     batch = model(**encoded)[0]
+#     # some models return 2 items, others 1
+# get_instance_spans(tokenizer, text[0])
+# get_spans(tokenizer, text, batch)
