@@ -108,8 +108,11 @@ class Scorer(object):
 
         # compute scores for unknown input tokens
         unk_trues, unk_preds, amb_trues, amb_preds = [], [], [], []
-        unk_trg_trues, unk_trg_preds = [], []
+        knw_trues, knw_preds, unk_trg_trues, unk_trg_preds = [], [], [], []
         for true, pred, token in zip(self.trues, self.preds, self.tokens):
+            if self.known_tokens and token in self.known_tokens:
+                knw_trues.append(true)
+                knw_preds.append(pred)
             if self.known_tokens and token not in self.known_tokens:
                 unk_trues.append(true)
                 unk_preds.append(pred)
@@ -122,14 +125,13 @@ class Scorer(object):
                     unk_trg_trues.append(true)
                     unk_trg_preds.append(pred)
 
+        output['known-tokens'] = compute_scores(knw_trues, knw_preds)
         support = len(unk_trues)
         if support > 0:
             output['unknown-tokens'] = compute_scores(unk_trues, unk_preds)
         support = len(amb_trues)
         if support > 0:
             output['ambiguous-tokens'] = compute_scores(amb_trues, amb_preds)
-
-        # compute scores for unknown targets
         support = len(unk_trg_trues)
         if support > 0:
             output['unknown-targets'] = compute_scores(unk_trg_trues, unk_trg_preds)
