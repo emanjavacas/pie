@@ -106,11 +106,42 @@ if __name__ == '__main__':
     parser.add_argument('transformer_path')
     parser.add_argument('--opt_path', help='Path to optimization file (see opt.json)')
     parser.add_argument('--n_iter', type=int, default=20)
+    # eval arguments
+    parser.add_argument('--run_eval', action='store_true')
+    parser.add_argument('--model_path', help='only used for evaluation')
+    parser.add_argument('--test_path', help='only used for evaluation')
+    parser.add_argument('--batch_size', type=int, default=500)
+    parser.add_argument('--buffer_size', type=int, default=100000)
+    parser.add_argument('--use_beam', action='store_true')
+    parser.add_argument('--beam_width', type=int, default=12)
+    parser.add_argument('--device', default='cpu')
     args = parser.parse_args()
 
     settings = settings_from_file(args.config_path)
 
-    if args.opt_path:
+    if args.run_eval:
+        model = TransformerModel.load(args.model_path)
+        m_settings = model._settings
+        m_settings.device = args.device
+        m_settings.shuffle = False
+        m_settings.batch_size = args.batch_size
+        m_settings.buffer_size = args.buffer_size
+
+        tokenizer = AutoTokenizer.from_pretrained(args.transformer_path)
+        transformer = AutoModel.from_pretrained(args.transformer_path)
+        trainset = TransformerDataset(
+            m_settings, Reader(m_settings, m_settings.input_path), model.label_encoder,
+            tokenizer, transformer)
+        testset = TransformerDataset(
+            m_settings, Reader(m_settings, args.test_path), model.label_encoder,
+            tokenizer, transformer)
+
+        for task in model.evaluate(
+                testset, trainset, use_beam=args.use_beam, beam_width=args.beam_width
+        ).values():
+            task.print_summary()
+
+    elif args.opt_path:
         opt = optimize.read_opt(args.opt_path)
         optimize.run_optimize(
             run, settings, opt, args.n_iter, transformer_path=args.transformer_path)
