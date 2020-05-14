@@ -64,9 +64,11 @@ def tag_pipe(model_spec, device, batch_size, lower, beam_width, use_beam, tokeni
 @click.option('--confusion', default=False, is_flag=True)
 @click.option('--report', default=False, is_flag=True)
 @click.option('--markdown', default=False, is_flag=True)
+@click.option('--use_beam', is_flag=True, default=False)
+@click.option('--beam_width', type=int, default=12)
 def evaluate(model_path, test_path, train_path, settings, batch_size,
              buffer_size, device, model_info, full, confusion, report,
-             markdown):
+             markdown, use_beam, beam_width):
     """ Evaluate [MODEL_PATH] against [TEST_PATH] using [TRAIN_PATH] to compute
     unknown tokens"""
     import pie.scripts.evaluate
@@ -74,7 +76,9 @@ def evaluate(model_path, test_path, train_path, settings, batch_size,
         model_path=model_path, test_path=test_path, train_path=train_path,
         settings=settings, batch_size=batch_size, buffer_size=buffer_size,
         device=device, model_info=model_info, full=full, confusion=confusion,
-        report=report, markdown=markdown)
+        report=report, markdown=markdown,
+        use_beam=use_beam, beam_width=beam_width
+    )
 
 
 @pie_cli.command("train")
