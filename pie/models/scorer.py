@@ -363,14 +363,16 @@ def classification_report(y_true, y_pred, digits=2):
     formatted = []
     for nb_list in [p, r, f1]:
         formatted.append([floatfmt.format(x) for x in nb_list.tolist()])
-    support = [str(x) for x in s.tolist()]
+    support = [[str(x) for x in s.tolist()]]
+
+    tbl_rows = list(zip(target_names, *formatted, *support))
 
     # compute averages
-    last_row = (last_line_heading,
+    last_row = [last_line_heading,
                 floatfmt.format(np.average(p)),
                 floatfmt.format(np.average(r)),
                 floatfmt.format(np.average(f1)),
-                str(np.sum(s)))
+                str(np.sum(s))]
     tbl_rows.append(last_row)
 
     return github_table.GithubFlavoredMarkdownTable([headers] + tbl_rows).table
