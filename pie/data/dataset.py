@@ -1,4 +1,5 @@
 
+from functools import partial
 import tarfile
 import json
 import yaml
@@ -13,6 +14,7 @@ import random
 import torch
 
 from pie import utils, torch_utils, constants
+from pie.utils import lower_str, apply_utfnorm
 from . import preprocessors
 
 
@@ -20,7 +22,8 @@ class LabelEncoder(object):
     """
     Label encoder
     """
-    def __init__(self, level='token', name=None, target=None, lower=False,
+    def __init__(self, level='token', name=None, target=None,
+                 lower=False, utfnorm=False, utfnorm_type='NFKD',
                  preprocessor=None, max_size=None, min_freq=1,
                  pad=True, eos=False, bos=False, reserved=(), **meta):
 
@@ -32,6 +35,8 @@ class LabelEncoder(object):
         self.eos = constants.EOS if eos else None
         self.bos = constants.BOS if bos else None
         self.lower = lower
+        self.utfnorm = utfnorm
+        self.utfnorm_type = utfnorm_type
         self.preprocessor = preprocessor
         self.preprocessor_fn = \
             getattr(preprocessors, preprocessor) if preprocessor else None
@@ -65,6 +70,7 @@ class LabelEncoder(object):
             self.max_size == other.max_size and \
             self.level == other.level and \
             self.lower == other.lower and \
+            self.utfnorm == other.utfnorm and \
             self.target == other.target and \
             self.freqs == other.freqs and \
             self.table == other.table and \
@@ -78,10 +84,11 @@ class LabelEncoder(object):
             length = 0
 
         return (
-            ('<LabelEncoder name="{}" lower="{}" target="{}" level="{}" ' + \
-             'vocab="{}" fitted="{}"/>'
-            ).format(
-                self.name, self.lower, self.target, self.level, length, self.fitted))
+            '<LabelEncoder name="{}" lower="{}" utfnorm="{}" utfnorm_type="{}" ' +
+            'target="{}" vocab="{}" level="{}" fitted="{}"/>'
+        ).format(
+            self.name, self.lower, self.utfnorm, self.utfnorm_type,
+            self.target, self.level, length, self.fitted)
 
     def get_type_stats(self):
         """
@@ -138,8 +145,14 @@ class LabelEncoder(object):
         self.fitted = True
 
     def preprocess(self, tseq, rseq=None):
-        if self.lower:
-            tseq = [tok.lower() for tok in tseq]
+        if self.lower and self.utfnorm:
+            tseq = list(map(
+                utils.compose(lower_str, partial(apply_utfnorm, form=self.utfnorm_type)),
+                tseq))
+        elif self.lower:
+            tseq = list(map(lower_str, tseq))
+        elif self.utfnorm:
+            tseq = list(map(partial(apply_utfnorm, form=self.utfnorm_type), tseq))
 
         if self.preprocessor_fn is not None:
             if rseq is None:
@@ -237,6 +250,8 @@ class LabelEncoder(object):
                 'level': self.level,
                 'preprocessor': self.preprocessor,
                 'lower': self.lower,
+                'utfnorm': self.utfnorm,
+                'utfnorm_type': self.utfnorm_type,
                 'target': self.target,
                 'max_size': self.max_size,
                 'min_freq': self.min_freq,
@@ -267,12 +282,14 @@ class MultiLabelEncoder(object):
     """
     def __init__(self, word_max_size=None, word_min_freq=1, word_lower=False,
                  char_max_size=None, char_min_freq=None, char_lower=False,
-                 char_eos=True, char_bos=True):
+                 char_eos=True, char_bos=True, utfnorm=False, utfnorm_type='NFKD'):
         self.word = LabelEncoder(max_size=word_max_size, min_freq=word_min_freq,
-                                 lower=word_lower, name='word')
+                                 lower=word_lower, utfnorm=utfnorm,
+                                 utfnorm_type=utfnorm_type, name='word')
         self.char = LabelEncoder(max_size=char_max_size, min_freq=char_min_freq,
                                  name='char', level='char', lower=char_lower,
-                                 eos=char_eos, bos=char_bos)
+                                 eos=char_eos, bos=char_bos, utfnorm_type=utfnorm_type,
+                                 utfnorm=utfnorm)
         self.tasks = {}
         self.nsents = None
 
@@ -316,7 +333,9 @@ class MultiLabelEncoder(object):
                  char_min_freq=settings.char_min_freq,
                  char_lower=settings.char_lower,
                  char_eos=settings.char_eos,
-                 char_bos=settings.char_bos)
+                 char_bos=settings.char_bos,
+                 utfnorm=settings.utfnorm,
+                 utfnorm_type=settings.utfnorm_type)
 
         for task in settings.tasks:
             if tasks is not None and task['settings']['target'] not in tasks:

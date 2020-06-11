@@ -10,8 +10,32 @@ import logging
 import sys
 import glob
 import itertools
+import functools
+import unicodedata
 from contextlib import contextmanager
 from subprocess import check_output, CalledProcessError
+
+
+def lower_str(s):
+    return s.lower()
+
+
+def apply_utfnorm(s, form='NFKD'):
+    return unicodedata.normalize(form, s)
+
+
+def identity(*args):
+    if len(args) > 1:
+        return args
+    return args[0]
+
+
+def compose(*fns):
+    def compose_fn(f, g):
+        def fn(*args, **kwargs):
+            return f(g(*args, **kwargs))
+        return fn
+    return functools.reduce(compose_fn, fns, identity)
 
 
 def window(it):
