@@ -273,13 +273,14 @@ class SimpleModel(BaseModel):
 
         return output
 
-    def predict(self, inp, *tasks, use_beam=False, beam_width=10, **kwargs):
+    def predict(self, inp, *tasks, return_probs=False,
+                use_beam=False, beam_width=10, **kwargs):
         """
         inp : (word, wlen), (char, clen), text input
         tasks : list of str, target tasks
         """
         tasks = set(self.tasks if not len(tasks) else tasks)
-        preds = {}
+        preds, probs = {}, {}
         (word, wlen), (char, clen) = inp
 
         # Embedding
@@ -301,25 +302,30 @@ class SimpleModel(BaseModel):
 
             if self.label_encoder.tasks[task].level.lower() == 'char':
                 if isinstance(decoder, LinearDecoder):
-                    hyps, _ = decoder.predict(cemb_outs, clen)
+                    hyps, prob = decoder.predict(cemb_outs, clen)
                 elif isinstance(decoder, CRFDecoder):
-                    hyps, _ = decoder.predict(cemb_outs, clen)
+                    hyps, prob = decoder.predict(cemb_outs, clen)
                 else:
                     context = get_context(outs, wemb, wlen, self.tasks[task]['context'])
                     if use_beam:
-                        hyps, _ = decoder.predict_beam(
+                        hyps, prob = decoder.predict_beam(
                             cemb_outs, clen, width=beam_width, context=context)
                     else:
-                        hyps, _ = decoder.predict_max(cemb_outs, clen, context=context)
+                        hyps, prob = decoder.predict_max(
+                            cemb_outs, clen, context=context)
                     if self.label_encoder.tasks[task].preprocessor_fn is None:
                         hyps = [''.join(hyp) for hyp in hyps]
             else:
                 if isinstance(decoder, LinearDecoder):
-                    hyps, _ = decoder.predict(outs, wlen)
+                    hyps, prob = decoder.predict(outs, wlen)
                 elif isinstance(decoder, CRFDecoder):
-                    hyps, _ = decoder.predict(outs, wlen)
+                    hyps, prob = decoder.predict(outs, wlen)
 
             preds[task] = hyps
+            probs[task] = prob
+
+        if return_probs:
+            return preds, probs
 
         return preds
 
