@@ -265,6 +265,7 @@ class LabelEncoder(object):
         inst = cls(pad=obj['pad'], eos=obj['eos'], bos=obj['bos'],
                    level=obj['level'], target=obj['target'], lower=obj['lower'],
                    max_size=obj['max_size'], min_freq=['min_freq'],
+                   utfnorm=obj['utfnorm'], utfnorm_type=obj['utfnorm_type'],
                    preprocessor=obj.get('preprocessor'),
                    name=obj['name'], meta=obj.get('meta', {}))
         inst.freqs = Counter(obj['freqs'])
