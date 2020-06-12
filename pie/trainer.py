@@ -90,7 +90,8 @@ class TaskScheduler(object):
 
         for task, values in self.tasks.items():
             output += '\n    <Task name="{}" '.format(task)
-            output += ' '.join('{}="{}"'.format(key, val) for key, val in values.items())
+            output += ' '.join(
+                '{}="{}"'.format(key, val) for key, val in values.items())
             output += '/>'
         output += '\n</TaskScheduler>'
 
@@ -147,18 +148,19 @@ class TaskScheduler(object):
 
 
 class LRScheduler(object):
-    def __init__(self, optimizer, **kwargs):
+    def __init__(self, optimizer, threshold=0.0, **kwargs):
         self.lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode='max', **kwargs)
+            optimizer, mode='max', threshold=threshold, **kwargs)
 
     def step(self, score):
         self.lr_scheduler.step(score)
 
     def __repr__(self):
-        return '<LrScheduler lr="{}" lr_steps="{}" lr_patience="{}"/>' \
+        return '<LrScheduler lr="{:g}" steps="{}" patience="{}" threshold="{}"/>' \
             .format(self.lr_scheduler.optimizer.param_groups[0]['lr'],
                     self.lr_scheduler.num_bad_epochs,
-                    self.lr_scheduler.patience)
+                    self.lr_scheduler.patience,
+                    self.lr_scheduler.threshold)
 
 
 class Trainer(object):
@@ -257,7 +259,7 @@ class Trainer(object):
             print()
             print("::: Dev losses :::")
             print()
-            print('\n'.join('{}: {:.3f}'.format(k, v) for k, v in dev_loss.items()))
+            print('\n'.join('{}: {:.4f}'.format(k, v) for k, v in dev_loss.items()))
             print()
             summary = self.model.evaluate(devset, self.dataset)
             for task_name, scorer in summary.items():
@@ -314,7 +316,7 @@ class Trainer(object):
             if b > 0 and b % self.report_freq == 0:
                 rep = ""
                 for t in sorted(rep_loss):
-                    rep += '{}:{:.3f}  '.format(t, rep_loss[t] / rep_batches[t])
+                    rep += '{}:{:.4f}  '.format(t, rep_loss[t] / rep_batches[t])
                 logging.info("Batch [{}/{}] || {} || {:.0f} w/s".format(
                     b, self.num_batches, rep, rep_items / (time.time() - rep_start)))
                 rep_loss = collections.defaultdict(float)
@@ -325,7 +327,7 @@ class Trainer(object):
                 if devset is not None:
                     rep_start = time.time()
                     scores = self.run_check(devset)
-                    logging.info("Evaluation time: {} sec".format(
+                    logging.info("Evaluation time: {:.0f} sec".format(
                         time.time() - rep_start))
                     rep_start = time.time()
 
@@ -345,17 +347,17 @@ class Trainer(object):
                 logging.info("Starting epoch [{}]".format(epoch))
                 self.train_epoch(devset, epoch)
                 epoch_total = time.time() - epoch_start
-                logging.info("Finished epoch [{}] in [{:g}] secs".format(
+                logging.info("Finished epoch [{}] in [{:.0f}] secs".format(
                     epoch, epoch_total))
 
         except EarlyStopException as e:
             logging.info("Early stopping training: "
-                         "task [{}] with best score {:.5f}".format(e.task, e.loss))
+                         "task [{}] with best score {:.4f}".format(e.task, e.loss))
 
             self.model.load_state_dict(e.best_state_dict)
             scores = {e.task: e.loss}
 
-        logging.info("Finished training in [{:g}]".format(time.time() - start))
+        logging.info("Finished training in [{:.0f}] secs".format(time.time() - start))
 
         # will be None if no dev test was provided or the model failed to converge
         return scores
