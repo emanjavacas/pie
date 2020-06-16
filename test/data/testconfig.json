@@ -4,6 +4,7 @@
   "dev_path": "datasets/patres/alcuinus.tab",
   "verbose": true,
   "utfnorm": true,
+  "drop_diacritics": true,
   "buffer_size": 100,
   "batch_size": 10,
   "breakline_ref": "pos",

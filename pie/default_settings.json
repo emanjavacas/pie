@@ -31,6 +31,7 @@
   "char_bos": true, // whether to prepend char input input with <bos>
   "utfnorm": false, // whether to apply unicode normalization
   "utfnorm_type": "NFKD", // default type for unicode normalization
+  "drop_diacritics": false, // whether to ignore any diacritics in the input
   "header": true, // tab-format only (by default assume *sv input files have header)
   "sep": "\t", // separator for csv-like files
   "tasks_order": ["lemma", "pos"], // expected order of tasks for tabreader if no header
