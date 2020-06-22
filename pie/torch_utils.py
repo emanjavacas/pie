@@ -155,19 +155,20 @@ def flatten_padded_batch(batch, nwords):
         return torch.cat(output, dim=0)
 
 
-def pad_batch(batch, padding_id, device='cpu', return_lengths=True):
+def pad_batch(batch, padding=0, dtype=torch.int64, extra_dims=(),
+              device='cpu', return_lengths=True):
     """
     Pad batch into tensor
     """
     lengths = [len(example) for example in batch]
     maxlen, batch_size = max(lengths), len(batch)
-    output = torch.zeros(
-        maxlen, batch_size, device=device, dtype=torch.int64
-    ) + padding_id
+    shape = (maxlen, batch_size) + extra_dims
+    output = torch.zeros(*shape, device=device, dtype=dtype) + padding
 
     for i, example in enumerate(batch):
-        output[0:lengths[i], i].copy_(
-            torch.tensor(example, dtype=torch.int64, device=device))
+        if not torch.is_tensor(example):
+            example = torch.tensor(example, dtype=torch.int64)
+        output[0:lengths[i], i].copy_(example.to(device))
 
     if return_lengths:
         lengths = torch.tensor(lengths, dtype=torch.int64, device=device)
@@ -309,5 +310,5 @@ def viterbi_decode(tag_sequence, transition):
 
     # Reverse the backward path.
     viterbi_path.reverse()
-    
+
     return viterbi_path, viterbi_score

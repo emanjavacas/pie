@@ -59,7 +59,7 @@ class LinearDecoder(nn.Module):
 
         return loss
 
-    def predict(self, enc_outs, lengths):
+    def predict(self, enc_outs, lengths, return_dists=False):
         """
         Parameters
         ==========
@@ -67,15 +67,25 @@ class LinearDecoder(nn.Module):
         """
         if self.highway is not None:
             enc_outs = self.highway(enc_outs)
-        probs = F.softmax(self.decoder(enc_outs), dim=-1)
-        probs, preds = torch.max(probs.transpose(0, 1), dim=-1)
-        output_probs, output_preds = [], []
+        dists = F.softmax(self.decoder(enc_outs), dim=-1)
+        # (batch x seq_len x ...)
+        dists = dists.transpose(0, 1)
+        probs, preds = torch.max(dists, dim=-1)
+        output_probs, output_preds, output_dists = [], [], []
         for idx, length in enumerate(lengths.tolist()):
             output_preds.append(
                 self.label_encoder.inverse_transform(preds[idx])[:length])
             output_probs.append(probs[idx].tolist())
+            output_dists.append(dists[idx, :length].detach())
+
+        if return_dists:
+            return output_preds, output_dists
 
         return output_preds, output_probs
+
+    def get_output_embeddings(self):
+        # (vocab x embedding_dim)
+        return self.decoder.weight
 
 
 class CRFDecoder(nn.Module):
@@ -155,7 +165,7 @@ class CRFDecoder(nn.Module):
             # (batch)
             emit_score = logits[t].gather(1, curr_tag.view(batch, 1)).squeeze(1)
             score = score + (trans_score * mask[t+1]) + (emit_score * mask[t])
-            
+
         # last step
         last_target_index = mask.sum(0).long() - 1
         # (batch)
@@ -186,25 +196,22 @@ class CRFDecoder(nn.Module):
         # (seq_len x batch x vocab)
         logits = self(enc_outs)
         seq_len, _, vocab = logits.size()
-        start_tag, end_tag = vocab, vocab + 1
-
-        # mask on padding (batch x seq_len)
-        mask = torch_utils.make_length_mask(lengths).float()
-        # Mask is not used !
+        start_tag = vocab
+        end_tag = vocab + 1
+        hyps, scores = [], []
 
         # variables
         trans = logits.new(vocab + 2, vocab + 2).fill_(-10000.)
         trans[:vocab, :vocab] = self.transition.data
-        hyps, scores = [], []
         tag_sequence = logits.new(seq_len + 2, vocab + 2)
 
-        # iterate over batches
-        for logits_b, len_b in zip(logits.transpose(0, 1), lengths):
-            seq_len = len_b.item()
+        # iterate over instances
+        for logits_i, len_i in zip(logits.transpose(0, 1), lengths):
+            seq_len = len_i.item()
             # get this batch logits
             tag_sequence.fill_(-10000)
             tag_sequence[0, start_tag] = 0.
-            tag_sequence[1:seq_len+1, :vocab] = logits_b[:seq_len]
+            tag_sequence[1:seq_len+1, :vocab] = logits_i[:seq_len]
             tag_sequence[seq_len+1, end_tag] = 0.
 
             path, score = torch_utils.viterbi_decode(tag_sequence[:seq_len+2], trans)

@@ -114,6 +114,9 @@ class SimpleModel(BaseModel):
                         context_dim = wemb_dim
                     elif task['context'].lower() == 'both':
                         context_dim = hidden_size * 2 + wemb_dim
+                    if label_encoder.hooks:
+                        for hook in label_encoder.hooks[tname]:
+                            context_dim += hook['dim']
                     decoder = AttentionalDecoder(
                         label_encoder.tasks[tname], cemb_dim, self.cemb.embedding_dim,
                         context_dim=context_dim, scorer=scorer, num_layers=cemb_layers,
@@ -247,6 +250,12 @@ class SimpleModel(BaseModel):
                     cemb_outs = F.dropout(
                         cemb_outs, p=self.dropout, training=self.training)
                     context = get_context(outs, wemb, wlen, self.tasks[task]['context'])
+                    # accumulate morph embeddings if needed
+                    if self.tasks[task].get('hook'):
+                        for target_task in self.tasks[task]['hook']['targets']:
+                            h_emb = tasks[task, target_task]
+                            h_emb = torch_utils.flatten_padded_batch(h_emb, wlen)
+                            context = torch.cat([context, h_emb], -1)
                     logits = decoder(target, length, cemb_outs, clen, context=context)
                     output[task] = decoder.loss(logits, target)
             else:
@@ -273,12 +282,14 @@ class SimpleModel(BaseModel):
 
         return output
 
-    def predict(self, inp, *tasks, return_probs=False,
+    def predict(self, inp, *tasks, return_probs=False, return_dists=False,
                 use_beam=False, beam_width=10, **kwargs):
         """
         inp : (word, wlen), (char, clen), text input
         tasks : list of str, target tasks
         """
+        # enforce return_probs if return_dists is true
+        return_probs = return_probs or return_dists
         tasks = set(self.tasks if not len(tasks) else tasks)
         preds, probs = {}, {}
         (word, wlen), (char, clen) = inp
@@ -307,6 +318,12 @@ class SimpleModel(BaseModel):
                     hyps, prob = decoder.predict(cemb_outs, clen)
                 else:
                     context = get_context(outs, wemb, wlen, self.tasks[task]['context'])
+                    # accumulate morph embeddings if needed
+                    if self.tasks[task].get('hook'):
+                        for target_task in self.tasks[task]['hook']['targets']:
+                            h_emb = tasks[task, target_task]
+                            h_emb = torch_utils.flatten_padded_batch(h_emb, wlen)
+                            context = torch.cat([context, h_emb], -1)
                     if use_beam:
                         hyps, prob = decoder.predict_beam(
                             cemb_outs, clen, width=beam_width, context=context)
@@ -317,7 +334,8 @@ class SimpleModel(BaseModel):
                         hyps = [''.join(hyp) for hyp in hyps]
             else:
                 if isinstance(decoder, LinearDecoder):
-                    hyps, prob = decoder.predict(outs, wlen)
+                    # this could be the full distribution
+                    hyps, prob = decoder.predict(outs, wlen, return_dists=return_dists)
                 elif isinstance(decoder, CRFDecoder):
                     hyps, prob = decoder.predict(outs, wlen)
 

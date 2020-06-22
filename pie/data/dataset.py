@@ -276,6 +276,29 @@ class LabelEncoder(object):
         return inst
 
 
+def apply_hook(hook, batch, target_device):
+    # model refers to the dependent model used to extract embeddings
+    source_device, target, model = hook['device'], hook['target'], hook['model']
+
+    inp, _ = pack_batch(model.label_encoder, batch, device=source_device)
+    # [(seq_len x vocab)]
+    _, dists = model.predict(inp, target, return_dists=True)
+    # (vocab x embedding_dim)
+    embs = model.decoders[target].get_output_embeddings()
+    output = []
+    for dist in dists[target]:
+        # (seq_len x vocab) (vocab x emb_dim) -> weighted sum
+        output.append((dist @ embs).detach())
+    # (seq_len x batch x embedding_dim)
+    output = torch_utils.pad_batch(
+        output, dtype=embs.dtype, device=source_device,
+        extra_dims=(embs.shape[1],), return_lengths=False)
+    # move to target device
+    output = output.to(target_device)
+
+    return output
+
+
 class MultiLabelEncoder(object):
     """
     Complex Label encoder for all tasks.
@@ -291,6 +314,7 @@ class MultiLabelEncoder(object):
                                  eos=char_eos, bos=char_bos, utfnorm_type=utfnorm_type,
                                  utfnorm=utfnorm)
         self.tasks = {}
+        self.hooks = {}
         self.nsents = None
 
     def __repr__(self):
@@ -324,6 +348,21 @@ class MultiLabelEncoder(object):
 
         return self
 
+    def add_task_hook(self, name, hook):
+        # hook: {"modelpath": ..., "targets": ...}
+        import pie
+
+        device = hook['device']
+        model = pie.SimpleModel.load(hook['modelpath'])
+        model.to(device)
+
+        self.hooks[name] = [
+            {'model': model,
+             'target': target,
+             'device': device,
+             'dim': model.decoders[target].get_output_embeddings().shape[1]}
+            for target in hook['targets']]
+
     @classmethod
     def from_settings(cls, settings, tasks=None):
         le = cls(word_max_size=settings.word_max_size,
@@ -342,6 +381,9 @@ class MultiLabelEncoder(object):
                 raise ValueError("No available data for task [{}]".format(
                     task['settings']['target']))
             le.add_task(task['name'], level=task['level'], **task['settings'])
+            if 'hook' in task:
+                hook = task['hook']
+                le.add_task_hook(task['name'], hook)
 
         return le
 
@@ -512,7 +554,17 @@ class Dataset(object):
         """
         return pack_batch(self.label_encoder, batch, device or self.device)
 
-    def prepare_buffer(self, buf, return_raw=False, **kwargs):
+    def apply_hooks(self, batch, packed):
+        _, packed_tasks = packed
+        for source_task, task_hooks in self.label_encoder.hooks.items():
+            for hook in task_hooks:
+                target_task = hook['target']
+                # add hook data to tasks with tuple keys ('lemma', 'pos')
+                # using pos embedding to enrich input to lemma task
+                packed_tasks[source_task, target_task] = apply_hook(
+                    hook, batch, self.device)
+
+    def prepare_buffer(self, buf, return_raw=False, device=None):
         "Transform buffer into batch generator"
 
         def key(data):
@@ -530,14 +582,17 @@ class Dataset(object):
             random.shuffle(batches)
 
         for batch in batches:
-            packed = self.pack_batch(batch, **kwargs)
+            packed = self.pack_batch(batch, device=device)
+            # apply hooks
+            if self.label_encoder.hooks:
+                self.apply_hooks(batch, packed)
             if return_raw:
                 inp, tasks = zip(*batch)
                 yield packed, (inp, tasks)
             else:
                 yield packed
 
-    def batch_generator(self, return_raw=False):
+    def batch_generator(self, return_raw=False, **kwargs):
         """
         Generator over dataset batches. Each batch is a tuple of (input, tasks):
             * (word, char)
@@ -547,7 +602,7 @@ class Dataset(object):
         """
         if self.cache_dataset:
             if not self.cached:
-                self.cache_batches()
+                self._cache_batches()
             if self.shuffle:
                 random.shuffle(self.cached)
 
@@ -559,9 +614,9 @@ class Dataset(object):
                 else:
                     yield batch
         else:
-            yield from self.batch_generator_(return_raw=return_raw)
+            yield from self.batch_generator_(return_raw=return_raw, **kwargs)
 
-    def batch_generator_(self, return_raw=False):
+    def batch_generator_(self, **kwargs):
         buf = []
         for (fpath, line_num), data in self.reader.readsents():
 
@@ -570,18 +625,18 @@ class Dataset(object):
 
             # check if buffer is full and yield
             if len(buf) == self.buffer_size:
-                yield from self.prepare_buffer(buf, return_raw=return_raw)
+                yield from self.prepare_buffer(buf, **kwargs)
                 buf = []
 
         if len(buf) > 0:
-            yield from self.prepare_buffer(buf, return_raw=return_raw)
+            yield from self.prepare_buffer(buf, **kwargs)
 
-    def cache_batches(self):
+    def _cache_batches(self, **kwargs):
         if self.cached:
             return
 
         buf = [data for _, data in self.reader.readsents()]
-        for batch, raw in self.prepare_buffer(buf, return_raw=True, device='cpu'):
+        for batch, raw in self.prepare_buffer(buf, **kwargs):
             self.cached.append((batch, raw))
 
 

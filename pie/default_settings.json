@@ -77,7 +77,13 @@
       // the input token or something else:
       // - "copy" for copy over the token form
       // - "UNK" predict "UNK"
-      "read_only": false // encode task but don't model it
+      "read_only": false, // encode task but don't model it
+      // a hook to provide the output of a different model to the current task
+      "hook": {
+	/** "modelpath": "./path/to/model", */
+	/** "targets": ["pos"] */
+	/** "device": "cpu" */
+      }
     }
   ],
 
