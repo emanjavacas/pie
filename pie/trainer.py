@@ -11,7 +11,7 @@ import tqdm
 import torch
 from torch import optim
 from torch.nn.utils import clip_grad_norm_
-
+from typing import Tuple, Generator, Dict
 logging.basicConfig(format='%(asctime)s : %(message)s', level=logging.INFO)
 
 
@@ -284,7 +284,7 @@ class Trainer(object):
             print(self.lr_scheduler)
             print()
 
-        return dev_scores
+        return stored_scores
 
     def train_epoch(self, devset, epoch):
         rep_loss = collections.defaultdict(float)
@@ -333,9 +333,10 @@ class Trainer(object):
 
         return scores
 
-    def train_epochs(self, epochs, devset=None):
-        """
-        Train the model for a number of epochs
+    def train_epochs(self, epochs, devset=None) -> Generator[Tuple[int, Dict[str, float]], None, Dict[str, float]]:
+        """ Train the model for a number of epochs
+
+        Yields the batch id as well as the accuracy of each task (1, {"taskname": accuracy})
         """
         start = time.time()
         scores = None
@@ -345,7 +346,8 @@ class Trainer(object):
                 # train epoch
                 epoch_start = time.time()
                 logging.info("Starting epoch [{}]".format(epoch))
-                self.train_epoch(devset, epoch)
+                score = self.train_epoch(devset, epoch)
+                yield epoch, score
                 epoch_total = time.time() - epoch_start
                 logging.info("Finished epoch [{}] in [{:.0f}] secs".format(
                     epoch, epoch_total))

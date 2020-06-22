@@ -29,6 +29,10 @@ with open(os.path.join(here, 'requirements.txt')) as f:
 # What packages are optional?
 EXTRAS = {
     # 'fancy feature': ['django'],
+    'tune': [
+        "tensorboard==2.2.2",
+        "ray[tune]==0.8.5"
+    ]
 }
 
 # The rest you shouldn't have to touch too much :)
