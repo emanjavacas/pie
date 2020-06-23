@@ -1,4 +1,5 @@
 
+import warnings
 from functools import partial
 import tarfile
 import json
@@ -160,9 +161,19 @@ class LabelEncoder(object):
         self.table = {sym: idx for idx, sym in enumerate(self.inverse_table)}
         self.fitted = True
 
-    def preprocess(self, tseq, rseq=None):
+    def preprocess_text(self, seq):
+        """
+        Apply surface level preprocessing such as lowering, unicode normalization
+        """
         if self.text_preprocess_fn:
-            tseq = list(map(self.text_preprocess_fn, tseq))
+            seq = list(map(self.text_preprocess_fn, seq))
+        return seq
+
+    def preprocess(self, tseq, rseq=None):
+        """
+        Full preprocessing pipeline including possible token-level transformations
+        """
+        tseq = self.preprocess_text(tseq)
 
         if self.preprocessor_fn is not None:
             if rseq is None:
@@ -209,26 +220,27 @@ class LabelEncoder(object):
         if not self.fitted:
             raise ValueError("Vocabulary hasn't been computed yet")
 
-        # compute length based on <eos>
-        if length is None:
-            eos = self.get_eos()
+        eos, bos = self.get_eos(), self.get_bos()
+        if length is not None:
+            if eos is not None or bos is not None:
+                warnings.warn("Length was passed to stringify but LabelEncoder "
+                              "has <eos> and/or <bos> tokens")
+            seq = seq[:length]
+        else:
             if eos is None:
                 raise ValueError("Don't know how to compute input length")
             try:
-                length = seq.index(eos)
-            except ValueError:  # eos not found in input
-                length = -1
+                # some generations might fail to produce the <eos> symbol
+                seq = seq[:seq.index(eos)]
+            except ValueError:
+                pass
 
-        seq = seq[:length]
+            # eventually remove <bos> if required
+            if bos is not None:
+                if len(seq) > 0 and seq[0] == bos:
+                    seq = seq[1:]
 
-        # eventually remove <bos> if required
-        if self.get_bos() is not None:
-            if len(seq) > 0 and seq[0] == self.get_bos():
-                seq = seq[1:]
-
-        seq = self.inverse_transform(seq)
-
-        return seq
+        return self.inverse_transform(seq)
 
     def _get_sym(self, sym):
         if not self.fitted:
