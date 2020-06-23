@@ -561,8 +561,9 @@ class Dataset(object):
                 target_task = hook['target']
                 # add hook data to tasks with tuple keys ('lemma', 'pos')
                 # using pos embedding to enrich input to lemma task
-                packed_tasks[source_task, target_task] = apply_hook(
-                    hook, batch, self.device)
+                data = apply_hook(hook, batch, self.device)
+                assert torch.is_tensor(data)
+                packed_tasks[source_task + '+' + target_task] = data
 
     def prepare_buffer(self, buf, return_raw=False, device=None):
         "Transform buffer into batch generator"
@@ -631,12 +632,12 @@ class Dataset(object):
         if len(buf) > 0:
             yield from self.prepare_buffer(buf, **kwargs)
 
-    def _cache_batches(self, **kwargs):
+    def _cache_batches(self):
         if self.cached:
             return
 
         buf = [data for _, data in self.reader.readsents()]
-        for batch, raw in self.prepare_buffer(buf, **kwargs):
+        for batch, raw in self.prepare_buffer(buf, return_raw=True, device='cpu'):
             self.cached.append((batch, raw))
 
 
@@ -646,13 +647,15 @@ def pack_batch(label_encoder, batch, device=None):
     """
     (word, char), tasks = label_encoder.transform(batch)
 
-    word = torch_utils.pad_batch(word, label_encoder.word.get_pad(), device=device)
-    char = torch_utils.pad_batch(char, label_encoder.char.get_pad(), device=device)
+    word = torch_utils.pad_batch(
+        word, padding=label_encoder.word.get_pad(), device=device)
+    char = torch_utils.pad_batch(
+        char, padding=label_encoder.char.get_pad(), device=device)
 
     output_tasks = {}
     for task, data in tasks.items():
         output_tasks[task] = torch_utils.pad_batch(
-            data, label_encoder.tasks[task].get_pad(), device=device)
+            data, padding=label_encoder.tasks[task].get_pad(), device=device)
 
     return (word, char), output_tasks
 

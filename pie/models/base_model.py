@@ -81,7 +81,10 @@ class BaseModel(nn.Module):
             for (inp, tasks), (rinp, rtasks) in tqdm.tqdm(
                     dataset.batch_generator(return_raw=True)):
 
-                preds = self.predict(inp, **kwargs)
+                hook_tasks = {}
+                if self.label_encoder.hooks:
+                    dataset.apply_hooks(rinp, (None, hook_tasks))
+                preds = self.predict(inp, hook_tasks=hook_tasks, **kwargs)
 
                 # - get input tokens
                 tokens = [w for line in rinp for w in line]

@@ -253,7 +253,9 @@ class SimpleModel(BaseModel):
                     # accumulate morph embeddings if needed
                     if self.tasks[task].get('hook'):
                         for target_task in self.tasks[task]['hook']['targets']:
-                            h_emb = tasks[task, target_task]
+                            h_emb = tasks[task + '+' + target_task]
+                            h_emb = torch.stack(h_emb)
+                            assert torch.is_tensor(h_emb), type(h_emb)
                             h_emb = torch_utils.flatten_padded_batch(h_emb, wlen)
                             context = torch.cat([context, h_emb], -1)
                     logits = decoder(target, length, cemb_outs, clen, context=context)
@@ -283,7 +285,7 @@ class SimpleModel(BaseModel):
         return output
 
     def predict(self, inp, *tasks, return_probs=False, return_dists=False,
-                use_beam=False, beam_width=10, **kwargs):
+                use_beam=False, beam_width=10, hook_tasks=None, **kwargs):
         """
         inp : (word, wlen), (char, clen), text input
         tasks : list of str, target tasks
@@ -321,7 +323,7 @@ class SimpleModel(BaseModel):
                     # accumulate morph embeddings if needed
                     if self.tasks[task].get('hook'):
                         for target_task in self.tasks[task]['hook']['targets']:
-                            h_emb = tasks[task, target_task]
+                            h_emb = hook_tasks[task + '+' + target_task]
                             h_emb = torch_utils.flatten_padded_batch(h_emb, wlen)
                             context = torch.cat([context, h_emb], -1)
                     if use_beam:
