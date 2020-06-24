@@ -31,11 +31,11 @@ def get_fname_infix(settings):
     return fname, infix
 
 
-def run(settings):
+def run(settings, seed=None):
     now = datetime.now()
 
     # set seed
-    seed = now.hour * 10000 + now.minute * 100 + now.second
+    seed = seed or (now.hour * 10000 + now.minute * 100 + now.second)
     print("Using seed:", seed)
     random.seed(seed)
     numpy.random.seed(seed)
@@ -197,6 +197,7 @@ if __name__ == "__main__":
     parser.add_argument('config_path', nargs='?', default='config.json')
     parser.add_argument('--opt_path', help='Path to optimization file (see opt.json)')
     parser.add_argument('--n_iter', type=int, default=20)
+    parser.add_argument('--seed', type=int, default=-1)
     args = parser.parse_args()
 
     settings = settings_from_file(args.config_path)
@@ -205,4 +206,4 @@ if __name__ == "__main__":
         opt = optimize.read_opt(args.opt_path)
         optimize.run_optimize(run, settings, opt, args.n_iter)
     else:
-        run(settings)
+        run(settings, seed=args.seed if args.seed > 0 else None)
