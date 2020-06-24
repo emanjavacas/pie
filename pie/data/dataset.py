@@ -1,4 +1,5 @@
 
+import warnings
 from functools import partial
 import tarfile
 import json
@@ -14,7 +15,6 @@ import random
 import torch
 
 from pie import utils, torch_utils, constants
-from pie.utils import lower_str, apply_utfnorm
 from . import preprocessors
 
 
@@ -23,7 +23,7 @@ class LabelEncoder(object):
     Label encoder
     """
     def __init__(self, level='token', name=None, target=None,
-                 lower=False, utfnorm=False, utfnorm_type='NFKD',
+                 lower=False, utfnorm=False, utfnorm_type='NFKD', drop_diacritics=False,
                  preprocessor=None, max_size=None, min_freq=1,
                  pad=True, eos=False, bos=False, reserved=(), **meta):
 
@@ -37,6 +37,11 @@ class LabelEncoder(object):
         self.lower = lower
         self.utfnorm = utfnorm
         self.utfnorm_type = utfnorm_type
+        self.drop_diacritics = drop_diacritics
+        self.text_preprocess_fn = None
+        if lower or utfnorm or drop_diacritics:
+            self.text_preprocess_fn = self._get_text_preprocess_fn(
+                lower, utfnorm, utfnorm_type, drop_diacritics)
         self.preprocessor = preprocessor
         self.preprocessor_fn = \
             getattr(preprocessors, preprocessor) if preprocessor else None
@@ -52,6 +57,17 @@ class LabelEncoder(object):
         self.table = None
         self.inverse_table = None
         self.fitted = False
+
+    def _get_text_preprocess_fn(self, lower, utfnorm, utfnorm_type, drop_diacritics):
+        fns = []
+        if lower:
+            fns.append(utils.lower_str)
+        if utfnorm:
+            fns.append(partial(utils.apply_utfnorm, form=utfnorm_type))
+        if drop_diacritics:
+            fns.append(utils.drop_diacritics)
+
+        return utils.compose(*fns)
 
     def __len__(self):
         if not self.fitted:
@@ -71,6 +87,7 @@ class LabelEncoder(object):
             self.level == other.level and \
             self.lower == other.lower and \
             self.utfnorm == other.utfnorm and \
+            self.drop_diacritics == other.drop_diacritics and \
             self.target == other.target and \
             self.freqs == other.freqs and \
             self.table == other.table and \
@@ -144,15 +161,19 @@ class LabelEncoder(object):
         self.table = {sym: idx for idx, sym in enumerate(self.inverse_table)}
         self.fitted = True
 
+    def preprocess_text(self, seq):
+        """
+        Apply surface level preprocessing such as lowering, unicode normalization
+        """
+        if self.text_preprocess_fn:
+            seq = list(map(self.text_preprocess_fn, seq))
+        return seq
+
     def preprocess(self, tseq, rseq=None):
-        if self.lower and self.utfnorm:
-            tseq = list(map(
-                utils.compose(lower_str, partial(apply_utfnorm, form=self.utfnorm_type)),
-                tseq))
-        elif self.lower:
-            tseq = list(map(lower_str, tseq))
-        elif self.utfnorm:
-            tseq = list(map(partial(apply_utfnorm, form=self.utfnorm_type), tseq))
+        """
+        Full preprocessing pipeline including possible token-level transformations
+        """
+        tseq = self.preprocess_text(tseq)
 
         if self.preprocessor_fn is not None:
             if rseq is None:
@@ -199,26 +220,27 @@ class LabelEncoder(object):
         if not self.fitted:
             raise ValueError("Vocabulary hasn't been computed yet")
 
-        # compute length based on <eos>
-        if length is None:
-            eos = self.get_eos()
+        eos, bos = self.get_eos(), self.get_bos()
+        if length is not None:
+            if eos is not None or bos is not None:
+                warnings.warn("Length was passed to stringify but LabelEncoder "
+                              "has <eos> and/or <bos> tokens")
+            seq = seq[:length]
+        else:
             if eos is None:
                 raise ValueError("Don't know how to compute input length")
             try:
-                length = seq.index(eos)
-            except ValueError:  # eos not found in input
-                length = -1
+                # some generations might fail to produce the <eos> symbol
+                seq = seq[:seq.index(eos)]
+            except ValueError:
+                pass
 
-        seq = seq[:length]
+            # eventually remove <bos> if required
+            if bos is not None:
+                if len(seq) > 0 and seq[0] == bos:
+                    seq = seq[1:]
 
-        # eventually remove <bos> if required
-        if self.get_bos() is not None:
-            if len(seq) > 0 and seq[0] == self.get_bos():
-                seq = seq[1:]
-
-        seq = self.inverse_transform(seq)
-
-        return seq
+        return self.inverse_transform(seq)
 
     def _get_sym(self, sym):
         if not self.fitted:
@@ -252,6 +274,7 @@ class LabelEncoder(object):
                 'lower': self.lower,
                 'utfnorm': self.utfnorm,
                 'utfnorm_type': self.utfnorm_type,
+                'drop_diacritics': self.drop_diacritics,
                 'target': self.target,
                 'max_size': self.max_size,
                 'min_freq': self.min_freq,
@@ -265,6 +288,9 @@ class LabelEncoder(object):
         inst = cls(pad=obj['pad'], eos=obj['eos'], bos=obj['bos'],
                    level=obj['level'], target=obj['target'], lower=obj['lower'],
                    max_size=obj['max_size'], min_freq=['min_freq'],
+                   drop_diacritics=obj.get('drop_diacritics', False),
+                   utfnorm=obj.get('utfnorm', False),
+                   utfnorm_type=obj.get('utfnorm_type', False),
                    preprocessor=obj.get('preprocessor'),
                    name=obj['name'], meta=obj.get('meta', {}))
         inst.freqs = Counter(obj['freqs'])
@@ -282,14 +308,16 @@ class MultiLabelEncoder(object):
     """
     def __init__(self, word_max_size=None, word_min_freq=1, word_lower=False,
                  char_max_size=None, char_min_freq=None, char_lower=False,
-                 char_eos=True, char_bos=True, utfnorm=False, utfnorm_type='NFKD'):
+                 char_eos=True, char_bos=True, utfnorm=False, utfnorm_type='NFKD',
+                 drop_diacritics=False):
         self.word = LabelEncoder(max_size=word_max_size, min_freq=word_min_freq,
                                  lower=word_lower, utfnorm=utfnorm,
-                                 utfnorm_type=utfnorm_type, name='word')
+                                 utfnorm_type=utfnorm_type,
+                                 drop_diacritics=drop_diacritics, name='word')
         self.char = LabelEncoder(max_size=char_max_size, min_freq=char_min_freq,
-                                 name='char', level='char', lower=char_lower,
+                                 level='char', lower=char_lower, name='char',
                                  eos=char_eos, bos=char_bos, utfnorm_type=utfnorm_type,
-                                 utfnorm=utfnorm)
+                                 utfnorm=utfnorm, drop_diacritics=drop_diacritics)
         self.tasks = {}
         self.nsents = None
 
@@ -335,7 +363,8 @@ class MultiLabelEncoder(object):
                  char_eos=settings.char_eos,
                  char_bos=settings.char_bos,
                  utfnorm=settings.utfnorm,
-                 utfnorm_type=settings.utfnorm_type)
+                 utfnorm_type=settings.utfnorm_type,
+                 drop_diacritics=settings.drop_diacritics)
 
         for task in settings.tasks:
             if tasks is not None and task['settings']['target'] not in tasks:

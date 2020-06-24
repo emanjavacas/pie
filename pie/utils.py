@@ -24,6 +24,11 @@ def apply_utfnorm(s, form='NFKD'):
     return unicodedata.normalize(form, s)
 
 
+def drop_diacritics(s):
+    return ''.join(c for c in unicodedata.normalize('NFD', s)
+                   if unicodedata.category(c) != 'Mn')
+
+
 def identity(*args):
     if len(args) > 1:
         return args
