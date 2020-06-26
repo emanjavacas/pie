@@ -1,0 +1,32 @@
+{
+      "params": [
+          // Example for changing a category
+          // {
+          //    "path": "cemb_type",
+          //    "type": "suggest_categorical",
+          //    "args": [["cnn", "rnn"]]
+          // }
+
+         // Example for changing an INT dimension
+         // {
+         //     "path": "cemb_dim",
+         //     "type": "suggest_int",
+         //     "args": [200, 600]
+         //}
+
+        // See more options using the same
+        //   Architecture there : https://optuna.readthedocs.io/en/stable/tutorial/configurations.html#defining-parameter-spaces
+      ],
+      // Pruner are available there : https://optuna.readthedocs.io/en/stable/reference/pruners.html
+      //   Follow this scheme for more detail
+      "pruner": {
+          "name": "MedianPruner",
+          "args": [],
+          "kwargs": {}
+      },
+      "study": {
+        // ToDo !
+        "name": "default-optimization-name",
+        "gpus": []
+      }
+  }
