@@ -14,6 +14,13 @@
          //     "args": [200, 600]
          //}
 
+        // Example for path
+        // {
+        //  "path": "task_defaults/decoder",
+        //  "type": "suggest_categorical",
+        //  "args": [["linear", "crf"]]
+        // }
+
         // See more options using the same
         //   Architecture there : https://optuna.readthedocs.io/en/stable/tutorial/configurations.html#defining-parameter-spaces
       ],
