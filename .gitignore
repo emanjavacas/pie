@@ -1,5 +1,9 @@
 # When flask is installed, produce a flask binary file
 flask
+
+*.db
+*.html
+
 # Tired of ignoring it
 .idea 
 # If one of these kind of file should be added, then it should be force added.

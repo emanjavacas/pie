@@ -8,6 +8,7 @@ from pie import utils
 
 
 DEFAULTPATH = os.sep.join([os.path.dirname(__file__), 'default_settings.json'])
+OPT_DEFAULT_PATH = os.sep.join([os.path.dirname(__file__), 'default_optuna.json'])
 
 
 class Settings(dict):
@@ -109,7 +110,7 @@ def check_settings(settings):
     return settings
 
 
-def settings_from_file(config_path):
+def settings_from_file(config_path, default_path=DEFAULTPATH):
     """Loads and parses a parameter file.
 
     Parameters
@@ -130,7 +131,7 @@ def settings_from_file(config_path):
             "Couldn't read config file: %s. Exception: %s" % (config_path, str(e)))
 
     # add default values for missing settings:
-    with open(DEFAULTPATH, 'r') as f:
+    with open(default_path, 'r') as f:
         defaults = json.loads(json_minify(f.read()))
 
     settings = Settings(
@@ -147,4 +148,7 @@ def settings_from_file(config_path):
         print("\n::: Loaded Config :::\n")
         print(yaml.dump(dict(settings)))
 
-    return check_settings(merge_task_defaults(settings))
+    if default_path == DEFAULTPATH:
+        return check_settings(merge_task_defaults(settings))
+    else:
+        return settings

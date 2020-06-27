@@ -10,7 +10,7 @@ import torch
 import optuna
 
 
-from pie.settings import settings_from_file
+from pie.settings import settings_from_file, OPT_DEFAULT_PATH
 from pie.trainer import Trainer
 from typing import Dict, Any, Optional, List
 
@@ -126,15 +126,40 @@ class Optimizer(object):
         return scores[self.focus]["all"]["accuracy"]
 
 
-def run_optimize(settings, opt_settings, generate_csv=True, generate_html=True):
-    # python -m pie.scripts.tune datasets/test_conf.json datasets/optuna_test.json
-    # trainer, trainset, devset, encoder, models = Trainer.setup(settings)
-    # ToDo: Deal with SQLITE to restart studies
-    trial_creator = Optimizer(settings, opt_settings["params"])
+def run_optimize(
+        settings, opt_settings,
+        generate_csv: bool = True, generate_html: bool = True,
+        use_sqlite: Optional[str] = None, resume: bool = False):
+    """
+
+    :param settings:
+    :param opt_settings:
+    :param study_name:
+    :param generate_csv:
+    :param generate_html:
+    :param use_sqlite:
+    :param resume:
+    :return:
+    """
+
+    import pprint
+    pprint.pprint(opt_settings)
+    storage = None
+
+    if use_sqlite:
+        storage = 'sqlite:///{}'.format(use_sqlite)
+
+    trial_creator = Optimizer(
+        settings,
+        opt_settings["params"]
+    )
 
     study = optuna.create_study(
+        study_name=opt_settings["study"]["name"],
         direction='maximize',
-        pruner=get_pruner(opt_settings["pruner"])
+        pruner=get_pruner(opt_settings["pruner"]),
+        storage=storage,
+        load_if_exists=resume
     )
     study.optimize(trial_creator.optimize, n_trials=20)
 
@@ -151,9 +176,20 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('config_path', help='Path to optimization file (see default_settings.json)')
     parser.add_argument('optuna_path', help='Path to optimization file (see default_optuna.json)')
+    parser.add_argument('--html', action='store_true', default=False, help="Generate a HTML report using"
+                                                                           "study name")
+    parser.add_argument('--csv', action='store_true', default=False, help="Generate a CSV report using"
+                                                                          "study name")
+    parser.add_argument('--sqlite', default=None, help="Path to a SQLite DB File (Creates if not exists)")
+    parser.add_argument('--resume', action='store_true', default=False, help="Resume a previous study using SQLite"
+                                                                             "if it exists")
     args = parser.parse_args()
 
     run_optimize(
         settings_from_file(args.config_path),
-        settings_from_file(args.optuna_path)
+        settings_from_file(args.optuna_path, default_path=OPT_DEFAULT_PATH),
+        generate_csv=args.csv,
+        generate_html=args.html,
+        use_sqlite=args.sqlite,
+        resume=args.resume
     )
