@@ -189,7 +189,7 @@ class Trainer(object):
         self.target_task = get_target_task(settings)
         self.verbose = settings.verbose
         self.dataset = dataset
-        self.model = model
+        self.model: SimpleModel = model
         self.optimizer = getattr(optim, settings.optimizer)(
             model.parameters(), lr=settings.lr)
         self.clip_norm = settings.clip_norm
@@ -225,7 +225,18 @@ class Trainer(object):
             print()
 
     @classmethod
-    def setup(cls, settings) -> Tuple["Trainer", SimpleModel, Dataset, Optional[Dataset], MultiLabelEncoder, Reader]:
+    def setup(cls, settings) -> Tuple["Trainer", Reader, Optional[Dataset]]:
+        """ Setup the trainer instance through settings
+
+        You can access the model, the encoder through
+        >>> trainer.model, trainer.model.label_encoder
+
+        You can access the trainset through
+        >>> trainer.dataset
+
+        :param settings: Settings to setup the trainer
+        :return:  (Trainer instance, Reader, Devset)
+        """
         # datasets
         reader = Reader(settings, settings.input_path)
         tasks = reader.check_tasks(expected=None)
@@ -289,8 +300,8 @@ class Trainer(object):
 
         trainer = cls(settings, model, trainset, reader.get_nsents())
 
-        #"Trainer", SimpleModel, Dataset, Optional[Dataset], MultiLabelEncoder, Reader
-        return trainer, model, trainset, devset, label_encoder, reader
+        #"Trainer", Optional[Dataset], Reader
+        return trainer, reader, devset
 
     def weight_loss(self, loss):
         """
@@ -319,9 +330,14 @@ class Trainer(object):
 
         return dict(total_losses)
 
-    def run_check(self, devset):
+    def run_check(self, devset, adapt=True) -> Dict[str, Dict[str, Dict[str, float]]]:
         """
         Monitor dev loss and eventually early-stop training
+
+
+        :param devset: Dataset
+        :param adapt: Use scores to adapt schedulers
+        :returns: Dev scores
         """
         print()
         print("Evaluating model on dev set...")
@@ -329,7 +345,14 @@ class Trainer(object):
 
         self.model.eval()
 
-        stored_scores = {}
+        # This score dict holds all metrics (F1, Acc, Prec, etc.) for all different categories
+        #   like Known tokens, Unknown Targets, All, etc. for each task
+        # Eg. {"lemma": {"all": {"accuracy": 0.90, "precision": 0.70, ...}, "known-tokens": {..}...}
+        dev_scores = {}
+
+        # This score dict holds metrics used for adapting the task_scheduler and the
+        #    lr_scheduler.
+        target_scores = {}
 
         with torch.no_grad():
             dev_loss = self.evaluate(devset)
@@ -340,20 +363,22 @@ class Trainer(object):
             print()
             summary = self.model.evaluate(devset, self.dataset)
             for task_name, scorer in summary.items():
-                stored_scores[task_name] = scorer.get_scores()
-                scorer.print_summary(scores=stored_scores[task_name])
+                dev_scores[task_name] = scorer.get_scores()
+                scorer.print_summary(scores=dev_scores[task_name])
+
+        if not adapt:
+            return dev_scores
 
         self.model.train()
-        dev_scores = {}
-        for task, scored in stored_scores.items():
-            dev_scores[task] = scored['all']['accuracy']
+        for task, scored in dev_scores.items():
+            target_scores[task] = scored['all']['accuracy']
         # add lm scores
         if 'lm_fwd' in dev_loss or 'lm_bwd' in dev_loss:
-            dev_scores['lm_fwd'] = dev_loss['lm_fwd']
-            dev_scores['lm_bwd'] = dev_loss['lm_bwd']
+            target_scores['lm_fwd'] = dev_loss['lm_fwd']
+            target_scores['lm_bwd'] = dev_loss['lm_bwd']
 
-        self.task_scheduler.step(dev_scores, self.model)
-        self.lr_scheduler.step(dev_scores[self.target_task])
+        self.task_scheduler.step(target_scores, self.model)
+        self.lr_scheduler.step(target_scores[self.target_task])
 
         if self.verbose:
             print(self.task_scheduler)
@@ -361,7 +386,7 @@ class Trainer(object):
             print(self.lr_scheduler)
             print()
 
-        return stored_scores
+        return dev_scores
 
     def train_epoch(self, devset, epoch):
         rep_loss = collections.defaultdict(float)
@@ -436,6 +461,8 @@ class Trainer(object):
                          "task [{}] with best score {:.4f}".format(e.task, e.loss))
 
             self.model.load_state_dict(e.best_state_dict)
+            # Re-evaluate to get best devscore
+            scores = self.run_check(devset, adapt=False)
 
         logging.info("Finished training in [{:.0f}] secs".format(time.time() - start))
 

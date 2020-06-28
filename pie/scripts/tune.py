@@ -12,7 +12,7 @@ import optuna
 
 from pie.settings import settings_from_file, OPT_DEFAULT_PATH
 from pie.trainer import Trainer
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union
 
 
 def get_targets(settings):
@@ -87,12 +87,53 @@ def create_tuna_optimization(trial: optuna.Trial, fn: str, name: str, value: Lis
     return getattr(trial, fn)(name, *value)
 
 
+def read_json_path(data: Dict[str, Union[Dict, float]], path: str):
+    """ Read a simple JSON path
+
+    >>> read_json_path({"a": {"b": {"c": 1}}, "a/b/c")
+    1
+
+    :param data: Nested dictionary
+    :param path: Path (keys are separated with "/")
+    :return: Value at the path
+    """
+    split = path.split("/")
+    if len(split) > 1:
+        current, path = split[0], "/".join(split[1:])
+        return read_json_path(data[current], path)
+    else:
+        return data[path]
+
+
 class Optimizer(object):
-    def __init__(self, settings, optimization_settings: List[Dict[str, Any]], gpus: List[int] = []):
-        self.focus: str = [task["name"] for task in settings.tasks if task.get("target") is True][0]
+    def __init__(
+            self,
+            settings, optimization_settings: List[Dict[str, Any]],
+            devices: List[int] = None, focus: Optional[str] = None,
+            save_complete: bool = True,
+            save_pruned: bool = False
+    ):
+        """
+
+        :param settings:
+        :param optimization_settings:
+        :param devices: List of cuda devices. Leave empty if you use CPU
+        """
         self.settings = settings
         self.optimization_settings = optimization_settings
-        self.gpus = gpus
+        self.devices = devices or []
+        self.save_pruned: bool = save_pruned
+        self.save_complete: bool = save_complete
+        if focus:
+            self.focus: str = focus
+        else:
+            self.focus: str = "{}/all/accuracy".format(
+                [
+                    task["name"]
+                    for task in settings.tasks
+                    if task.get("target") is True
+                ][0]
+            )
 
     def optimize(self, trial: optuna.Trial):
         env_setup(self.settings)
@@ -111,17 +152,22 @@ class Optimizer(object):
                 )
             )
 
-        trainer, model, trainset, devset, label_encoder, reader = Trainer.setup(settings)
+        trainer, reader, devset = Trainer.setup(settings)
 
         def report(epoch_id, _scores):
-            target = _scores[self.focus]["all"]["accuracy"]
+            # Read the target to optimize using JSON path
+            target = read_json_path(_scores, self.focus)
             trial.report(target, epoch_id)
             # Handle pruning based on the intermediate value.
             if trial.should_prune():
+                if self.save_pruned:
+                    save(str(trial.number), self.settings, trainer.model)
                 raise optuna.TrialPruned()
 
         scores = trainer.train_epochs(self.settings.epochs, devset=devset, epoch_callback=report)
-        save(str(trial.number), self.settings, model)
+
+        if self.save_complete:
+            save(str(trial.number), self.settings, trainer.model)
 
         return scores[self.focus]["all"]["accuracy"]
 
@@ -151,7 +197,10 @@ def run_optimize(
 
     trial_creator = Optimizer(
         settings,
-        opt_settings["params"]
+        opt_settings["params"],
+        focus=opt_settings["study"]["optimize_metric"],
+        save_complete=opt_settings["study"]["save_complete"],
+        save_pruned=opt_settings["study"]["save_pruned"]
     )
 
     study = optuna.create_study(
