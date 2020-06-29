@@ -40,5 +40,10 @@
         "optimize_metric": null,
         "save_pruned": false,
         "save_completed": true
+      },
+      "sampler": {
+        "name": null,   // eg. null = No pruners, "GridSampler" = GridSampler, etc.
+        "args": [],
+        "kwargs": {}
       }
   }

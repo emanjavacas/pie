@@ -8,6 +8,11 @@ from pie.trainer import set_seed, Trainer, get_fname_infix, get_targets
 from pie.settings import merge_task_defaults, check_settings
 
 
+IntSpace = List[int]
+FloatSpace = List[float]
+CategoricalSpace = List[List[str]]
+
+
 def get_pruner(pruner_settings: Optional[Dict[str, Any]]) -> Optional[optuna.pruners.BasePruner]:
     """ Initialize a Pruner
 
@@ -60,8 +65,9 @@ def get_search_space(optuna_search_param):
     return optuna_search_param
 
 
-def compare_settings(classic_settings, optuna_settings, trial: optuna.Trial,
-                     path: Optional[List] = None, path_glue: str = "__") -> Tuple[Dict, Dict]:
+def insert_search_space(classic_settings, optuna_settings, trial: Optional[optuna.Trial] = None,
+                        path: Optional[List] = None, path_glue: str = "__",
+                        dry_run: bool = False) -> Tuple[Dict, Dict]:
     path = path or []
     search_space: Dict[str, Dict[str, Any]] = {}
 
@@ -70,12 +76,13 @@ def compare_settings(classic_settings, optuna_settings, trial: optuna.Trial,
             # If key is in both dictionary, and the classic settings is already a dict,
             #   we merge things together
             if isinstance(value, dict):
-                classic_settings[key], temp_space = compare_settings(
+                classic_settings[key], temp_space = insert_search_space(
                     classic_settings[key],
                     optuna_settings[key],
                     trial,
                     path=path + [key],
-                    path_glue=path_glue
+                    path_glue=path_glue,
+                    dry_run=dry_run
                 )
                 search_space.update({
                     temp_space_key: temp_space_value
@@ -85,14 +92,32 @@ def compare_settings(classic_settings, optuna_settings, trial: optuna.Trial,
             #   we *de-facto* have an optuna initialization dict.
             elif isinstance(optuna_settings[key], dict):
                 variable_name = path_glue.join(path + [key])
-                search_space[variable_name] = get_search_space(optuna_settings[key])
-                classic_settings[key] = create_tuna_optimization(
-                    trial=trial,
-                    fn=optuna_settings[key]["type"],
-                    name=variable_name,
-                    value=optuna_settings[key]["args"]
-                )
+                search_space[variable_name] = optuna_settings[key]
+                if not dry_run:
+                    classic_settings[key] = create_tuna_optimization(
+                        trial=trial,
+                        fn=optuna_settings[key]["type"],
+                        name=variable_name,
+                        value=optuna_settings[key]["args"]
+                    )
     return classic_settings, search_space
+
+
+def simplify_search_space(suggest_args: Union[IntSpace, FloatSpace, CategoricalSpace]) -> List[Any]:
+    """ Converts search space from suggest_uniform and so on to Sampler search space:
+
+    >>> simplify_search_space([["cnn", "rnn"]]) == ["cnn", "rnn"]
+    True
+    >>> simplify_search_space([200, 600, 25]) == [200, 600, 25]
+    True
+
+    :param suggest_args: Args for suggest_*
+    :return: Search Space
+    """
+    if isinstance(suggest_args[0], list):  # If args[0] is a list, this is a Cetagorical search space
+        return suggest_args[0]
+    else:
+        return suggest_args
 
 
 class Optimizer(object):
@@ -124,14 +149,50 @@ class Optimizer(object):
                 get_targets(settings)[0]
             )
 
+    def get_sampler(self, sampler_settings: Optional[Dict[str, Any]]) -> Optional[optuna.samplers.BaseSampler]:
+        """ Initialize a Sampler
+
+        :param sampler_settings: Dict containing a name, an args list \
+            (optional), a kwargs dictionary (optional) or None
+        :return: If not None, the samp[ler required for the study
+
+        """
+        if not sampler_settings or not sampler_settings.get("name"):
+            return None
+
+        kwargs = sampler_settings.get("kwargs", {})
+        args = sampler_settings.get("args", [])
+
+        # Checking that the sampler does not need to be fed the search space
+        #       (Using set for potential evolutions)
+        if sampler_settings["name"] in {"GridSampler"} and "search_space" not in kwargs:
+            _, search_space = insert_search_space(
+                classic_settings=self.settings,
+                optuna_settings=self.optimization_settings,
+                trial=None, dry_run=True
+            )
+            kwargs["search_space"] = {
+                key: simplify_search_space(value["args"])
+                for key, value in search_space.items()
+            }
+
+        return getattr(optuna.samplers, sampler_settings["name"])(
+            *args,
+            **kwargs
+        )
+
     @property
     def init(self) -> bool:
         return self._init
 
-    def initialize_optimize(self, trial: optuna.Trial):
+    def initialize_optimize(self, trial: optuna.Trial) -> None:
+        """ Initialize the search space and merging of settings.
+
+        :param trial: Current trial
+        """
         if self.settings.verbose:
             logging.info("Initializing search space")
-        self.settings, self.search_space = compare_settings(
+        self.settings, self.search_space = insert_search_space(
             classic_settings=self.settings,
             optuna_settings=self.optimization_settings,
             trial=trial

@@ -12,15 +12,15 @@ def run_optimize(
         settings, opt_settings,
         generate_csv: bool = True, generate_html: bool = True,
         use_sqlite: Optional[str] = None, resume: bool = False):
-    """
+    """ Run an Optuna-based optimization
 
-    :param settings:
-    :param opt_settings:
-    :param generate_csv:
-    :param generate_html:
-    :param use_sqlite:
-    :param resume:
-    :return:
+    :param settings: Settings for classic training
+    :param opt_settings: Settings for Optuna
+    :param generate_csv: Produces a CSV output
+    :param generate_html: Procudes a HTML output
+    :param use_sqlite: Save/Store/Read a database for resuming operation or  \
+                        multiprocessing
+    :param resume: Resume training if it exists
     """
 
     storage = None
@@ -44,7 +44,8 @@ def run_optimize(
         direction='maximize',
         pruner=get_pruner(opt_settings.get("pruner")),
         storage=storage,
-        load_if_exists=resume
+        load_if_exists=resume,
+        sampler=trial_creator.get_sampler(opt_settings.get("sampler"))
     )
     study.optimize(trial_creator.optimize, n_trials=20)
 
