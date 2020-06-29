@@ -110,13 +110,21 @@ def check_settings(settings):
     return settings
 
 
-def settings_from_file(config_path, default_path=DEFAULTPATH):
+def settings_from_file(
+        config_path: str,
+        default_path: str = DEFAULTPATH,
+        apply_task_default: bool = True
+):
     """Loads and parses a parameter file.
 
     Parameters
     ===========
     config_path : str
         The path to the parameter file, formatted as json.
+    default_path : str
+        The path to the file that contains the default values
+    apply_task_default : bool
+        Apply the defaults value to tasks
 
     Returns
     ===========
@@ -148,7 +156,7 @@ def settings_from_file(config_path, default_path=DEFAULTPATH):
         print("\n::: Loaded Config :::\n")
         print(yaml.dump(dict(settings)))
 
-    if default_path == DEFAULTPATH:
+    if apply_task_default:
         return check_settings(merge_task_defaults(settings))
     else:
         return settings

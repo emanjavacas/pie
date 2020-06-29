@@ -1,24 +1,26 @@
 {
       "params": [
-          // Example for changing a category
-          // {
-          //    "path": "cemb_type",
-          //    "type": "suggest_categorical",
-          //    "args": [["cnn", "rnn"]]
-          // }
 
-         // Example for changing an INT dimension
-         // {
-         //     "path": "cemb_dim",
-         //     "type": "suggest_int",
-         //     "args": [200, 600]
-         //}
+        // Example for changing a category
+        // "cemb_type": {
+        //     "type": "suggest_categorical",
+        //     "args": [
+        //         ["cnn", "rnn"]
+        //     ]
+        // },
 
-        // Example for path
-        // {
-        //  "path": "task_defaults/decoder",
-        //  "type": "suggest_categorical",
-        //  "args": [["linear", "crf"]]
+        // Example for changing an INT dimension
+        // "cemb_dim": {
+        //     "type": "suggest_int",
+        //     "args": [200, 600]
+        // }
+
+        // Example for nested
+        // "task_defaults": {
+        //     "decoder": {
+        //         "type": "suggest_categorical",
+        //         "args": [["linear", "crf"]]
+        //      }
         // }
 
         // See more options using the same
@@ -27,12 +29,11 @@
       // Pruner are available there : https://optuna.readthedocs.io/en/stable/reference/pruners.html
       //   Follow this scheme for more detail
       "pruner": {
-          "name": "MedianPruner",
+          "name": null,  // eg. null = No pruners, "MedianPruner" = Median pruner, etc.
           "args": [],
           "kwargs": {}
       },
       "study": {
-        // ToDo !
         "name": "default-optimization-name",
         "gpus": [],
         // "taskname/category/metric" eg. "lemma/all/accuracy". Defaults on focus accuracy
