@@ -4,14 +4,16 @@ import logging
 import time
 import collections
 import random
+from datetime import datetime
 
 import tqdm
 
+import numpy
 import torch
 from torch import optim
 from torch.nn.utils import clip_grad_norm_
 
-from typing import Tuple, Generator, Dict, Optional, Callable
+from typing import Tuple, Generator, Dict, Optional, Callable, List
 
 from pie.models import SimpleModel, get_pretrained_embeddings
 from pie.data.dataset import Dataset, MultiLabelEncoder
@@ -22,6 +24,30 @@ import pie.pretrain_encoder
 logging.basicConfig(format='%(asctime)s : %(message)s', level=logging.INFO)
 
 StepCallback = Callable[[int, Dict], None]  # Takes epoch ID + Score Dict
+
+
+def get_targets(settings: Dict) -> List[str]:
+    """ List targets tasks from settings
+
+    :param settings: Settings
+    :return: Task's name which were marked as target.
+    """
+    return [task['name'] for task in settings.tasks if task.get('target')]
+
+
+def get_fname_infix(settings: Dict) -> Tuple[str, str]:
+    """ Based on settings, build the filename and the path
+
+    :param settings: Settings
+    :return: Tuple(GenericPath, Unique identifier based on date/time/target tasks) where \
+             GenericPath contains the directory path (based on modelpath) \
+             and the file contains the modelname
+    """
+    # fname
+    fname = os.path.join(settings.modelpath, settings.modelname)
+    timestamp = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
+    infix = '+'.join(get_targets(settings)) + '-' + timestamp
+    return fname, infix
 
 
 def get_batch_task(tasks, **kwargs):
@@ -46,6 +72,22 @@ def get_target_task(settings):
         if task.get('target'):
             return task['name']
     raise ValueError("No target task?")
+
+
+def set_seed(seed=None, verbose=False) -> int:
+    if not seed:
+        now = datetime.now()
+        # set seed
+        seed = now.hour * 10000 + now.minute * 100 + now.second
+        if verbose:
+            print("Using seed:", seed)
+    random.seed(seed)
+    numpy.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+
+    return seed
 
 
 class EarlyStopException(Exception):

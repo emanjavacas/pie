@@ -1,30 +1,12 @@
 # Can be run with python -m pie.scripts.tune
 import os
 from datetime import datetime
-import logging
-import random
-
-# set seeds
-import numpy
-import torch
-import optuna
-
-
-from pie.settings import settings_from_file, OPT_DEFAULT_PATH
-from pie.trainer import Trainer
 from typing import Dict, Any, Optional, List, Union
 
+import optuna
 
-def get_targets(settings):
-    return [task['name'] for task in settings.tasks if task.get('target')]
-
-
-def get_fname_infix(settings):
-    # fname
-    fname = os.path.join(settings.modelpath, settings.modelname)
-    timestamp = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
-    infix = '+'.join(get_targets(settings)) + '-' + timestamp
-    return fname, infix
+from pie.settings import settings_from_file, OPT_DEFAULT_PATH
+from pie.trainer import Trainer, set_seed, get_targets, get_fname_infix
 
 
 def save(checkpoint_dir, settings, model):
@@ -34,21 +16,6 @@ def save(checkpoint_dir, settings, model):
     os.makedirs(fpath, exist_ok=True)
     fpath = model.save(fpath, infix=infix, settings=settings)
     return fpath
-
-
-def env_setup(settings):
-    now = datetime.now()
-    # set seed
-    seed = now.hour * 10000 + now.minute * 100 + now.second
-    print("Using seed:", seed)
-    random.seed(seed)
-    numpy.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
-
-    if settings.verbose:
-        logging.basicConfig(level=logging.INFO)
 
 
 def affect_settings(target: Dict[str, Any], key: str, value):
@@ -124,6 +91,7 @@ class Optimizer(object):
         self.devices = devices or []
         self.save_pruned: bool = save_pruned
         self.save_complete: bool = save_complete
+        # Should we set seed at the optimizer level or at the optimize() level
         if focus:
             self.focus: str = focus
         else:
@@ -136,7 +104,7 @@ class Optimizer(object):
             )
 
     def optimize(self, trial: optuna.Trial):
-        env_setup(self.settings)
+        set_seed(verbose=self.settings.verbose)
 
         settings = self.settings
 
