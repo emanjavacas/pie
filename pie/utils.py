@@ -14,6 +14,10 @@ import functools
 import unicodedata
 from contextlib import contextmanager
 from subprocess import check_output, CalledProcessError
+import tempfile
+
+
+DEFAULT_TEMP_DIR = tempfile.gettempdir()
 
 
 def lower_str(s):
@@ -165,7 +169,7 @@ def shutup():
 
 
 @contextmanager
-def tmpfile(parent='/tmp/'):
+def tmpfile(parent=DEFAULT_TEMP_DIR):
     fid = str(uuid.uuid1())
     tmppath = os.path.join(parent, fid)
     yield tmppath
