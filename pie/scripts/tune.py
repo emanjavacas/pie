@@ -11,7 +11,8 @@ from pie.settings import settings_from_file, OPT_DEFAULT_PATH
 def run_optimize(
         settings, opt_settings,
         generate_csv: bool = True, generate_html: bool = True,
-        use_sqlite: Optional[str] = None, resume: bool = False):
+        use_sqlite: Optional[str] = None, resume: bool = False,
+        n_trials: int = 20):
     """ Run an Optuna-based optimization
 
     :param settings: Settings for classic training
@@ -21,6 +22,7 @@ def run_optimize(
     :param use_sqlite: Save/Store/Read a database for resuming operation or  \
                         multiprocessing
     :param resume: Resume training if it exists
+    :params n_trials: Number of trials to run
     """
 
     storage = None
@@ -47,7 +49,7 @@ def run_optimize(
         load_if_exists=resume,
         sampler=trial_creator.get_sampler(opt_settings.get("sampler"))
     )
-    study.optimize(trial_creator.optimize, n_trials=20)
+    study.optimize(trial_creator.optimize, n_trials=n_trials)
 
     if generate_csv:
         df = study.trials_dataframe()
@@ -67,6 +69,8 @@ if __name__ == "__main__":
     parser.add_argument('--csv', action='store_true', default=False, help="Generate a CSV report using"
                                                                           "study name")
     parser.add_argument('--sqlite', default=None, help="Path to a SQLite DB File (Creates if not exists)")
+    parser.add_argument('-n', '--n_trials', default=20, type=int,
+                        help="Number of trials to run")
     parser.add_argument('--resume', action='store_true', default=False, help="Resume a previous study using SQLite"
                                                                              "if it exists")
     args = parser.parse_args()
@@ -77,5 +81,6 @@ if __name__ == "__main__":
         generate_csv=args.csv,
         generate_html=args.html,
         use_sqlite=args.sqlite,
-        resume=args.resume
+        resume=args.resume,
+        n_trials=args.n_trials
     )
