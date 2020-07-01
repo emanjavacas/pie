@@ -224,7 +224,7 @@ class Optimizer(object):
         if self.save_complete:
             save(str(trial.number), self.settings, trainer.model)
 
-        return scores[self.focus]["all"]["accuracy"]
+        return read_json_path(scores, self.focus)
 
 
 def save(checkpoint_dir, settings, model):

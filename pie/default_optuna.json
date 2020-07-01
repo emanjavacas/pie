@@ -1,6 +1,5 @@
 {
-      "params": [
-
+      "params": {
         // Example for changing a category
         // "cemb_type": {
         //     "type": "suggest_categorical",
@@ -25,7 +24,7 @@
 
         // See more options using the same
         //   Architecture there : https://optuna.readthedocs.io/en/stable/tutorial/configurations.html#defining-parameter-spaces
-      ],
+      },
       // Pruner are available there : https://optuna.readthedocs.io/en/stable/reference/pruners.html
       //   Follow this scheme for more detail
       "pruner": {
