@@ -1,5 +1,6 @@
 import os
 import logging
+import copy
 from typing import Dict, Any, List, Union, Optional, Tuple
 # Third-Party
 import optuna
@@ -60,11 +61,6 @@ def read_json_path(data: Dict[str, Union[Dict, float]], path: str):
         return data[path]
 
 
-def get_search_space(optuna_search_param):
-    # ToDo: Should we have a reformat here ?
-    return optuna_search_param
-
-
 def insert_search_space(classic_settings, optuna_settings, trial: Optional[optuna.Trial] = None,
                         path: Optional[List] = None, path_glue: str = "__",
                         dry_run: bool = False) -> Tuple[Dict, Dict]:
@@ -123,7 +119,7 @@ def simplify_search_space(suggest_args: Union[IntSpace, FloatSpace, CategoricalS
 class Optimizer(object):
     def __init__(
             self,
-            settings, optimization_settings: List[Dict[str, Any]],
+            settings, optimization_settings: Dict[str, Any],
             devices: List[int] = None, focus: Optional[str] = None,
             save_complete: bool = True,
             save_pruned: bool = False
@@ -134,13 +130,13 @@ class Optimizer(object):
         :param optimization_settings:
         :param devices: List of cuda devices. Leave empty if you use CPU
         """
-        self.settings = settings
+        self.settings: Optional[Dict] = None
+        self._base_settings = settings
         self.optimization_settings = optimization_settings
         self.devices = devices or []
         self.save_pruned: bool = save_pruned
         self.save_complete: bool = save_complete
         self.search_space: Dict = {}
-        self._init = False  # Whether or not
         # Should we set seed at the optimizer level or at the optimize() level
         if focus:
             self.focus: str = focus
@@ -182,14 +178,18 @@ class Optimizer(object):
         )
 
     @property
-    def init(self) -> bool:
-        return self._init
+    def base_settings(self):
+        return self._base_settings
+
+    def reset_settings(self):
+        self.settings = copy.deepcopy(self.base_settings)
 
     def initialize_optimize(self, trial: optuna.Trial) -> None:
         """ Initialize the search space and merging of settings.
 
         :param trial: Current trial
         """
+        self.reset_settings()
         if self.settings.verbose:
             logging.info("Initializing search space")
         self.settings, self.search_space = insert_search_space(
@@ -198,11 +198,9 @@ class Optimizer(object):
             trial=trial
         )
         self.settings = merge_task_defaults(self.settings)
-        self._init = True
 
     def optimize(self, trial: optuna.Trial):
-        if not self.init:
-            self.initialize_optimize(trial)
+        self.initialize_optimize(trial)
 
         set_seed(verbose=self.settings.verbose)
         settings = self.settings

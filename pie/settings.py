@@ -3,7 +3,7 @@ import os
 import yaml
 import json
 from json_minify import json_minify
-
+from copy import deepcopy
 from pie import utils
 
 
@@ -39,6 +39,9 @@ class Settings(dict):
     def __delitem__(self, key):
         super(Settings, self).__delitem__(key)
         del self.__dict__[key]
+
+    def __deepcopy__(self, memo=None):
+        return Settings(deepcopy(dict(self.__dict__), memo=memo))
 
 
 def merge_task_defaults(settings):
