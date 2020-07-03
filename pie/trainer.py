@@ -5,6 +5,7 @@ import time
 import collections
 import random
 from datetime import datetime
+import tempfile
 
 import tqdm
 
@@ -130,7 +131,7 @@ class TaskScheduler(object):
         self.factor = settings.factor
         self.threshold = settings.threshold
         self.min_weight = settings.min_weight
-        self.fid = '/tmp/{}'.format(str(uuid.uuid1()))
+        self.fid = os.path.join(tempfile.gettempdir(), str(uuid.uuid1()))
 
     def __repr__(self):
         # task scheduler

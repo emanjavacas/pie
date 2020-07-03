@@ -21,16 +21,12 @@ def get_known_and_ambigous_tokens(trainset, label_encoders):
     """
     known = set()
     ambs = defaultdict(lambda: defaultdict(Counter))
-    order_label = [label.target for label in label_encoders]
+    targets = [le.target for le in label_encoders]
     for _, (inp, tasks) in trainset.reader.readsents():
-        task_trues = [
-            label.preprocess(tasks[label.target], inp)
-            for label in label_encoders
-        ]
-        for tok, task_true in zip(inp, zip(*task_trues)):
-            for task, true in zip(order_label, task_true):
-                ambs[task][tok][true] += 1
-            known.add(tok)
+        known.update(inp)
+        for le in label_encoders:
+            for tok, true in zip(inp, le.preprocess(tasks[le.target], inp)):
+                ambs[le.target][tok][true] += 1
     ambs = {t: set(tok for tok in ambs[t] if len(ambs[t][tok]) > 1) for t in ambs}
     return known, ambs
 
@@ -83,21 +79,18 @@ class Scorer(object):
             raise ValueError("Unequal input lengths. Hyps {}, targets {}, tokens {}"
                              .format(len(hyps), len(targets), len(tokens)))
 
-        if not self.label_encoder.preprocessor_fn:
-            self.preds.extend(hyps)
-            self.trues.extend(targets)
-            self.tokens.extend(tokens)
-        else:
-            for pred, true, token in zip(hyps, targets, tokens):
+        for pred, true, token in zip(hyps, targets, tokens):
+            if self.label_encoder.preprocessor_fn:
                 true = self.label_encoder.preprocessor_fn.inverse_transform(true, token)
                 try:
                     pred = self.label_encoder.preprocessor_fn.inverse_transform(
                         pred, token)
                 except:
                     pred = constants.INVALID
-                self.preds.append(pred)
-                self.trues.append(true)
-                self.tokens.append(token)
+
+            self.preds.append(pred)
+            self.trues.append(true)
+            self.tokens.append(token)
 
     def get_scores(self):
         """
@@ -105,6 +98,12 @@ class Scorer(object):
         """
         output = {}
         output['all'] = compute_scores(self.trues, self.preds)
+
+        # apply text transformations to known tokens
+        known_targets = None
+        if self.label_encoder.known_tokens:
+            known_targets = set(self.label_encoder.preprocess_text(
+                list(self.label_encoder.known_tokens)))
 
         # compute scores for unknown input tokens
         unk_trues, unk_preds, amb_trues, amb_preds = [], [], [], []
@@ -120,10 +119,9 @@ class Scorer(object):
                 amb_trues.append(true)
                 amb_preds.append(pred)
             # token-level encoding doesn't have unknown targets (only OOV)
-            if self.label_encoder.known_tokens:
-                if true not in self.label_encoder.known_tokens:
-                    unk_trg_trues.append(true)
-                    unk_trg_preds.append(pred)
+            if known_targets and true not in known_targets:
+                unk_trg_trues.append(true)
+                unk_trg_preds.append(pred)
 
         output['known-tokens'] = compute_scores(knw_trues, knw_preds)
         support = len(unk_trues)
@@ -167,21 +165,13 @@ class Scorer(object):
         matrix = self.get_confusion_matrix()
         table = []
         # Retrieve each true prediction and its dictionary of errors
-        for expected, predictions_counter in matrix.items():
-            table.append((
-                expected,
-                sum(list(predictions_counter.values())),
-                [
-                    (word, counter)
-                    for word, counter in sorted(
-                        list(predictions_counter.items()),
-                        key=lambda x: x[1],
-                        reverse=True
-                    )
-                ]
-            ))
+        for expected, pred_counter in matrix.items():
+            counts = [(word, counter) for word, counter in sorted(
+                pred_counter.items(), key=lambda tup: tup[1], reverse=True)]
+            total = sum(pred_counter.values())
+            table.append((expected, total, counts))
         # Sort by error sum
-        table = sorted(table, reverse=True, key=lambda x: x[1])
+        table = sorted(table, reverse=True, key=lambda tup: tup[1])
         # Then, we expand lines
         output = []
         for word, total, errors in table:
