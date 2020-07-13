@@ -24,7 +24,7 @@ def webapp(model_spec, batch_size, device):
 @pie_cli.command()
 @click.argument('model_spec', type=pie.utils.model_spec)
 @click.argument('input_path')
-@click.option('--keep_boundaries', action='store_true',
+@click.option('--keep_boundaries', is_flag=True,
               help='Keep boundaries from the original input file')
 @click.option('--batch_size', type=int, default=50)
 @click.option('--device', default='cpu')
@@ -33,7 +33,7 @@ def webapp(model_spec, batch_size, device):
 @click.option('--lower', is_flag=True, help="Treat the input as lower case")
 @click.option('--max_sent_len', type=int, default=35,
               help='Split sentences longer than this amount')
-@click.option('--vrt', action='store_true', help='Verticalized input format')
+@click.option('--vrt', is_flag=True, help='Verticalized input format')
 def tag(model_spec, input_path, keep_boundaries, batch_size, device,
         use_beam, beam_width, lower, max_sent_len, vrt):
     """ Tag [INPUT_PATH] with model(s) at [MODEL_SPEC]"""
