@@ -493,7 +493,8 @@ class Trainer(object):
                 logging.info("Starting epoch [{}]".format(epoch))
                 scores = self.train_epoch(devset, epoch)
                 # ToDo: Use this score to dump a json somewhere {epoch_id: epoch_score} ?
-                epoch_callback(epoch, scores)
+                if epoch_callback is not None:
+                    epoch_callback(epoch, scores)
 
                 epoch_total = time.time() - epoch_start
                 logging.info("Finished epoch [{}] in [{:.0f}] secs".format(
