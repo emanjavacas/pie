@@ -20,7 +20,7 @@ DESCRIPTION = 'A Framework for Joint Learning of Sequence Labeling Tasks'
 URL = 'https://github.com/emanjavacas/pie'
 AUTHOR = 'Enrique Manjavacas; Mike Kestemont; Thibault Clerice'
 REQUIRES_PYTHON = '>=3.6.0'
-VERSION = "0.3.4"
+VERSION = "0.3.5"
 
 # What packages are required for this module to be executed?
 
