@@ -22,6 +22,8 @@
   "word_max_size": 20000, // maximum vocabulary size for input word embeddings
   "word_min_freq": 1, // min freq of a word to be part of the vocabulary
   // (only used if word_max_size is 0)
+  "share_input_encoder": false, // If set, path to a model whose encoder will be reused
+  // Recommended for multi model / multi tasks training on the same corpus
   "word_lower": false, // whether to lowercase input tokens
   "char_max_size": 500, // maximum vocabulary size for input character embeddings
   "char_min_freq": 1, // min freq of a character to be part of the vocabulary

@@ -2,7 +2,7 @@
 import os
 import unittest
 
-from pie.data import Dataset, Reader, MultiLabelEncoder
+from pie.data import Dataset, Reader, MultiLabelEncoder, IncompatibleEncoders
 from pie.settings import settings_from_file
 
 
@@ -65,81 +65,126 @@ class TestWordCharEncoding(unittest.TestCase):
                 total_words += nwords
             self.assertEqual(idx, total_words, "Checked all words")
 
-    def test_MultiLabelEncoder_Grouping(self):
+
+class TestMerginEncoders(unittest.TestCase):
+    def setUp(self):
         sentence_a = [["A", "B", "C"]]
         sentence_b = [["B", "B", "C"]]
         sentence_c = [["B", "B", "C"]]
         sentence_d = [["AB", "A", "C"]]
+        sentence_e = [["BBB", "A", "C"]]
 
-        encoder_a_1 = (("task1", ), MultiLabelEncoder())
-        encoder_a_2 = (("task2", ), MultiLabelEncoder())
-        encoder_b_1 = (("task3", ), MultiLabelEncoder())
-        encoder_c_1 = (("task4", "task5"), MultiLabelEncoder(char_lower=True))
-        encoder_d_1 = (("task6", ), MultiLabelEncoder())
+        self.encoder_a_1 = (("task1",), MultiLabelEncoder())
+        self.encoder_a_2 = (("task2",), MultiLabelEncoder())
+        self.encoder_b_1 = (("task3",), MultiLabelEncoder())
+        self.encoder_c_1 = (("task4", "task5"), MultiLabelEncoder(char_lower=True))
+        self.encoder_d_1 = (("task6",), MultiLabelEncoder())
+        self.encoder_e_1 = (("task7",), MultiLabelEncoder())
 
-        encoder_a_1[1].fit(sentence_a)
-        encoder_a_2[1].fit(sentence_a)
-        encoder_b_1[1].fit(sentence_b)
-        encoder_c_1[1].fit(sentence_c)
-        encoder_d_1[1].fit(sentence_d)
+        self.encoder_a_1[1].fit(sentence_a)
+        self.encoder_a_2[1].fit(sentence_a)
+        self.encoder_b_1[1].fit(sentence_b)
+        self.encoder_c_1[1].fit(sentence_c)
+        self.encoder_d_1[1].fit(sentence_d)
+        self.encoder_e_1[1].fit(sentence_e)
 
-        self.assertEqual(encoder_a_1[1], encoder_a_2[1], "Check that the premises of equality are right")
-        self.assertNotEqual(encoder_a_1[1], encoder_b_1[1], "Check that the premises of equality are right")
-        self.assertNotEqual(encoder_b_1[1], encoder_c_1[1], "Check that the premises of equality are right")
-        self.assertNotEqual(encoder_a_1[1], encoder_d_1[1], "Check that the premises of equality are right")
+    def test_MultiLabelEncoder_grouping(self):
+        self.assertEqual(self.encoder_a_1[1], self.encoder_a_2[1], "Check that the premises of equality are right")
+        self.assertNotEqual(self.encoder_a_1[1], self.encoder_b_1[1], "Check that the premises of equality are right")
+        self.assertNotEqual(self.encoder_b_1[1], self.encoder_c_1[1], "Check that the premises of equality are right")
+        self.assertNotEqual(self.encoder_a_1[1], self.encoder_d_1[1], "Check that the premises of equality are right")
 
         packed = MultiLabelEncoder.group_input_encoders([
-            encoder_a_1,
-            encoder_a_2,
-            encoder_b_1,
-            encoder_c_1
+            self.encoder_a_1,
+            self.encoder_a_2,
+            self.encoder_b_1,
+            self.encoder_c_1
         ])
 
         self.assertEqual(
             packed,
             [
-                ([("task1", ), ("task2", )], encoder_a_1[1]),
-                ([("task3", )], encoder_b_1[1]),
-                ([("task4", "task5", )], encoder_c_1[1])
+                ([("task1",), ("task2",)], self.encoder_a_1[1]),
+                ([("task3",)], self.encoder_b_1[1]),
+                ([("task4", "task5",)], self.encoder_c_1[1])
             ],
             "Grouping encoders should allow for deduplicating encoding"
         )
 
         packed = MultiLabelEncoder.group_input_encoders([
-            encoder_a_1,
-            encoder_a_2,
-            encoder_b_1,
-            encoder_c_1,
-            encoder_d_1
+            self.encoder_a_1,
+            self.encoder_a_2,
+            self.encoder_b_1,
+            self.encoder_c_1,
+            self.encoder_d_1
         ])
 
         self.assertEqual(
             packed,
             [
-                ([("task1", ), ("task2", )], encoder_a_1[1]),
-                ([("task3", )], encoder_b_1[1]),
-                ([("task4", "task5", )], encoder_c_1[1]),
-                ([("task6", )], encoder_d_1[1])
+                ([("task1",), ("task2",)], self.encoder_a_1[1]),
+                ([("task3",)], self.encoder_b_1[1]),
+                ([("task4", "task5",)], self.encoder_c_1[1]),
+                ([("task6",)], self.encoder_d_1[1])
             ],
             "Grouping encoders should allow for deduplicating encoding: chars and words should matter"
         )
 
         packed = MultiLabelEncoder.group_input_encoders([
-            encoder_a_1,
-            encoder_a_2,
-            encoder_b_1,
-            encoder_c_1,
-            encoder_d_1
-        ], check_attribs=("char", ))
+            self.encoder_a_1,
+            self.encoder_a_2,
+            self.encoder_b_1,
+            self.encoder_c_1,
+            self.encoder_d_1
+        ], check_attribs=("char",))
 
         self.assertEqual(
             packed,
             [
-                ([("task1", ), ("task2", ), ("task6", )], encoder_a_1[1]),
-                ([("task3", )], encoder_b_1[1]),
-                ([("task4", "task5", )], encoder_c_1[1])
+                ([("task1",), ("task2",), ("task6",)], self.encoder_a_1[1]),
+                ([("task3",)], self.encoder_b_1[1]),
+                ([("task4", "task5",)], self.encoder_c_1[1])
             ],
             "Grouping encoders should allow for deduplicating encoding: only given attrib should matter"
+        )
+
+    def test_encoder_compatibility(self):
+        self.assertTrue(self.encoder_a_1[1].char.is_compatible(self.encoder_a_1[1].char))
+        self.assertFalse(self.encoder_a_1[1].char.is_compatible(self.encoder_b_1[1].char))
+
+        # E and A1 are compatible but not equal (same characters but different frequencies
+        #   hence different idx
+        self.assertTrue(self.encoder_a_1[1].char.is_compatible(self.encoder_e_1[1].char))
+        self.assertFalse(self.encoder_a_1[1].char == self.encoder_e_1[1].char)
+
+    def test_encoder_merging(self):
+        """ Ensure merging is prevented when needed """
+        # Words Encoder should prevent merging
+        with self.assertRaises(IncompatibleEncoders):
+            self.encoder_a_1[1].merge_input_encoder(
+                self.encoder_e_1[1]
+            )
+        # Char encoder should prevent merging when they are not equal
+        with self.assertRaises(IncompatibleEncoders):
+            self.encoder_a_1[1].merge_input_encoder(
+                self.encoder_b_1[1]
+            )
+        # Char encoder should prevent merging when they are not equal even ignoring wemb
+        with self.assertRaises(IncompatibleEncoders):
+            self.encoder_a_1[1].merge_input_encoder(
+                self.encoder_b_1[1],
+                use_wemb=False
+            )
+
+        # However, it should not prevent merging
+        self.encoder_a_1[1].merge_input_encoder(
+            self.encoder_e_1[1], use_wemb=False
+        )
+
+        # Merging should be effective
+        self.assertEqual(
+            self.encoder_a_1[1].char,
+            self.encoder_e_1[1].char
         )
 
 

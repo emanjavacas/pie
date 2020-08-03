@@ -63,6 +63,13 @@ def run(settings):
         print()
     label_encoder.fit_reader(reader)
 
+    if settings.share_input_encoder:
+        src = SimpleModel.load(settings.share_input_encoder)
+        label_encoder.merge_input_encoder(
+            src.label_encoder,
+            use_wemb=settings.wemb_dim > 0
+        )
+
     if settings.verbose:
         print()
         print("::: Vocabulary :::")

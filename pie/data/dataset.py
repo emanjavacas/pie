@@ -21,6 +21,11 @@ from . import preprocessors
 
 Tasks = Tuple[str, ...]
 
+
+class IncompatibleEncoders(ValueError):
+    """ Encoders are not interchangeable """
+
+
 class LabelEncoder(object):
     """
     Label encoder
@@ -86,6 +91,15 @@ class LabelEncoder(object):
             self._eq_tables(other) and \
             self._eq_freqs(other) and \
             self.fitted == other.fitted
+
+    def is_compatible(self, other):
+        """ Unlike __eq__ and partial_equal, is_compatible() checks
+        if the character and word map are similar
+        """
+        if not self._eq_settings(other):
+            return False
+
+        return sorted(list(other.table.keys())) == sorted(list(self.table.keys()))
 
     def partial_equal(self, other):
         if type(other) != LabelEncoder:
@@ -357,6 +371,21 @@ class MultiLabelEncoder(object):
                 return False
 
         return True
+
+    def merge_input_encoder(self, other: "MultiLabelEncoder", use_wemb: bool = True):
+        """ Merge char and word encoder from the *other* into this current after
+        checking they are compatible
+
+        Encoders are merged only if they translation keys are the same (translation values are not checked)"""
+        if not self.char.is_compatible(other.char):
+            raise IncompatibleEncoders("Character Encoder or settings are different for char encoders")
+        else:
+            self.char = other.char
+        if use_wemb:
+            if not self.word.is_compatible(other.word):
+                raise IncompatibleEncoders("Word Encoder or settings are different for char encoders")
+            else:
+                self.word = other.word
 
     @staticmethod
     def group_input_encoders(
