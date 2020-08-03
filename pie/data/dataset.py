@@ -4,6 +4,7 @@ from functools import partial
 import tarfile
 import json
 import yaml
+from typing import Tuple, List
 try:
     from yaml import CLoader as Loader, CDumper as Dumper
 except ImportError:
@@ -17,6 +18,8 @@ import torch
 from pie import utils, torch_utils, constants
 from . import preprocessors
 
+
+Tasks = Tuple[str, ...]
 
 class LabelEncoder(object):
     """
@@ -79,6 +82,19 @@ class LabelEncoder(object):
         if type(other) != LabelEncoder:
             return False
 
+        return self._eq_settings(other) and  \
+            self._eq_tables(other) and \
+            self._eq_freqs(other) and \
+            self.fitted == other.fitted
+
+    def partial_equal(self, other):
+        if type(other) != LabelEncoder:
+            return False
+
+        return self._eq_settings(other) and  \
+            self._eq_tables(other)
+
+    def _eq_settings(self, other):
         return self.pad == other.pad and \
             self.eos == other.eos and \
             self.bos == other.bos and \
@@ -88,11 +104,14 @@ class LabelEncoder(object):
             self.lower == other.lower and \
             self.utfnorm == other.utfnorm and \
             self.drop_diacritics == other.drop_diacritics and \
-            self.target == other.target and \
-            self.freqs == other.freqs and \
-            self.table == other.table and \
-            self.inverse_table == other.inverse_table and \
-            self.fitted == other.fitted
+            self.target == other.target
+
+    def _eq_tables(self, other):
+        return self.table == other.table and \
+            self.inverse_table == other.inverse_table
+
+    def _eq_freqs(self, other):
+        return self.freqs == other.freqs
 
     def __repr__(self):
         try:
@@ -338,6 +357,39 @@ class MultiLabelEncoder(object):
                 return False
 
         return True
+
+    @staticmethod
+    def group_input_encoders(
+            encoders: List[Tuple[Tasks, "MultiLabelEncoder"]],
+            check_attribs: Tuple[str] = None
+    ) -> List[Tuple[List[Tasks], "MultiLabelEncoder"]]:
+        check_attribs = check_attribs or ("char", "word")
+        # If there is only an encoder, no need to group but still return the right format
+        ret_value = [([encoders[0][0]], encoders[0][1])]
+
+        if len(encoders) == 1:
+            return ret_value
+
+        # Check for each other encoder if it finds a similar one in the ret_value
+        for tasks, encoder in encoders[1:]:
+            found = False
+            for eq_tasks, eq_encoder in ret_value:
+                equal = True
+                for attrib in check_attribs:
+                    equal = getattr(encoder, attrib).partial_equal(getattr(eq_encoder, attrib))
+                    if not equal:
+                        break
+                if equal:
+                    eq_tasks.append(tasks)
+                    found = True
+                    break
+            if not found:
+                ret_value.append((
+                    [tasks],
+                    encoder
+                ))
+
+        return ret_value
 
     def add_task(self, name, **meta):
         self.tasks[name] = LabelEncoder(name=name, **meta)

@@ -4,10 +4,12 @@ import string
 import os
 import itertools
 
+from typing import Optional, Dict, List, Tuple
+
 import tqdm
 
 from pie.models import BaseModel
-from pie.data import pack_batch
+from pie.data import pack_batch, MultiLabelEncoder, Tasks
 from pie import utils
 
 
@@ -85,8 +87,9 @@ def lines_from_file(fpath, tokenize=False, max_sent_len=35, vrt=False):
     if tokenize:
         # ignore vrt
         with open(fpath) as f:
-            for sent in simple_tokenizer(line):
-                yield sent, len(sent)
+            for line in f:
+                for sent in simple_tokenizer(line):
+                    yield sent, len(sent)
     else:
         for sent in get_sentences(fpath, max_sent_len, vrt):
             yield sent, len(sent)
@@ -112,7 +115,7 @@ class Tagger():
 
         self.models.append((model, tasks))
 
-    def tag(self, sents, lengths, **kwargs):
+    def tag(self, sents, lengths, shared_encoder: Optional[List[Tuple[List[Tasks], MultiLabelEncoder]]], **kwargs):
         # lower if needed
         batch_sents = sents
         if self.lower:
@@ -123,10 +126,21 @@ class Tagger():
         tokens = [token for sent in sents for token in sent]
         # output
         output = {}
+
+        if shared_encoder:
+            input_dict = {}
+            for tasks_grouped, encoder in shared_encoder:
+                inp, _ = pack_batch(encoder, batch, self.device)[0]
+                for tasks in tasks_grouped:
+                    input_dict[tasks] = inp
+
         for model, tasks in self.models:
             model.to(self.device)
 
-            inp, _ = pack_batch(model.label_encoder, batch, self.device)
+            if not shared_encoder:
+                inp, _ = pack_batch(model.label_encoder, batch, self.device)
+            else:
+                inp = input_dict[tasks]
 
             # inference
             preds = model.predict(inp, *tasks, **kwargs)
