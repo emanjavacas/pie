@@ -64,9 +64,9 @@ def run(settings):
     label_encoder.fit_reader(reader)
 
     if settings.share_input_encoder:
-        src = SimpleModel.load(settings.share_input_encoder)
+        print("::: Reusing input encoder from {} :::".format(settings.share_input_encoder))
         label_encoder.merge_input_encoder(
-            src.label_encoder,
+            SimpleModel.load(settings.share_input_encoder).label_encoder,
             use_wemb=settings.wemb_dim > 0
         )
 

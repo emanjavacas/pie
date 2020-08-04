@@ -378,12 +378,12 @@ class MultiLabelEncoder(object):
 
         Encoders are merged only if they translation keys are the same (translation values are not checked)"""
         if not self.char.is_compatible(other.char):
-            raise IncompatibleEncoders("Character Encoder or settings are different for char encoders")
+            raise IncompatibleEncoders("Input character encoder map or settings are incompatible with current dataset")
         else:
             self.char = other.char
         if use_wemb:
             if not self.word.is_compatible(other.word):
-                raise IncompatibleEncoders("Word Encoder or settings are different for char encoders")
+                raise IncompatibleEncoders("Input word encoder map or settings are incompatible with current dataset")
             else:
                 self.word = other.word
 
