@@ -17,22 +17,31 @@ def webapp(model_spec, batch_size, device):
     """ Run the webapp """
     # Until further version, we should explain what's going on
     print("Not supported anymore, do pip install flask_pie")
-    raise Exception("The web version of pie has moved to github.com/hipster-philology/flask_pie")
+    raise Exception("The web version of pie has moved to github.com/"
+                    "hipster-philology/flask_pie")
 
 
 @pie_cli.command()
 @click.argument('model_spec', type=pie.utils.model_spec)
 @click.argument('input_path')
+@click.option('--keep_boundaries', is_flag=True,
+              help='Keep boundaries from the original input file')
 @click.option('--batch_size', type=int, default=50)
 @click.option('--device', default='cpu')
 @click.option('--use_beam', is_flag=True, default=False)
 @click.option('--beam_width', default=10, type=int)
 @click.option('--lower', is_flag=True, help="Treat the input as lower case")
-def tag(model_spec, input_path, device, batch_size, lower, beam_width, use_beam):
+@click.option('--max_sent_len', type=int, default=35,
+              help='Split sentences longer than this amount')
+@click.option('--vrt', is_flag=True, help='Verticalized input format')
+def tag(model_spec, input_path, keep_boundaries, batch_size, device,
+        use_beam, beam_width, lower, max_sent_len, vrt):
     """ Tag [INPUT_PATH] with model(s) at [MODEL_SPEC]"""
     import pie.scripts.tag
     pie.scripts.tag.run(
-        model_spec, input_path, device, batch_size, lower, beam_width, use_beam)
+        model_spec, input_path, beam_width, use_beam, keep_boundaries,
+        device=device, batch_size=batch_size, lower=lower,
+        max_sent_len=max_sent_len, vrt=vrt)
 
 
 @pie_cli.command("tag-pipe")
@@ -54,22 +63,29 @@ def tag_pipe(model_spec, device, batch_size, lower, beam_width, use_beam, tokeni
 @pie_cli.command("eval")
 @click.argument('model_path')
 @click.argument('test_path', nargs=-1)
-@click.option('--train_path', help="File used to compute unknown tokens/targets", default=None)
+@click.option('--train_path', default=None,
+              help="File used to compute unknown tokens/targets")
 @click.option('--settings', help="Settings file used for training")
 @click.option('--batch_size', type=int, default=500)
 @click.option('--buffer_size', type=int, default=100000)
 @click.option('--device', default='cpu')
 @click.option('--model_info', is_flag=True, default=False)
 @click.option('--full', is_flag=True, default=False)
-@click.option('--confusion', default=False, is_flag=True, help="Show the confusion"
-                                                               " matrix for most common terms at least")
+@click.option('--confusion', default=False, is_flag=True)
+@click.option('--report', default=False, is_flag=True)
+@click.option('--markdown', default=False, is_flag=True)
+@click.option('--use_beam', is_flag=True, default=False)
+@click.option('--beam_width', type=int, default=12)
+@click.option('--confusion', default=False, is_flag=True,
+              help="Show the confusion matrix for most common terms at least")
 @click.option('--report', default=False, is_flag=True, help="Show metrics for each label on top of the class results")
 @click.option('--markdown', default=False, is_flag=True, help="Display results in markdown")
 @click.option("--export", default=False, is_flag=True, help="Export the data from the evaluation")
 @click.option("--export-name", default="full_report.json", help="Name of the exported file")
 def evaluate(model_path, test_path, train_path, settings, batch_size,
              buffer_size, device, model_info, full, confusion, report,
-             markdown, export, export_name):
+             markdown, export, export_name,
+             use_beam, beam_width):
     """ Evaluate [MODEL_PATH] against [TEST_PATH] using [TRAIN_PATH] to compute
     unknown tokens"""
     import pie.scripts.evaluate
@@ -77,7 +93,10 @@ def evaluate(model_path, test_path, train_path, settings, batch_size,
         model_path=model_path, test_path=test_path, train_path=train_path,
         settings=settings, batch_size=batch_size, buffer_size=buffer_size,
         device=device, model_info=model_info, full=full, confusion=confusion,
-        report=report, markdown=markdown, export_scorer=export, export_name=export_name)
+        report=report, markdown=markdown,
+        use_beam=use_beam, beam_width=beam_width,
+        export_scorer=export, export_name=export_name
+    )
 
 
 @pie_cli.command("train")
@@ -85,7 +104,24 @@ def evaluate(model_path, test_path, train_path, settings, batch_size,
 def train(config_path):
     """ Train a model using the file at [CONFIG_PATH]"""
     import pie.scripts.train
-    pie.scripts.train.run(config_path=config_path)
+    import pie.settings
+    pie.scripts.train.run(pie.settings.settings_from_file(config_path))
+
+
+@pie_cli.command("info")
+@click.argument("model_file", type=click.Path(exists=True,
+                                              file_okay=True,
+                                              dir_okay=False,
+                                              readable=True))
+def info(model_file):
+    from pie.models import BaseModel
+    import pprint
+    m = BaseModel.load(model_file)
+    bar = "=====================\n"
+    click.echo(bar+"Settings", color="red")
+    pprint.pprint(m._settings)
+    click.echo(bar+"Architecture", color="red")
+    click.echo(repr(m))
 
 
 if __name__ == "__main__":

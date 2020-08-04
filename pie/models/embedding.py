@@ -6,8 +6,8 @@ import torch.nn.functional as F
 from pie import torch_utils
 from pie import initialization
 
-from .encoder import RNNEncoder
 from .lstm import CustomBiLSTM
+from .highway import Highway
 
 
 class CNNEmbedding(nn.Module):
@@ -15,7 +15,7 @@ class CNNEmbedding(nn.Module):
     Character-level Embeddings with Convolutions following Kim 2014.
     """
     def __init__(self, num_embeddings, embedding_dim, padding_idx=None,
-                 kernel_sizes=(5, 4, 3), out_channels=100):
+                 highway_layers=2, kernel_sizes=(5, 4, 3), out_channels=32):
         self.num_embeddings = num_embeddings
         self.embedding_dim = out_channels * len(kernel_sizes)
         self.kernel_sizes = kernel_sizes
@@ -27,17 +27,25 @@ class CNNEmbedding(nn.Module):
 
         convs = []
         for W in kernel_sizes:
-            wide_pad = (0, (W-1) // 2)
-            conv = nn.Conv2d(
-                1, out_channels, (embedding_dim, W), padding=wide_pad)
+            padding = ((W//2) - 1, W - (W//2), 0, 0)
+            conv = torch.nn.Sequential(
+                torch.nn.ZeroPad2d(padding),
+                torch.nn.Conv2d(1, out_channels, (embedding_dim, W)))
             convs.append(conv)
         self.convs = nn.ModuleList(convs)
+
+        self.highway = None
+        if highway_layers > 0:
+            self.highway = Highway(self.embedding_dim, highway_layers)
 
         self.init()
 
     def init(self):
         initialization.init_embeddings(self.emb)
-        for conv in self.convs:
+        for conv_seq in self.convs:
+            for conv in conv_seq:
+                if isinstance(conv, torch.nn.ZeroPad2d):
+                    continue
             initialization.init_conv(conv)
 
     def forward(self, char, nchars, nwords):
@@ -47,17 +55,17 @@ class CNNEmbedding(nn.Module):
         emb = emb.transpose(1, 2)  # (batch x emb_dim x seq_len)
         emb = emb.unsqueeze(1)     # (batch x 1 x emb_dim x seq_len)
 
-        conv_outs, maxlen = [], 0
+        conv_outs = []
         for conv in self.convs:
             # (batch x C_o x seq_len)
             conv_outs.append(F.relu(conv(emb).squeeze(2)))
-            maxlen = max(maxlen, conv_outs[-1].size(2))
 
-        conv_outs = [F.pad(out, (0, maxlen - out.size(2))) for out in conv_outs]
         # (batch * nwords x C_o * len(kernel_sizes) x seq_len)
         conv_outs = torch.cat(conv_outs, dim=1)
         # (batch * nwords  x C_o * len(kernel_sizes) x 1)
-        conv_out = F.max_pool1d(conv_outs, maxlen).squeeze(2)
+        conv_out = F.max_pool1d(conv_outs, conv_outs.size(2)).squeeze(2)
+        if self.highway is not None:
+            conv_out = self.highway(conv_out)
         conv_out = torch_utils.pad_flat_batch(
             conv_out, nwords, maxlen=max(nwords).item())
 
@@ -141,9 +149,9 @@ class EmbeddingMixer(nn.Module):
         alpha_in = torch.cat([wembs, cembs], dim=-1)
         # ((seq_len x) batch)
         if wembs.dim() == 3:
-            alpha = F.sigmoid(torch.einsum('do,mbd->mb', [self.alpha, alpha_in]))
+            alpha = torch.sigmoid(torch.einsum('do,mbd->mb', [self.alpha, alpha_in]))
         else:
-            alpha = F.sigmoid(torch.einsum('do,bd->b', [self.alpha, alpha_in]))
+            alpha = torch.sigmoid(torch.einsum('do,bd->b', [self.alpha, alpha_in]))
 
         wembs = alpha.unsqueeze(-1).expand_as(wembs) * wembs
         cembs = (1 - alpha).unsqueeze(-1).expand_as(cembs) * cembs
@@ -155,6 +163,49 @@ def EmbeddingConcat():
     def func(wemb, cemb):
         return torch.cat([wemb, cemb], dim=-1)
     return func
+
+
+def build_embeddings(label_encoder, wemb_dim,
+                     cemb_dim, cemb_type, custom_cemb_cell, cemb_layers, cell, init_rnn,
+                     merge_type, dropout):
+    """
+    Utility function to build embedding layers
+    """
+    wemb = None
+    if wemb_dim > 0:
+        wemb = nn.Embedding(len(label_encoder.word), wemb_dim,
+                            padding_idx=label_encoder.word.get_pad())
+        # init embeddings
+        initialization.init_embeddings(wemb)
+
+    cemb = None
+    if cemb_type.upper() == 'RNN':
+        cemb = RNNEmbedding(len(label_encoder.char), cemb_dim,
+                            padding_idx=label_encoder.char.get_pad(),
+                            custom_lstm=custom_cemb_cell, dropout=dropout,
+                            num_layers=cemb_layers, cell=cell, init_rnn=init_rnn)
+    elif cemb_type.upper() == 'CNN':
+        cemb = CNNEmbedding(len(label_encoder.char), cemb_dim,
+                            padding_idx=label_encoder.char.get_pad())
+
+    merger = None
+    if cemb is not None and wemb is not None:
+        if merge_type.lower() == 'mixer':
+            if cemb.embedding_dim != wemb.embedding_dim:
+                raise ValueError("EmbeddingMixer needs equal embedding dims")
+            merger = EmbeddingMixer(wemb_dim)
+            in_dim = wemb_dim
+        elif merge_type == 'concat':
+            merger = EmbeddingConcat()
+            in_dim = wemb_dim + cemb.embedding_dim
+        else:
+            raise ValueError("Unknown merge method: {}".format(merge_type))
+    elif cemb is not None:
+        in_dim = cemb.embedding_dim
+    else:
+        in_dim = wemb_dim
+
+    return (wemb, cemb, merger), in_dim
 
 
 if __name__ == '__main__':

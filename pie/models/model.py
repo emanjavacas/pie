@@ -5,7 +5,7 @@ import torch.nn.functional as F
 
 from pie import torch_utils, initialization
 
-from .embedding import RNNEmbedding, CNNEmbedding, EmbeddingMixer, EmbeddingConcat
+from .embedding import build_embeddings
 from .decoder import AttentionalDecoder, LinearDecoder, CRFDecoder
 from .encoder import RNNEncoder
 from .base_model import BaseModel
@@ -39,10 +39,18 @@ class SimpleModel(BaseModel):
     cemb_type : str, one of "RNN", "CNN", layer to use for char-level embeddings
     """
     def __init__(self, label_encoder, tasks, wemb_dim, cemb_dim, hidden_size, num_layers,
-                 dropout=0.0, word_dropout=0.0, merge_type='concat', cemb_type='RNN',
-                 cemb_layers=1, cell='LSTM', custom_cemb_cell=False, scorer='general',
-                 include_lm=True, lm_shared_softmax=True, init_rnn='xavier_uniform',
-                 linear_layers=1, **kwargs):
+                 cell='LSTM', init_rnn='xavier_uniform',
+                 # dropout
+                 dropout=0.0, word_dropout=0.0,
+                 # word embeddings
+                 merge_type='concat', cemb_type='RNN', cemb_layers=1,
+                 custom_cemb_cell=False,
+                 # lm joint loss
+                 include_lm=True, lm_shared_softmax=True,
+                 # decoder
+                 scorer='general', linear_layers=1,
+                 # kwargs
+                 **kwargs):
         # args
         self.wemb_dim = wemb_dim
         self.cemb_dim = cemb_dim
@@ -55,51 +63,20 @@ class SimpleModel(BaseModel):
         self.merge_type = merge_type
         self.cemb_type = cemb_type
         self.cemb_layers = cemb_layers
-        self.scorer = scorer
+        self.custom_cemb_cell = custom_cemb_cell
         self.include_lm = include_lm
         self.lm_shared_softmax = lm_shared_softmax
-        self.custom_cemb_cell = custom_cemb_cell
+        self.scorer = scorer
         self.linear_layers = linear_layers
         # only during training
         self.init_rnn = init_rnn
         super().__init__(label_encoder, tasks)
 
         # Embeddings
-        self.wemb = None
-        if self.wemb_dim > 0:
-            self.wemb = nn.Embedding(len(label_encoder.word), wemb_dim,
-                                     padding_idx=label_encoder.word.get_pad())
-            # init embeddings
-            initialization.init_embeddings(self.wemb)
-
-        self.cemb = None
-        if cemb_type.upper() == 'RNN':
-            self.cemb = RNNEmbedding(
-                len(label_encoder.char), cemb_dim,
-                padding_idx=label_encoder.char.get_pad(),
-                custom_lstm=custom_cemb_cell, dropout=dropout,
-                num_layers=cemb_layers, cell=cell, init_rnn=init_rnn)
-        elif cemb_type.upper() == 'CNN':
-            self.cemb = CNNEmbedding(
-                len(label_encoder.char), cemb_dim,
-                padding_idx=label_encoder.char.get_pad())
-
-        self.merger = None
-        if self.cemb is not None and self.wemb is not None:
-            if merge_type.lower() == 'mixer':
-                if self.cemb.embedding_dim != self.wemb.embedding_dim:
-                    raise ValueError("EmbeddingMixer needs equal embedding dims")
-                self.merger = EmbeddingMixer(wemb_dim)
-                in_dim = wemb_dim
-            elif merge_type == 'concat':
-                self.merger = EmbeddingConcat()
-                in_dim = wemb_dim + self.cemb.embedding_dim
-            else:
-                raise ValueError("Unknown merge method: {}".format(merge_type))
-        elif self.cemb is None:
-            in_dim = wemb_dim
-        else:
-            in_dim = self.cemb.embedding_dim
+        (self.wemb, self.cemb, self.merger), in_dim = build_embeddings(
+            label_encoder, wemb_dim,
+            cemb_dim, cemb_type, custom_cemb_cell, cemb_layers, cell, init_rnn,
+            merge_type, dropout)
 
         # Encoder
         self.encoder = None
@@ -121,11 +98,8 @@ class SimpleModel(BaseModel):
         # Decoders
         decoders = {}
         for tname, task in self.tasks.items():
-            if task['level'].lower() == 'char':
-                if self.cemb is None:
-                    raise ValueError("Char-level decoder requires char embeddings")
 
-                # TODO: add sentence context to decoder
+            if task['level'].lower() == 'char':
                 if task['decoder'].lower() == 'linear':
                     decoder = LinearDecoder(
                         label_encoder.tasks[tname], self.cemb.embedding_dim)
@@ -133,7 +107,6 @@ class SimpleModel(BaseModel):
                     decoder = CRFDecoder(
                         label_encoder.tasks[tname], self.cemb.embedding_dim)
                 elif task['decoder'].lower() == 'attentional':
-                    # get context size
                     context_dim = 0
                     if task['context'].lower() == 'sentence':
                         context_dim = hidden_size * 2  # bidirectional encoder
@@ -141,12 +114,10 @@ class SimpleModel(BaseModel):
                         context_dim = wemb_dim
                     elif task['context'].lower() == 'both':
                         context_dim = hidden_size * 2 + wemb_dim
-
                     decoder = AttentionalDecoder(
                         label_encoder.tasks[tname], cemb_dim, self.cemb.embedding_dim,
                         context_dim=context_dim, scorer=scorer, num_layers=cemb_layers,
                         cell=cell, dropout=dropout, init_rnn=init_rnn)
-
                 else:
                     raise ValueError(
                         "Unknown decoder type {} for char-level task: {}".format(
@@ -156,7 +127,7 @@ class SimpleModel(BaseModel):
                 # linear
                 if task['decoder'].lower() == 'linear':
                     decoder = LinearDecoder(
-                        label_encoder.tasks[tname], hidden_size * 2,
+                        label_encoder.tasks[tname], hidden_size * 2, dropout=dropout,
                         highway_layers=linear_layers - 1)
                 # crf
                 elif task['decoder'].lower() == 'crf':
@@ -183,7 +154,8 @@ class SimpleModel(BaseModel):
                 self.lm_bwd_decoder = LinearDecoder(label_encoder.word, hidden_size)
 
     def get_args_and_kwargs(self):
-        return {'args': (self.wemb_dim, self.cemb_dim, self.hidden_size, self.num_layers),
+        return {'args': (self.wemb_dim, self.cemb_dim,
+                         self.hidden_size, self.num_layers),
                 'kwargs': {'dropout': self.dropout,
                            'word_dropout': self.word_dropout,
                            'cell': self.cell,
@@ -206,7 +178,14 @@ class SimpleModel(BaseModel):
             # cemb_outs: (seq_len x batch x emb_dim)
             cemb, cemb_outs = self.cemb(char, clen, wlen)
 
-        return wemb, cemb, cemb_outs
+        if wemb is None:
+            emb = cemb
+        elif cemb is None:
+            emb = wemb
+        else:
+            emb = self.merger(wemb, cemb)
+
+        return emb, (wemb, cemb, cemb_outs)
 
     def init_from_encoder(self, encoder):
         # wemb
@@ -238,13 +217,7 @@ class SimpleModel(BaseModel):
         output = {}
 
         # Embedding
-        wemb, cemb, cemb_outs = self.embedding(word, wlen, char, clen)
-        if wemb is None:
-            emb = cemb
-        elif cemb is None:
-            emb = wemb
-        else:
-            emb = self.merger(wemb, cemb)
+        emb, (wemb, cemb, cemb_outs) = self.embedding(word, wlen, char, clen)
 
         # Encoder
         emb = F.dropout(emb, p=self.dropout, training=self.training)
@@ -274,7 +247,7 @@ class SimpleModel(BaseModel):
                     cemb_outs = F.dropout(
                         cemb_outs, p=self.dropout, training=self.training)
                     context = get_context(outs, wemb, wlen, self.tasks[task]['context'])
-                    logits = decoder(target, length, cemb_outs, clen, context)
+                    logits = decoder(target, length, cemb_outs, clen, context=context)
                     output[task] = decoder.loss(logits, target)
             else:
                 if isinstance(decoder, LinearDecoder):
@@ -300,19 +273,18 @@ class SimpleModel(BaseModel):
 
         return output
 
-    def predict(self, inp, *tasks, use_beam=False, beam_width=10, **kwargs):
-        tasks = set(self.label_encoder.tasks if not len(tasks) else tasks)
-        preds = {}
+    def predict(self, inp, *tasks, return_probs=False,
+                use_beam=False, beam_width=10, **kwargs):
+        """
+        inp : (word, wlen), (char, clen), text input
+        tasks : list of str, target tasks
+        """
+        tasks = set(self.tasks if not len(tasks) else tasks)
+        preds, probs = {}, {}
         (word, wlen), (char, clen) = inp
 
         # Embedding
-        wemb, cemb, cemb_outs = self.embedding(word, wlen, char, clen)
-        if wemb is None:
-            emb = cemb
-        elif cemb is None:
-            emb = wemb
-        else:
-            emb = self.merger(wemb, cemb)
+        emb, (wemb, cemb, cemb_outs) = self.embedding(word, wlen, char, clen)
 
         # Encoder
         enc_outs = None
@@ -330,27 +302,30 @@ class SimpleModel(BaseModel):
 
             if self.label_encoder.tasks[task].level.lower() == 'char':
                 if isinstance(decoder, LinearDecoder):
-                    hyps, _ = decoder.predict(cemb_outs, clen)
+                    hyps, prob = decoder.predict(cemb_outs, clen)
                 elif isinstance(decoder, CRFDecoder):
-                    hyps, _ = decoder.predict(cemb_outs, clen)
+                    hyps, prob = decoder.predict(cemb_outs, clen)
                 else:
                     context = get_context(outs, wemb, wlen, self.tasks[task]['context'])
                     if use_beam:
-                        hyps, _ = decoder.predict_beam(cemb_outs, clen,
-                                                       context=context, width=beam_width)
+                        hyps, prob = decoder.predict_beam(
+                            cemb_outs, clen, width=beam_width, context=context)
                     else:
-                        hyps, _ = decoder.predict_max(cemb_outs, clen, context=context)
+                        hyps, prob = decoder.predict_max(
+                            cemb_outs, clen, context=context)
                     if self.label_encoder.tasks[task].preprocessor_fn is None:
                         hyps = [''.join(hyp) for hyp in hyps]
             else:
                 if isinstance(decoder, LinearDecoder):
-                    hyps, _ = decoder.predict(outs, wlen)
+                    hyps, prob = decoder.predict(outs, wlen)
                 elif isinstance(decoder, CRFDecoder):
-                    hyps, _ = decoder.predict(outs, wlen)
-                else:
-                    raise ValueError()
+                    hyps, prob = decoder.predict(outs, wlen)
 
             preds[task] = hyps
+            probs[task] = prob
+
+        if return_probs:
+            return preds, probs
 
         return preds
 

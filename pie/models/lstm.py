@@ -59,11 +59,10 @@ class CustomLSTMCell(nn.Module):
 
 class CustomLSTM(nn.Module):
     """A module that runs multiple steps of LSTM."""
-    def __init__(self, input_size, hidden_size, num_layers=1, dropout=0, **kwargs):
+    def __init__(self, input_size, hidden_size, num_layers=1, **kwargs):
         super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
-        self.dropout = dropout
         self.cell = CustomLSTMCell(input_size=input_size, hidden_size=hidden_size)
 
     @staticmethod
@@ -106,6 +105,7 @@ class CustomBiLSTM(nn.Module):
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = num_layers
+        self.dropout = dropout
         super().__init__()
 
         layers = []

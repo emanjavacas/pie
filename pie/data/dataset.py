@@ -1,4 +1,6 @@
 
+import warnings
+from functools import partial
 import tarfile
 import json
 import yaml
@@ -20,18 +22,26 @@ class LabelEncoder(object):
     """
     Label encoder
     """
-    def __init__(self, level='token', name=None, target=None, lower=False,
+    def __init__(self, level='token', name=None, target=None,
+                 lower=False, utfnorm=False, utfnorm_type='NFKD', drop_diacritics=False,
                  preprocessor=None, max_size=None, min_freq=1,
-                 pad=True, eos=False, bos=False, **meta):
+                 pad=True, eos=False, bos=False, reserved=(), **meta):
 
         if level.lower() not in ('token', 'char'):
             raise ValueError("`level` must be 'token' or 'char'. Got ", level)
 
         self.meta = meta  # dictionary with other task-relevant information
-        self.eos = constants.EOS if eos else None
         self.pad = constants.PAD if pad else None
+        self.eos = constants.EOS if eos else None
         self.bos = constants.BOS if bos else None
         self.lower = lower
+        self.utfnorm = utfnorm
+        self.utfnorm_type = utfnorm_type
+        self.drop_diacritics = drop_diacritics
+        self.text_preprocess_fn = None
+        if lower or utfnorm or drop_diacritics:
+            self.text_preprocess_fn = self._get_text_preprocess_fn(
+                lower, utfnorm, utfnorm_type, drop_diacritics)
         self.preprocessor = preprocessor
         self.preprocessor_fn = \
             getattr(preprocessors, preprocessor) if preprocessor else None
@@ -40,13 +50,24 @@ class LabelEncoder(object):
         self.level = level.lower()
         self.target = target
         self.name = name
-        self.reserved = (constants.UNK,)  # always use <unk>
+        self.reserved = reserved + (constants.UNK,)  # always use <unk>
         self.reserved += tuple([sym for sym in [self.eos, self.pad, self.bos] if sym])
         self.freqs = Counter()
         self.known_tokens = set()  # for char-level dicts, keep word-level known tokens
         self.table = None
         self.inverse_table = None
         self.fitted = False
+
+    def _get_text_preprocess_fn(self, lower, utfnorm, utfnorm_type, drop_diacritics):
+        fns = []
+        if lower:
+            fns.append(utils.lower_str)
+        if utfnorm:
+            fns.append(partial(utils.apply_utfnorm, form=utfnorm_type))
+        if drop_diacritics:
+            fns.append(utils.drop_diacritics)
+
+        return utils.compose(*fns)
 
     def __len__(self):
         if not self.fitted:
@@ -65,6 +86,8 @@ class LabelEncoder(object):
             self.max_size == other.max_size and \
             self.level == other.level and \
             self.lower == other.lower and \
+            self.utfnorm == other.utfnorm and \
+            self.drop_diacritics == other.drop_diacritics and \
             self.target == other.target and \
             self.freqs == other.freqs and \
             self.table == other.table and \
@@ -78,10 +101,11 @@ class LabelEncoder(object):
             length = 0
 
         return (
-            ('<LabelEncoder name="{}" lower="{}" target="{}" level="{}" ' + \
-             'vocab="{}" fitted="{}"/>'
-            ).format(
-                self.name, self.lower, self.target, self.level, length, self.fitted))
+            '<LabelEncoder name="{}" lower="{}" utfnorm="{}" utfnorm_type="{}" ' +
+            'target="{}" vocab="{}" level="{}" fitted="{}"/>'
+        ).format(
+            self.name, self.lower, self.utfnorm, self.utfnorm_type,
+            self.target, self.level, length, self.fitted)
 
     def get_type_stats(self):
         """
@@ -109,11 +133,7 @@ class LabelEncoder(object):
         if self.fitted:
             raise ValueError("Already fitted")
 
-        postseq = seq
-        if self.preprocessor_fn is not None:
-            if rseq is None:
-                raise ValueError("Expected ref sequence for preprocessor")
-            postseq = self.preprocess(seq, rseq)
+        postseq = self.preprocess(seq, rseq)
 
         if self.level == 'token':
             self.freqs.update(postseq)
@@ -141,29 +161,52 @@ class LabelEncoder(object):
         self.table = {sym: idx for idx, sym in enumerate(self.inverse_table)}
         self.fitted = True
 
-    def preprocess(self, tseq, rseq):
-        "gets always called before transform"
-        if self.lower:
-            tseq = [tok.lower() for tok in tseq]
+    def preprocess_text(self, seq):
+        """
+        Apply surface level preprocessing such as lowering, unicode normalization
+        """
+        if self.text_preprocess_fn:
+            seq = list(map(self.text_preprocess_fn, seq))
+        return seq
 
-        if not self.preprocessor_fn:
-            return tseq
+    def preprocess(self, tseq, rseq=None):
+        """
+        Full preprocessing pipeline including possible token-level transformations
+        """
+        tseq = self.preprocess_text(tseq)
 
-        return [self.preprocessor_fn.transform(t, r) for t, r in zip(tseq, rseq)]
+        if self.preprocessor_fn is not None:
+            if rseq is None:
+                raise ValueError("Expected ref sequence for preprocessor")
 
-    def transform(self, seq):
+            return [self.preprocessor_fn.transform(t, r) for t, r in zip(tseq, rseq)]
+
+        return tseq
+
+    def transform(self, seq, rseq=None):
         if not self.fitted:
             raise ValueError("Vocabulary hasn't been computed yet")
 
-        output = []
-        if self.bos:
-            output.append(self.get_bos())
+        def transform_seq(s):
+            output = []
+            if self.bos:
+                output.append(self.get_bos())
 
-        for tok in seq:
-            output.append(self.table.get(tok, self.table[constants.UNK]))
+            for tok in s:
+                output.append(self.table.get(tok, self.table[constants.UNK]))
 
-        if self.eos:
-            output.append(self.get_eos())
+            if self.eos:
+                output.append(self.get_eos())
+
+            return output
+
+        # preprocess
+        seq = self.preprocess(seq, rseq)
+
+        if self.level == 'token':
+            output = transform_seq(seq)
+        else:
+            output = [transform_seq(w) for w in seq]
 
         return output
 
@@ -177,26 +220,27 @@ class LabelEncoder(object):
         if not self.fitted:
             raise ValueError("Vocabulary hasn't been computed yet")
 
-        # compute length based on <eos>
-        if length is None:
-            eos = self.get_eos()
+        eos, bos = self.get_eos(), self.get_bos()
+        if length is not None:
+            if eos is not None or bos is not None:
+                warnings.warn("Length was passed to stringify but LabelEncoder "
+                              "has <eos> and/or <bos> tokens")
+            seq = seq[:length]
+        else:
             if eos is None:
                 raise ValueError("Don't know how to compute input length")
             try:
-                length = seq.index(eos)
-            except ValueError:  # eos not found in input
-                length = -1
+                # some generations might fail to produce the <eos> symbol
+                seq = seq[:seq.index(eos)]
+            except ValueError:
+                pass
 
-        seq = seq[:length]
+            # eventually remove <bos> if required
+            if bos is not None:
+                if len(seq) > 0 and seq[0] == bos:
+                    seq = seq[1:]
 
-        # eventually remove <bos> if required
-        if self.get_bos() is not None:
-            if len(seq) > 0 and seq[0] == self.get_bos():
-                seq = seq[1:]
-
-        seq = self.inverse_transform(seq)
-
-        return seq
+        return self.inverse_transform(seq)
 
     def _get_sym(self, sym):
         if not self.fitted:
@@ -228,6 +272,9 @@ class LabelEncoder(object):
                 'level': self.level,
                 'preprocessor': self.preprocessor,
                 'lower': self.lower,
+                'utfnorm': self.utfnorm,
+                'utfnorm_type': self.utfnorm_type,
+                'drop_diacritics': self.drop_diacritics,
                 'target': self.target,
                 'max_size': self.max_size,
                 'min_freq': self.min_freq,
@@ -241,6 +288,9 @@ class LabelEncoder(object):
         inst = cls(pad=obj['pad'], eos=obj['eos'], bos=obj['bos'],
                    level=obj['level'], target=obj['target'], lower=obj['lower'],
                    max_size=obj['max_size'], min_freq=['min_freq'],
+                   drop_diacritics=obj.get('drop_diacritics', False),
+                   utfnorm=obj.get('utfnorm', False),
+                   utfnorm_type=obj.get('utfnorm_type', False),
                    preprocessor=obj.get('preprocessor'),
                    name=obj['name'], meta=obj.get('meta', {}))
         inst.freqs = Counter(obj['freqs'])
@@ -256,12 +306,18 @@ class MultiLabelEncoder(object):
     """
     Complex Label encoder for all tasks.
     """
-    def __init__(self, word_max_size=None, char_max_size=None,
-                 word_min_freq=1, char_min_freq=None, char_eos=True, char_bos=True):
+    def __init__(self, word_max_size=None, word_min_freq=1, word_lower=False,
+                 char_max_size=None, char_min_freq=None, char_lower=False,
+                 char_eos=True, char_bos=True, utfnorm=False, utfnorm_type='NFKD',
+                 drop_diacritics=False):
         self.word = LabelEncoder(max_size=word_max_size, min_freq=word_min_freq,
-                                 name='word')
+                                 lower=word_lower, utfnorm=utfnorm,
+                                 utfnorm_type=utfnorm_type,
+                                 drop_diacritics=drop_diacritics, name='word')
         self.char = LabelEncoder(max_size=char_max_size, min_freq=char_min_freq,
-                                 name='char', level='char', eos=char_eos, bos=char_bos)
+                                 level='char', lower=char_lower, name='char',
+                                 eos=char_eos, bos=char_bos, utfnorm_type=utfnorm_type,
+                                 utfnorm=utfnorm, drop_diacritics=drop_diacritics)
         self.tasks = {}
         self.nsents = None
 
@@ -289,7 +345,10 @@ class MultiLabelEncoder(object):
         # check <eos> <bos> (not suitable for linear models)
         if meta['level'].lower() != 'char' and (meta.get('eos') or meta.get('bos')):
             raise ValueError(
-                '[Task: {task}] => `bos` and `eos` options are only compatible with char-level tasks but got level: "{level}". Aborting!!!'.format(task=name, level=meta['level']))
+                ('[Task: {task}] => `bos` and `eos` options are '
+                 'only compatible with char-level tasks but got '
+                 'level: "{level}". Aborting!!!').format(
+                    task=name, level=meta['level']))
 
         return self
 
@@ -297,15 +356,20 @@ class MultiLabelEncoder(object):
     def from_settings(cls, settings, tasks=None):
         le = cls(word_max_size=settings.word_max_size,
                  word_min_freq=settings.word_min_freq,
+                 word_lower=settings.word_lower,
                  char_max_size=settings.char_max_size,
                  char_min_freq=settings.char_min_freq,
-                 char_eos=settings.char_eos, char_bos=settings.char_bos)
+                 char_lower=settings.char_lower,
+                 char_eos=settings.char_eos,
+                 char_bos=settings.char_bos,
+                 utfnorm=settings.utfnorm,
+                 utfnorm_type=settings.utfnorm_type,
+                 drop_diacritics=settings.drop_diacritics)
 
         for task in settings.tasks:
             if tasks is not None and task['settings']['target'] not in tasks:
-                logging.warning(
-                    "Ignoring task [{}]: no available data".format(task['target']))
-                continue
+                raise ValueError("No available data for task [{}]".format(
+                    task['settings']['target']))
             le.add_task(task['name'], level=task['level'], **task['settings'])
 
         return le
@@ -332,6 +396,8 @@ class MultiLabelEncoder(object):
         self.char.compute_vocab()
         for le in self.tasks.values():
             le.compute_vocab()
+
+        return self
 
     def fit_reader(self, reader):
         """
@@ -365,8 +431,7 @@ class MultiLabelEncoder(object):
 
             # input data
             word.append(self.word.transform(inp))
-            for w in inp:
-                char.append(self.char.transform(w))
+            char.extend(self.char.transform(inp))
 
             # task data
             if tasks is None:
@@ -374,15 +439,12 @@ class MultiLabelEncoder(object):
                 continue
 
             for le in self.tasks.values():
-                task_data = le.preprocess(tasks[le.target], inp)
+                task_data = le.transform(tasks[le.target], inp)
                 # add data
-                if le.level == 'token':
-                    tasks_dict[le.name].append(le.transform(task_data))
-                elif le.level == 'char':
-                    for w in task_data:
-                        tasks_dict[le.name].append(le.transform(w))
+                if le.level == 'char':
+                    tasks_dict[le.name].extend(task_data)
                 else:
-                    raise ValueError("Wrong level {}: task {}".format(le.level, le.name))
+                    tasks_dict[le.name].append(task_data)
 
         return (word, char), tasks_dict
 
@@ -459,10 +521,12 @@ class Dataset(object):
         self.device = settings.device
         self.shuffle = settings.shuffle
         self.minimize_pad = settings.minimize_pad
+        self.cache_dataset = settings.cache_dataset
 
         # data
         self.reader = reader
         self.label_encoder = label_encoder
+        self.cached = []
 
     @staticmethod
     def get_nelement(batch):
@@ -510,6 +574,23 @@ class Dataset(object):
                 - char : tensor(length, batch_size * words), padded lengths
             * (tasks) dictionary with tasks
         """
+        if self.cache_dataset:
+            if not self.cached:
+                self.cache_batches()
+            if self.shuffle:
+                random.shuffle(self.cached)
+
+            for batch, raw in self.cached:
+                # move to device
+                batch = tuple(list(wrap_device(batch, self.device)))
+                if return_raw:
+                    yield batch, raw
+                else:
+                    yield batch
+        else:
+            yield from self.batch_generator_(return_raw=return_raw)
+
+    def batch_generator_(self, return_raw=False):
         buf = []
         for (fpath, line_num), data in self.reader.readsents():
 
@@ -523,6 +604,14 @@ class Dataset(object):
 
         if len(buf) > 0:
             yield from self.prepare_buffer(buf, return_raw=return_raw)
+
+    def cache_batches(self):
+        if self.cached:
+            return
+
+        buf = [data for _, data in self.reader.readsents()]
+        for batch, raw in self.prepare_buffer(buf, return_raw=True, device='cpu'):
+            self.cached.append((batch, raw))
 
 
 def pack_batch(label_encoder, batch, device=None):

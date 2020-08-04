@@ -21,21 +21,14 @@ def get_known_and_ambigous_tokens(trainset, label_encoders):
     """
     known = set()
     ambs = defaultdict(lambda: defaultdict(Counter))
-    order_label = [label.target for label in label_encoders]
+    targets = [le.target for le in label_encoders]
     for _, (inp, tasks) in trainset.reader.readsents():
-        task_trues = [
-            label.preprocess(tasks[label.target], inp)
-            for label in label_encoders
-        ]
-        for tok, task_true in zip(inp, zip(*task_trues)):
-            for task, true in zip(order_label, task_true):
-                ambs[task][tok][true] += 1
-            known.add(tok)
-    return known, {task: set(
-        tok
-        for tok in ambs[task] if len(ambs[task][tok]) > 1)
-        for task in ambs
-    }
+        known.update(inp)
+        for le in label_encoders:
+            for tok, true in zip(inp, le.preprocess(tasks[le.target], inp)):
+                ambs[le.target][tok][true] += 1
+    ambs = {t: set(tok for tok in ambs[t] if len(ambs[t][tok]) > 1) for t in ambs}
+    return known, ambs
 
 
 def compute_scores(trues, preds):
@@ -88,21 +81,18 @@ class Scorer(object):
             raise ValueError("Unequal input lengths. Hyps {}, targets {}, tokens {}"
                              .format(len(hyps), len(targets), len(tokens)))
 
-        if not self.label_encoder.preprocessor_fn:
-            self.preds.extend(hyps)
-            self.trues.extend(targets)
-            self.tokens.extend(tokens)
-        else:
-            for pred, true, token in zip(hyps, targets, tokens):
+        for pred, true, token in zip(hyps, targets, tokens):
+            if self.label_encoder.preprocessor_fn:
                 true = self.label_encoder.preprocessor_fn.inverse_transform(true, token)
                 try:
                     pred = self.label_encoder.preprocessor_fn.inverse_transform(
                         pred, token)
                 except:
                     pred = constants.INVALID
-                self.preds.append(pred)
-                self.trues.append(true)
-                self.tokens.append(token)
+
+            self.preds.append(pred)
+            self.trues.append(true)
+            self.tokens.append(token)
 
     def get_scores(self):
         """
@@ -111,10 +101,19 @@ class Scorer(object):
         output = {}
         output['all'] = compute_scores(self.trues, self.preds)
 
+        # apply text transformations to known tokens
+        known_targets = None
+        if self.label_encoder.known_tokens:
+            known_targets = set(self.label_encoder.preprocess_text(
+                list(self.label_encoder.known_tokens)))
+
         # compute scores for unknown input tokens
         unk_trues, unk_preds, amb_trues, amb_preds = [], [], [], []
-        unk_trg_trues, unk_trg_preds = [], []
+        knw_trues, knw_preds, unk_trg_trues, unk_trg_preds = [], [], [], []
         for true, pred, token in zip(self.trues, self.preds, self.tokens):
+            if self.known_tokens and token in self.known_tokens:
+                knw_trues.append(true)
+                knw_preds.append(pred)
             if self.known_tokens and token not in self.known_tokens:
                 unk_trues.append(true)
                 unk_preds.append(pred)
@@ -122,11 +121,11 @@ class Scorer(object):
                 amb_trues.append(true)
                 amb_preds.append(pred)
             # token-level encoding doesn't have unknown targets (only OOV)
-            if self.label_encoder.known_tokens:
-                if true not in self.label_encoder.known_tokens:
-                    unk_trg_trues.append(true)
-                    unk_trg_preds.append(pred)
+            if known_targets and true not in known_targets:
+                unk_trg_trues.append(true)
+                unk_trg_preds.append(pred)
 
+        output['known-tokens'] = compute_scores(knw_trues, knw_preds)
         support = len(unk_trues)
         if support > 0:
             output['unknown-tokens'] = compute_scores(unk_trues, unk_preds)
@@ -170,21 +169,13 @@ class Scorer(object):
         matrix = self.get_confusion_matrix()
         table = []
         # Retrieve each true prediction and its dictionary of errors
-        for expected, predictions_counter in matrix.items():
-            table.append((
-                expected,
-                sum(list(predictions_counter.values())),
-                [
-                    (word, counter)
-                    for word, counter in sorted(
-                        list(predictions_counter.items()),
-                        key=lambda x: x[1],
-                        reverse=True
-                    )
-                ]
-            ))
+        for expected, pred_counter in matrix.items():
+            counts = [(word, counter) for word, counter in sorted(
+                pred_counter.items(), key=lambda tup: tup[1], reverse=True)]
+            total = sum(pred_counter.values())
+            table.append((expected, total, counts))
         # Sort by error sum
-        table = sorted(table, reverse=True, key=lambda x: x[1])
+        table = sorted(table, reverse=True, key=lambda tup: tup[1])
         # Then, we expand lines
         output = []
         for word, total, errors in table:
@@ -269,8 +260,8 @@ class Scorer(object):
 
         return '\n'.join(summary)
 
-    def print_summary(self, full=False, most_common=100, confusion_matrix=False, scores=None,
-                      report=False, markdown=True):
+    def print_summary(self, full=False, most_common=100, confusion_matrix=False,
+                      scores=None, report=False, markdown=True):
         """
         Get evaluation summary
 
@@ -284,7 +275,8 @@ class Scorer(object):
         if markdown:
             print("## " + self.label_encoder.name)
         else:
-            print("::: Evaluation report for task: {} :::".format(self.label_encoder.name))
+            print("::: Evaluation report for task: {} :::".format(
+                self.label_encoder.name))
         print()
 
         if scores is None:
@@ -292,7 +284,7 @@ class Scorer(object):
 
         # print scores
         if markdown:
-            print(self.scores_in_markdown(scores))
+            print(self.scores_in_markdown(scores) + '\n')
         else:
             print(yaml.dump(scores, default_flow_style=False))
 
@@ -301,7 +293,8 @@ class Scorer(object):
             if markdown:
                 print("### Error summary for task {}".format(self.label_encoder.name))
             else:
-                print("::: Error summary for task: {} :::".format(self.label_encoder.name))
+                print("::: Error summary for task: {} :::".format(
+                    self.label_encoder.name))
             print()
             if self.label_encoder.level == 'char':
                 print(self.get_transduction_summary(most_common=most_common))
@@ -324,18 +317,19 @@ class Scorer(object):
             else:
                 print("::: Confusion Matrix :::")
             print()
-            print((github_table.GithubFlavoredMarkdownTable(self.get_confusion_matrix_table())).table)
+            print(github_table.GithubFlavoredMarkdownTable(
+                self.get_confusion_matrix_table()).table)
 
     def get_classification_report(self):
         return classification_report(
             y_true=self.trues,
-            y_pred=self.preds
-        )
+            y_pred=self.preds)
 
     @staticmethod
     def scores_in_markdown(scores):
-        measures = ["accuracy", "precision", "recall", "f1", "balanced-accuracy", "support"]
-        table = [[""]+measures]
+        measures = ["accuracy", "precision", "recall",
+                    "f1", "balanced-accuracy", "support"]
+        table = [[""] + measures]
         for key in scores:
             table.append([key, *[scores[key][meas] for meas in measures]])
 
@@ -369,31 +363,21 @@ def classification_report(y_true, y_pred, digits=2):
     last_line_heading = 'avg / total'
     headers = ["target", "precision", "recall", "f1-score", "support"]
 
-    p, r, f1, s = precision_recall_fscore_support(
-        y_true, y_pred,
-        average=None
-    )
+    p, r, f1, s = precision_recall_fscore_support(y_true, y_pred, average=None)
 
-    tbl_rows = list(zip(
-        target_names,
-        *[
-            map(
-                lambda x: floatfmt.format(x),
-                nb_list.tolist()
-            )
-            for nb_list in [p, r, f1]
-        ],
-        *[
-            list(map(str, s.tolist()))
-        ]
-    ))
+    formatted = []
+    for nb_list in [p, r, f1]:
+        formatted.append([floatfmt.format(x) for x in nb_list.tolist()])
+    support = [[str(x) for x in s.tolist()]]
+
+    tbl_rows = list(zip(target_names, *formatted, *support))
 
     # compute averages
-    last_row = (last_line_heading,
+    last_row = [last_line_heading,
                 floatfmt.format(np.average(p)),
                 floatfmt.format(np.average(r)),
                 floatfmt.format(np.average(f1)),
-                str(np.sum(s)))
+                str(np.sum(s))]
     tbl_rows.append(last_row)
 
-    return (github_table.GithubFlavoredMarkdownTable([headers]+tbl_rows)).table
+    return github_table.GithubFlavoredMarkdownTable([headers] + tbl_rows).table

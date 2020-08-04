@@ -1,15 +1,50 @@
 
 import re
+import io
 import os
 import shutil
 import uuid
 import gzip
+import tarfile
 import logging
 import sys
 import glob
 import itertools
+import functools
+import unicodedata
 from contextlib import contextmanager
 from subprocess import check_output, CalledProcessError
+import tempfile
+
+
+DEFAULT_TEMP_DIR = tempfile.gettempdir()
+
+
+def lower_str(s):
+    return s.lower()
+
+
+def apply_utfnorm(s, form='NFKD'):
+    return unicodedata.normalize(form, s)
+
+
+def drop_diacritics(s):
+    return ''.join(c for c in unicodedata.normalize('NFD', s)
+                   if unicodedata.category(c) != 'Mn')
+
+
+def identity(*args):
+    if len(args) > 1:
+        return args
+    return args[0]
+
+
+def compose(*fns):
+    def compose_fn(f, g):
+        def fn(*args, **kwargs):
+            return f(g(*args, **kwargs))
+        return fn
+    return functools.reduce(compose_fn, fns, identity)
 
 
 def window(it):
@@ -53,6 +88,25 @@ def flatten(it):
     else:
         for subit in it:
             yield from flatten(subit)
+
+
+def recursive_merge(s1, s2, overwrite=False):
+    """
+    Recursively merge two dictionaries
+
+    >>> recursive_merge({"a": {"b": 1}}, {"a": {"c": 2}})
+    {'a': {'b': 1, 'c': 2}}
+    """
+    for k, v in s2.items():
+        if k in s1 and isinstance(v, dict):
+            if not isinstance(s1[k], dict):
+                raise ValueError("Expected dictionary at key [{}]".format(k))
+            s1[k] = recursive_merge(s1[k], v, overwrite=overwrite)
+        else:
+            if overwrite or k not in s1:
+                s1[k] = v
+
+    return s1
 
 
 def ensure_ext(path, ext, infix=None):
@@ -115,7 +169,7 @@ def shutup():
 
 
 @contextmanager
-def tmpfile(parent='/tmp/'):
+def tmpfile(parent=DEFAULT_TEMP_DIR):
     fid = str(uuid.uuid1())
     tmppath = os.path.join(parent, fid)
     yield tmppath
@@ -123,6 +177,16 @@ def tmpfile(parent='/tmp/'):
         shutil.rmtree(tmppath)
     else:
         os.remove(tmppath)
+
+
+def add_weights_to_tar(state_dict, path, tar):
+    import torch
+    f = io.BytesIO()
+    torch.save(state_dict, f)
+    tinf = tarfile.TarInfo(name=path)
+    f.seek(0)
+    tinf.size = len(f.getbuffer())
+    tar.addfile(tinf, f)     # read tinf.size bytes from f into tinf
 
 
 def add_gzip_to_tar(string, subpath, tar):

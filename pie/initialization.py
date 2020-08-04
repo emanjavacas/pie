@@ -49,13 +49,18 @@ def init_conv(conv):
 
 
 def init_pretrained_embeddings(path, encoder, embedding):
+    inits = 0
     with open(path) as f:
-        nemb, dim = next(f).split()
+        # maybe validate
+        header = next(f)
+        if len(header.split()) > 2:
+            print("Skipping header validation for embedding file: {}".format(path))
+            f = (line for it in [[header], f] for line in it)
+        else:
+            nemb, dim = next(f).split()
+            if int(dim) != embedding.weight.data.size(1):
+                raise ValueError("Unexpected embeddings size: {}".format(dim))
 
-        if int(dim) != embedding.weight.data.size(1):
-            raise ValueError("Unexpected embeddings size: {}".format(dim))
-
-        inits = 0
         for line in f:
             word, *vec = line.split()
             if word in encoder.table:

@@ -1,11 +1,6 @@
 
 import os
 import json
-import yaml
-try:
-    from yaml import CDumper as Dumper
-except ImportError:
-    from yaml import Dumper
 import tarfile
 import logging
 
@@ -36,7 +31,8 @@ class BaseModel(nn.Module):
         super().__init__()
 
     def get_scorer(self, task, trainset=None):
-        """ Given a task, gets a scorer. Trainset can be user for computing unknown and ambiguous tokens.
+        """ Given a task, gets a scorer. Trainset can be used for computing
+        unknown and ambiguous tokens.
 
         :param task: Taskname (str)
         :param trainset: Dataset for training
@@ -44,7 +40,8 @@ class BaseModel(nn.Module):
         """
         scorer = Scorer(self.label_encoder.tasks[task])
         if not self._fitted_trainset_scorer and trainset:
-            self.known, self.ambs = get_known_and_ambigous_tokens(trainset, list(self.label_encoder.tasks.values()))
+            self.known, self.ambs = get_known_and_ambigous_tokens(
+                trainset, list(self.label_encoder.tasks.values()))
             self._fitted_trainset_scorer = True
         scorer.set_known_and_amb(self.known, self.ambs[task])
         return scorer
@@ -78,9 +75,7 @@ class BaseModel(nn.Module):
         """
         assert not self.training, "Ooops! Inference in training mode. Call model.eval()"
 
-        scorers = {}
-        for task, le in self.label_encoder.tasks.items():
-            scorers[task] = self.get_scorer(task, trainset)
+        scorers = {task: self.get_scorer(task, trainset) for task in self.tasks}
 
         with torch.no_grad():
             for (inp, tasks), (rinp, rtasks) in tqdm.tqdm(
@@ -140,9 +135,7 @@ class BaseModel(nn.Module):
             utils.add_gzip_to_tar(string, path, tar)
 
             # serialize weights
-            with utils.tmpfile() as tmppath:
-                torch.save(self.state_dict(), tmppath)
-                tar.add(tmppath, arcname='state_dict.pt')
+            utils.add_weights_to_tar(self.state_dict(), 'state_dict.pt', tar)
 
             # serialize current pie commit
             if pie.__commit__ is not None:
@@ -208,10 +201,8 @@ class BaseModel(nn.Module):
                 logging.warn("Couldn't load settings for model {}!".format(fpath))
 
             # load state_dict
-            with utils.tmpfile() as tmppath:
-                tar.extract('state_dict.pt', path=tmppath)
-                dictpath = os.path.join(tmppath, 'state_dict.pt')
-                model.load_state_dict(torch.load(dictpath, map_location='cpu'))
+            model.load_state_dict(
+                torch.load(tar.extractfile('state_dict.pt'), map_location='cpu'))
 
         model.eval()
 
