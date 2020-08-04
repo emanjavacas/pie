@@ -274,6 +274,7 @@ class Trainer(object):
             dev_scores[task] = scored['all'][
                 self.task_scheduler.tasks[task].get("evaluation", "accuracy")
             ]
+
         # add lm scores
         if 'lm_fwd' in dev_loss or 'lm_bwd' in dev_loss:
             dev_scores['lm_fwd'] = dev_loss['lm_fwd']

@@ -71,7 +71,11 @@
       // (minimum weight) given to the loss, "weight" (initial weight) and "mode"
       // (whether the task dev score is being minimized "min" or maximized "max")
       "schedule": {
-	"patience": 2, "threshold": 0.001
+        "patience": 2,
+        "threshold": 0.001,
+        // Metric to feat on
+        // Can be "accuracy", "balanced-accuracy", "f1", "precision" or "recall"
+         "evaluation": "accuracy"
       },
 
       "default": "copy", // while processing the files if the field is missing predict
@@ -87,7 +91,12 @@
     "level": "token",
     "layer": -1,
     "decoder": "linear",
-    "context": "sentence"
+    "context": "sentence",
+    "schedule": {
+      // Can be "accuracy", "balanced-accuracy", "f1", "precision",
+      //    and "recall"
+       "evaluation": "accuracy"
+    }
   },
 
   // general task schedule params (can be overwritten in the "settings" entry of each)
