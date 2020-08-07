@@ -331,80 +331,94 @@ class AttentionalDecoder(nn.Module):
         inp = torch.zeros(batch, dtype=torch.int64, device=device) + bos
         hyps, scores = [], [0 for _ in range(batch)]
 
-        # We store a conversion table for tensor index to
-        # Tensor Index -> Hyp Index
-        indexes = {
+        # As we go, we'll reduce the tensor size by popping finished prediction
+        #  To keep adding new characters to the right words, we
+        #  store and keep updated a table of {Tensor Row ID: Batch Original ID}
+        #  where Batch Original ID is the Word ID (batch_size = number of words)
+        tensor_to_batch_indexes = {
             x: x for x in range(batch)
         }
 
         for _ in range(max_seq_len):
 
-            # prepare input
+            # Prepare input
             #    Context is NEVER changed after the method has been called
-
-            emb = self.embs(inp)
+            emb = self.embs(inp)  # Tensor(batch_size x emb_size)
             if context is not None:
-                emb = torch.cat([emb, context], dim=1)
+                emb = torch.cat([emb, context], dim=1)  # Tensor(batch_size x (emb_size+context_size))
 
-            # run rnn
-            # Move embeddings to a 2-d Tensor to a 3-D tensor (1, word number, emb size(+context))
-            emb = emb.unsqueeze(0)
+            # Run rnn
+            emb = emb.unsqueeze(0)  # Tensor(1 x batch_size x emb size(+context))
 
-            # Hidden is always reused
-            #  -> Hidden is (1, word number, emb size)
+            # hidden is gonna be reused by the next iteration
+            #   outs is specific to the current run
             outs, hidden = self.rnn(emb, hidden)
+            # Hidden : Tensor(1 x batch_size x emb_size)
 
             outs, _ = self.attn(outs, enc_outs, lengths)
             outs = self.proj(outs).squeeze(0)
 
-            # get logits
+            # Get logits
             probs = F.log_softmax(outs, dim=1)
 
-            # sample and accumulate
-            score, inp = probs.max(1)
+            # Sample and accumulate
+            #  Score are the probabilities
+            #  Inp are the new characters (as int) we are adding to our predictions
+            score, inp = probs.max(1)  # (Tensor(batch_size, dtype=float), Tensor(batch_size, dtype=int))
 
             # We create a mask of value that are not ending the string
-            non_eos = (inp != eos)
+            non_eos = (inp != eos)  # Tensor(batch_size, dtype=bool)
 
-            # Keep are the index of item we choose to keep (ie, not ending with EOS)
-            keep = torch.nonzero(non_eos, as_tuple=True)[0]
+            # Using this mask, we retrieve the Indexes of items that are not EOS
+            #  nonzero() returns a tuple where the first item is a Tensor
+            #  with the indexes. It can be use as a selector for other tensors (see below)
+            keep, *_ = torch.nonzero(non_eos, as_tuple=True)  # Tensor(dtype=int)
 
-            # add new chars to hypotheses
-            # We prepare a list the size of the output (with EOS)
-            # Once done, we replace the values using the table of equivalencies
-            to_append = [eos for _ in range(batch)]
-            new_scores = [0 for _ in range(batch)]
+            # Add new chars to hypotheses
+            #   We prepare a list the size of the output, filling it with EOS
+            #   We then iterate over score and inp (same sized tensors) and add to our
+            prediction_run_output = [eos for _ in range(batch)]
 
             for ind, (hyp, sc) in enumerate(zip(inp.tolist(), score.tolist())):
-                to_append[indexes[ind]] = hyp
+                # To add the hypothesis to the right word, we use the associated Tensor->Batch indexes
+                prediction_run_output[tensor_to_batch_indexes[ind]] = hyp
+                # Probability are only added if they are not EOS chars
                 if hyp != eos:
-                    scores[indexes[ind]] += sc
+                    scores[tensor_to_batch_indexes[ind]] += sc
 
-            hyps.append(to_append)
+            # We add this new output to the final hypothesis
+            hyps.append(prediction_run_output)
 
-            # If there is no non_eos, it's the end of the prediction time
+            # If there nothing else than EOS, it's the end of the prediction time
             if True not in non_eos:
                 break
 
-            # We update the indexes so that tensor "row" index maps to the correct
-            #   hypothesis value
-            indexes = {elem: indexes[former_index] for elem, former_index in enumerate(keep.tolist())}
-            # print(indexes)
+            # Otherwise, we update the tensor_to_batch_indexes by transferring
+            #   the current associated index with the new indexes
+            tensor_to_batch_indexes = {
+                elem: tensor_to_batch_indexes[former_index]
+                for elem, former_index in enumerate(keep.tolist())
+            }
 
-            # Stop are the index of elements we remove from the input tensor
+            # We use the Tensor of indexes that are not EOS to filter out
+            #   Elements of the batch that are EOS.
+            #   inp, context, lengths are all Tensor(batch_size x ....)
+            #   so we filter them at the first dimension
             inp = inp[keep]
             context = context[keep]
             lengths = lengths[keep]
 
-            # Hidden is 3D with 1 in first dimension
-            hidden = hidden.squeeze(0)[keep].unsqueeze(0)
+            # However, hidden is 3D (Tensor(1 x batch_size x _)
+            #   So we filter at the second dimension directly
+            hidden = hidden[:, keep, :]
 
-            # enc_outs is seq * batch * size, so we tranpose and transpose back
-            #   Seq_len is supposed to be equal to max(lengths), but if the maximum length is popped
-            #   We need to reduce the dimension of enc_outs as well
+            # enc_outs is Tensor(max_seq_len x batch x hidden_size)
+            #   Seq_len is supposed to be equal to max(lengths),
+            #     but if the maximum length is popped, it is not in sync anymore.
+            #   In order to keep wording, we remove extra dimension if lengths.max() has changed.
+            # We then update the first (max_seq_len) and second (batch_size) dimensions accordingly.
             max_seq_len = lengths.max()
-
-            enc_outs = enc_outs[:max_seq_len].transpose(0, 1)[keep].transpose(0, 1)
+            enc_outs = enc_outs[:max_seq_len, keep, :]
 
         hyps = [self.label_encoder.stringify(hyp) for hyp in zip(*hyps)]
         scores = [s / (len(hyp) + TINY) for s, hyp in zip(scores, hyps)]
