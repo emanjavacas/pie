@@ -315,8 +315,8 @@ class AttentionalDecoder(nn.Module):
         return loss
 
     def predict_max(self, enc_outs, lengths,
-                    max_seq_len=20, bos=None, eos=None,
-                    context=None):
+                          max_seq_len=20, bos=None, eos=None,
+                          context=None):
         """
         Decoding routine for inference with step-wise argmax procedure
 
@@ -328,35 +328,86 @@ class AttentionalDecoder(nn.Module):
         eos = eos or self.label_encoder.get_eos()
         bos = bos or self.label_encoder.get_bos()
         hidden, batch, device = None, enc_outs.size(1), enc_outs.device
-        mask = torch.ones(batch, dtype=torch.int64, device=device)
         inp = torch.zeros(batch, dtype=torch.int64, device=device) + bos
-        hyps, scores = [], 0
+        hyps, scores = [], [0 for _ in range(batch)]
+
+        # We store a conversion table for tensor index to
+        # Tensor Index -> Hyp Index
+        indexes = {
+            x: x for x in range(batch)
+        }
 
         for _ in range(max_seq_len):
-            if mask.sum().item() == 0:
-                break
 
             # prepare input
+            #    Context is NEVER changed after the method has been called
+
             emb = self.embs(inp)
             if context is not None:
                 emb = torch.cat([emb, context], dim=1)
+
             # run rnn
+            # Move embeddings to a 2-d Tensor to a 3-D tensor (1, word number, emb size(+context))
             emb = emb.unsqueeze(0)
+
+            # Hidden is always reused
+            #  -> Hidden is (1, word number, emb size)
             outs, hidden = self.rnn(emb, hidden)
+
             outs, _ = self.attn(outs, enc_outs, lengths)
             outs = self.proj(outs).squeeze(0)
+
             # get logits
             probs = F.log_softmax(outs, dim=1)
+
             # sample and accumulate
             score, inp = probs.max(1)
-            hyps.append(inp.tolist())
-            mask = mask * (inp != eos).long()
-            score = score.cpu()
-            score[mask == 0] = 0
-            scores += score
+
+            # We create a mask of value that are not ending the string
+            non_eos = (inp != eos)
+
+            # Keep are the index of item we choose to keep (ie, not ending with EOS)
+            keep = torch.nonzero(non_eos, as_tuple=True)[0]
+
+            # add new chars to hypotheses
+            # We prepare a list the size of the output (with EOS)
+            # Once done, we replace the values using the table of equivalencies
+            to_append = [eos for _ in range(batch)]
+            new_scores = [0 for _ in range(batch)]
+
+            for ind, (hyp, sc) in enumerate(zip(inp.tolist(), score.tolist())):
+                to_append[indexes[ind]] = hyp
+                if hyp != eos:
+                    scores[indexes[ind]] += sc
+
+            hyps.append(to_append)
+
+            # If there is no non_eos, it's the end of the prediction time
+            if True not in non_eos:
+                break
+
+            # We update the indexes so that tensor "row" index maps to the correct
+            #   hypothesis value
+            indexes = {elem: indexes[former_index] for elem, former_index in enumerate(keep.tolist())}
+            # print(indexes)
+
+            # Stop are the index of elements we remove from the input tensor
+            inp = inp[keep]
+            context = context[keep]
+            lengths = lengths[keep]
+
+            # Hidden is 3D with 1 in first dimension
+            hidden = hidden.squeeze(0)[keep].unsqueeze(0)
+
+            # enc_outs is seq * batch * size, so we tranpose and transpose back
+            #   Seq_len is supposed to be equal to max(lengths), but if the maximum length is popped
+            #   We need to reduce the dimension of enc_outs as well
+            max_seq_len = lengths.max()
+
+            enc_outs = enc_outs[:max_seq_len].transpose(0, 1)[keep].transpose(0, 1)
 
         hyps = [self.label_encoder.stringify(hyp) for hyp in zip(*hyps)]
-        scores = [s/(len(hyp) + TINY) for s, hyp in zip(scores.tolist(), hyps)]
+        scores = [s / (len(hyp) + TINY) for s, hyp in zip(scores, hyps)]
 
         return hyps, scores
 
