@@ -22,8 +22,8 @@ def webapp(model_spec, batch_size, device):
 
 
 @pie_cli.command()
-@click.argument('model_spec', type=pie.utils.model_spec)
 @click.argument('input_path')
+@click.argument('model_spec', type=pie.utils.model_spec)
 @click.option('--keep_boundaries', is_flag=True,
               help='Keep boundaries from the original input file')
 @click.option('--batch_size', type=int, default=50)
