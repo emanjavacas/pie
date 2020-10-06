@@ -1,8 +1,8 @@
-
 import os
 import json
 import tarfile
 import logging
+from pickle import UnpicklingError
 
 import tqdm
 import torch
@@ -202,8 +202,8 @@ class BaseModel(nn.Module):
 
             # load state_dict
             model.load_state_dict(
-                torch.load(tar.extractfile('state_dict.pt'), map_location='cpu'))
-
+                torch.load(tar.extractfile('state_dict.pt'), map_location='cpu')
+            )
         model.eval()
 
         return model
