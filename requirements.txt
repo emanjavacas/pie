@@ -10,3 +10,4 @@ torch>=1.3.1,<1.4.0
 pyyaml==5.1b3
 typing<4.0
 click>=7.0,<8.0
+torch-optimizer

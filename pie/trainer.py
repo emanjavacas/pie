@@ -1,4 +1,3 @@
-
 import os
 import uuid
 import logging
@@ -12,7 +11,10 @@ import tqdm
 
 import torch
 from torch import optim
+from torch.optim.optimizer import Optimizer
 from torch.nn.utils import clip_grad_norm_
+import torch_optimizer as ext_optims
+from typing import ClassVar
 
 logging.basicConfig(format='%(asctime)s : %(message)s', level=logging.INFO)
 
@@ -149,20 +151,25 @@ class TaskScheduler(object):
         return {task: self.tasks[task]['weight'] for task in self.tasks}
 
 
-class LRScheduler(object):
-    def __init__(self, optimizer, threshold=0.0, **kwargs):
-        self.lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode='max', threshold=threshold, **kwargs)
+class DelayerScheduler(torch.optim.lr_scheduler._LRScheduler):
+    def __init__(self, optimizer, delay: int, base_scheduler: torch.optim.lr_scheduler._LRScheduler):
+        self.nb_steps = -1
+        self.delay = delay
+        self.base_scheduler = base_scheduler
+        super(DelayerScheduler, self).__init__(optimizer)
 
-    def step(self, score):
-        self.lr_scheduler.step(score)
+    def step(self, *args, **kwargs):
+        self.nb_steps += 1
+        if self.steps > self.delay:
+            self.base_scheduler.step(*args, **kwargs)
 
-    def __repr__(self):
-        return '<LrScheduler lr="{:g}" steps="{}" patience="{}" threshold="{}"/>' \
-            .format(self.lr_scheduler.optimizer.param_groups[0]['lr'],
-                    self.lr_scheduler.num_bad_epochs,
-                    self.lr_scheduler.patience,
-                    self.lr_scheduler.threshold)
+    @property
+    def waiting(self):
+        return self.steps <= self.delay
+
+    @property
+    def steps(self):
+        return self.nb_steps
 
 
 class Trainer(object):
@@ -178,12 +185,99 @@ class Trainer(object):
     report_freq
     checks_per_epoch
     """
+
+    @staticmethod
+    def get_optimizer(optimizer_name: str) -> ClassVar[Optimizer]:
+        """ Allows for getting new optimizers from the torch-optimizer library without
+        breaking previous behaviour
+
+        :param optimizer_name: Optimizer Name, eg. Adam, SGD, Ranger
+        :return: Optimizer class
+        """
+        if hasattr(optim, optimizer_name):
+            return getattr(optim, optimizer_name)
+        elif hasattr(ext_optims, optimizer_name):
+            return getattr(ext_optims, optimizer_name)
+
+    def print_lr_scheduler(self, lr_scheduler: optim.lr_scheduler._LRScheduler):
+        """ Display information using print about a LRScheduler
+
+        :param lr_scheduler:
+        :return:
+        """
+        # If we use a Delayer, we print information about the delayer until it finishes waiting
+        if isinstance(lr_scheduler, DelayerScheduler):
+            if lr_scheduler.waiting:
+                print('<LRScheduler type="{}" lr="{:g}" delay="{}" steps="{}"/>'.format(
+                    type(lr_scheduler).__name__,
+                    self.optimizer.param_groups[0]['lr'],
+                    lr_scheduler.delay,
+                    lr_scheduler.steps
+                ))
+            else:
+                self.print_lr_scheduler(lr_scheduler.base_scheduler)
+        # Continue to display former information for ReduceLROnPlateau
+        elif isinstance(lr_scheduler, optim.lr_scheduler.ReduceLROnPlateau):
+            print('<LrScheduler type="{}" lr="{:g}" steps="{}" patience="{}" threshold="{}"/>'.format(
+                type(lr_scheduler).__name__,
+                self.optimizer.param_groups[0]['lr'],
+                lr_scheduler.num_bad_epochs,
+                lr_scheduler.patience,
+                lr_scheduler.threshold
+            ))
+        # There are no specific information to display for some schedulers if not all
+        else:
+            print('<LrScheduler type="{}" lr="{:g}"/>'.format(
+                type(lr_scheduler).__name__,
+                self.optimizer.param_groups[0]['lr']
+            ))
+
+    def get_scheduler(self, settings) -> optim.lr_scheduler._LRScheduler:
+        """ Initialize a LRScheduler based on settings
+
+        :param settings: Settings fed through JSON
+        :return: The LRScheduler required by the settings, disregarding delay
+        """
+        if not self.optimizer:
+            raise Exception("Scheduler needs to be set after optimizer")
+        if settings.lr_scheduler == "ReduceLROnPlateau":
+            return optim.lr_scheduler.ReduceLROnPlateau(
+                self.optimizer, mode='max', factor=settings.lr_factor,
+                patience=settings.lr_patience, min_lr=settings.min_lr
+            )
+        elif settings.lr_scheduler == "CosineAnnealingLR":
+            return optim.lr_scheduler.CosineAnnealingLR(
+                self.optimizer, T_max=settings.lr_T_max, eta_min=settings.min_lr
+            )
+        elif settings.lr_scheduler == "CosineAnnealingWarmRestarts":
+            return optim.lr_scheduler.CosineAnnealingWarmRestarts(
+                self.optimizer, T_0=settings.lr_T_0, eta_min=settings.min_lr
+            )
+        else:
+            raise ValueError(f"Unknown scheduler {settings.lr_scheduler}")
+
+    def step_lr_scheduler(self, loss):
+        """ Apply a step to the LRScheduler.
+
+        Some scheduler use loss as the information for steps, some use the epoch_id.
+
+        :param loss: Loss computed from the TaskScheduler
+        """
+        use_loss = isinstance(self.lr_scheduler, optim.lr_scheduler.ReduceLROnPlateau)
+        if isinstance(self.lr_scheduler, DelayerScheduler):
+            use_loss = isinstance(self.lr_scheduler.base_scheduler, optim.lr_scheduler.ReduceLROnPlateau)
+
+        if use_loss:
+            self.lr_scheduler.step(metrics=loss)
+        else:
+            self.lr_scheduler.step(epoch=None)
+
     def __init__(self, settings, model, dataset, num_instances):
         self.target_task = get_target_task(settings)
         self.verbose = settings.verbose
         self.dataset = dataset
         self.model = model
-        self.optimizer = getattr(optim, settings.optimizer)(
+        self.optimizer = self.get_optimizer(settings.optimizer)(
             model.parameters(), lr=settings.lr)
         self.clip_norm = settings.clip_norm
 
@@ -199,9 +293,18 @@ class Trainer(object):
             self.check_freq = 0  # no checks
 
         self.task_scheduler = TaskScheduler(settings)
-        self.lr_scheduler = LRScheduler(
-            self.optimizer, factor=settings.lr_factor,
-            patience=settings.lr_patience, min_lr=settings.min_lr)
+
+        lr_scheduler: optim.lr_scheduler._LRScheduler = self.get_scheduler(
+            settings
+        )
+        if settings.lr_delayed > 0:
+            self.lr_scheduler = DelayerScheduler(
+                optimizer=self.optimizer,
+                delay=settings.lr_delayed,
+                base_scheduler=lr_scheduler
+            )
+        else:
+            self.lr_scheduler = lr_scheduler
 
         if settings.verbose:
             print()
@@ -214,7 +317,7 @@ class Trainer(object):
             print()
             print("::: LR schedule :::")
             print()
-            print(self.lr_scheduler)
+            self.print_lr_scheduler(self.lr_scheduler)
             print()
 
     def weight_loss(self, loss):
@@ -278,12 +381,12 @@ class Trainer(object):
             dev_scores['lm_bwd'] = dev_loss['lm_bwd']
 
         self.task_scheduler.step(dev_scores, self.model)
-        self.lr_scheduler.step(dev_scores[self.target_task])
+        self.step_lr_scheduler(loss=dev_scores[self.target_task])
 
         if self.verbose:
             print(self.task_scheduler)
             print()
-            print(self.lr_scheduler)
+            self.print_lr_scheduler(self.lr_scheduler)
             print()
 
         return dev_scores

@@ -123,12 +123,22 @@
   "word_dropout": 0.0, // input word dropout
   "optimizer": "Adam", // optimizer type
   "clip_norm": 5.0, // clip norm of gradient up to this value
+
+  "lr_scheduler": "ReduceLROnPlateau", // LR Scheduler to use: ReduceLROnPlateau,
+  "lr_delayed":0, // Use only with other schedulers than ReduceLRONPlateau for efficiency
   "lr": 0.001,
+  "min_lr": 0.000001, // minimum learning rate
+  "checks_per_epoch": 1, // check model on dev-set so many times during epoch
+
+  // ReduceLROnPlateau parameters
   "lr_factor": 0.75, // lr schedule (decrease lr by this factor after `lr_patience` epochs
   // without improvement on dev-set data)
-  "min_lr": 0.000001, // minimum learning rate
   "lr_patience": 2, // patience for lr schedule
-  "checks_per_epoch": 1, // check model on dev-set so many times during epoch
+
+  // CosineAnnealingLR parameters
+  "lr_T_max": 40,
+  // CosineAnnealingWarmRestarts parameters
+  "lr_T_0": 10,  // Number of iteration before first restart
 
   // * Model hyperparameters
   "wemb_dim": 0, // word-level embedding dimension (if 0 no word embeddings are use)
