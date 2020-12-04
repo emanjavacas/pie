@@ -242,7 +242,7 @@ class Trainer(object):
             raise Exception("Scheduler needs to be set after optimizer")
         if settings.lr_scheduler == "ReduceLROnPlateau":
             return optim.lr_scheduler.ReduceLROnPlateau(
-                self.optimizer, factor=settings.lr_factor,
+                self.optimizer, mode='max', factor=settings.lr_factor,
                 patience=settings.lr_patience, min_lr=settings.min_lr
             )
         elif settings.lr_scheduler == "CosineAnnealingLR":
