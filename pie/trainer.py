@@ -150,19 +150,25 @@ class TaskScheduler(object):
 
 
 class LRScheduler(object):
-    def __init__(self, optimizer, threshold=0.0, **kwargs):
-        self.lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode='max', threshold=threshold, **kwargs)
+    def __init__(self, optimizer, lr_scheduler='ReduceLROnPlateau', **kwargs)
+        self.lr_scheduler = getattr(optim.lr_scheduler, lr_scheduler)(
+            optimizer, **kwargs)
 
     def step(self, score):
-        self.lr_scheduler.step(score)
+        if isinstance(self.lr_scheduler, optim.lr_scheduler.ReduceLROnPlateau):
+            self.lr_scheduler.step(score)
+        else:
+            slef.lr_scheduler.step()
 
     def __repr__(self):
-        return '<LrScheduler lr="{:g}" steps="{}" patience="{}" threshold="{}"/>' \
-            .format(self.lr_scheduler.optimizer.param_groups[0]['lr'],
-                    self.lr_scheduler.num_bad_epochs,
-                    self.lr_scheduler.patience,
-                    self.lr_scheduler.threshold)
+        res = '<LrScheduler lr="{:g}"'.format(
+            self.lr_scheduler.optimizer.param_groups[0]['lr'])
+        for key in dir(self.lr_scheduler):
+            val = getattr(self.lr_scheduler, key)
+            if (not key.startswith('__')) and isinstance(val, (str, float, int)):
+                res += ' {}="{}"'.format(key, val)
+        res += '/>'
+        return res
 
 
 class Trainer(object):
@@ -200,8 +206,7 @@ class Trainer(object):
 
         self.task_scheduler = TaskScheduler(settings)
         self.lr_scheduler = LRScheduler(
-            self.optimizer, factor=settings.lr_factor,
-            patience=settings.lr_patience, min_lr=settings.min_lr)
+            self.optimizer, settings.lr_scheduler, **settings.lr_scheduler_params)
 
         if settings.verbose:
             print()
