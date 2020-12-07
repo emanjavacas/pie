@@ -161,7 +161,8 @@ class LRScheduler(object):
             slef.lr_scheduler.step()
 
     def __repr__(self):
-        res = '<LrScheduler lr="{:g}"'.format(
+        res = '<LrScheduler="{}" lr="{:g}"'.format(
+            self.lr_scheduler.__class__.__name__,
             self.lr_scheduler.optimizer.param_groups[0]['lr'])
         for key in dir(self.lr_scheduler):
             val = getattr(self.lr_scheduler, key)
