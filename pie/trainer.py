@@ -150,20 +150,30 @@ class TaskScheduler(object):
 
 
 class LRScheduler(object):
-    def __init__(self, optimizer, lr_scheduler='ReduceLROnPlateau', **kwargs):
+    def __init__(self, optimizer, lr_scheduler='ReduceLROnPlateau', delay=0, **kwargs):
+        self.nb_steps: int = 0
+        self.delay: int = delay
         self.lr_scheduler = getattr(optim.lr_scheduler, lr_scheduler)(
             optimizer, **kwargs)
 
     def step(self, score):
+        self.nb_steps += 1
+
+        # If we have a delay, we do not apply the step() method of the lr_scheduler until it's reached
+        if self.delay and self.nb_steps <= self.delay:
+            return
+
         if isinstance(self.lr_scheduler, optim.lr_scheduler.ReduceLROnPlateau):
             self.lr_scheduler.step(score)
         else:
             self.lr_scheduler.step()
 
     def __repr__(self):
-        res = '<LrScheduler="{}" lr="{:g}"'.format(
+        res = '<LrScheduler="{}" lr="{:g}" delay="{}" steps="{}"'.format(
             self.lr_scheduler.__class__.__name__,
-            self.lr_scheduler.optimizer.param_groups[0]['lr'])
+            self.lr_scheduler.optimizer.param_groups[0]['lr'],
+            self.delay,
+            self.nb_steps)
         for key in dir(self.lr_scheduler):
             val = getattr(self.lr_scheduler, key)
             if (not key.startswith('__')) and isinstance(val, (str, float, int)):
@@ -207,7 +217,11 @@ class Trainer(object):
 
         self.task_scheduler = TaskScheduler(settings)
         self.lr_scheduler = LRScheduler(
-            self.optimizer, settings.lr_scheduler, **settings.lr_scheduler_params)
+            self.optimizer,
+            lr_scheduler=settings.lr_scheduler,
+            delay=settings.lr_scheduler_delay,
+            **settings.lr_scheduler_params
+        )
 
         if settings.verbose:
             print()

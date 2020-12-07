@@ -126,6 +126,7 @@
   "lr": 0.001,
 
   "lr_scheduler": "ReduceLROnPlateau",
+  "lr_scheduler_delay": 0, // Number of steps without using the lr_scheduler
   "lr_scheduler_params": {
     // needs to be adapted if lr_scheduler is not ReduceLROnPlateau
     "mode": "max",
