@@ -150,7 +150,7 @@ class TaskScheduler(object):
 
 
 class LRScheduler(object):
-    def __init__(self, optimizer, lr_scheduler='ReduceLROnPlateau', **kwargs)
+    def __init__(self, optimizer, lr_scheduler='ReduceLROnPlateau', **kwargs):
         self.lr_scheduler = getattr(optim.lr_scheduler, lr_scheduler)(
             optimizer, **kwargs)
 
@@ -158,7 +158,7 @@ class LRScheduler(object):
         if isinstance(self.lr_scheduler, optim.lr_scheduler.ReduceLROnPlateau):
             self.lr_scheduler.step(score)
         else:
-            slef.lr_scheduler.step()
+            self.lr_scheduler.step()
 
     def __repr__(self):
         res = '<LrScheduler="{}" lr="{:g}"'.format(
