@@ -329,15 +329,18 @@ class AttentionalDecoder(nn.Module):
         bos = bos or self.label_encoder.get_bos()
         hidden, batch, device = None, enc_outs.size(1), enc_outs.device
         inp = torch.zeros(batch, dtype=torch.int64, device=device) + bos
-        hyps, scores = [], [0 for _ in range(batch)]
+        hyps = []
+        final_scores = torch.tensor([0 for _ in range(batch)], dtype=torch.float64, device="cpu")
 
         # As we go, we'll reduce the tensor size by popping finished prediction
         #  To keep adding new characters to the right words, we
-        #  store and keep updated a table of {Tensor Row ID: Batch Original ID}
+        #  store and keep updated a Tensor where Tensor Index -> Batch Original ID
         #  where Batch Original ID is the Word ID (batch_size = number of words)
-        tensor_to_batch_indexes = {
-            x: x for x in range(batch)
-        }
+        tensor_to_original_batch_indexes = torch.tensor(
+            list(range(batch)),
+            dtype=torch.int64,
+            device=device
+        )  # Tensor(batch_size)
 
         for _ in range(max_seq_len):
 
@@ -374,20 +377,21 @@ class AttentionalDecoder(nn.Module):
             #  not equal to 0. It can be use as a (mask) selector for other tensors (see below)
             keep = torch.nonzero(non_eos).squeeze(1)  # Tensor(dtype=int)
 
-            # Add new chars to hypotheses
-            #   We prepare a list the size of the output, filling it with EOS
-            #   We then iterate over score and inp (same sized tensors) and add to our
-            prediction_run_output = [eos for _ in range(batch)]
+            # We prepare a sequence output made of EOS which we'll fill with predictions
+            #   torch.full() takes size as tuple for first argument, filling value as second
+            seq_output = torch.full((batch, ), eos, device=device, dtype=torch.int64)
 
-            for ind, (hyp, sc) in enumerate(zip(inp.tolist(), score.tolist())):
-                # To add the hypothesis to the right word, we use the associated Tensor->Batch indexes
-                prediction_run_output[tensor_to_batch_indexes[ind]] = hyp
-                # Probability are only added if they are not EOS chars
-                if hyp != eos:
-                    scores[tensor_to_batch_indexes[ind]] += sc
+            # We replace the value at indexes *tensor_to_original_batch_indexes* by the prediction
+            #   of current sequence output
+            seq_output[tensor_to_original_batch_indexes] = inp
+
+            # We set the score where we have EOS predictions as 0
+            score[inp == eos] = 0
+            # So that we can add the score to finale scores
+            final_scores[tensor_to_original_batch_indexes] += score.cpu()
 
             # We add this new output to the final hypothesis
-            hyps.append(prediction_run_output)
+            hyps.append(seq_output.tolist())
 
             # If there nothing else than EOS, it's the end of the prediction time
             if non_eos.sum() == 0:
@@ -395,10 +399,7 @@ class AttentionalDecoder(nn.Module):
 
             # Otherwise, we update the tensor_to_batch_indexes by transferring
             #   the current associated index with the new indexes
-            tensor_to_batch_indexes = {
-                elem: tensor_to_batch_indexes[former_index]
-                for elem, former_index in enumerate(keep.tolist())
-            }
+            tensor_to_original_batch_indexes = tensor_to_original_batch_indexes[keep]
 
             # We use the Tensor of indexes that are not EOS to filter out
             #   Elements of the batch that are EOS.
@@ -421,9 +422,9 @@ class AttentionalDecoder(nn.Module):
             enc_outs = enc_outs[:max_seq_len, keep, :]
 
         hyps = [self.label_encoder.stringify(hyp) for hyp in zip(*hyps)]
-        scores = [s / (len(hyp) + TINY) for s, hyp in zip(scores, hyps)]
+        final_scores = [s / (len(hyp) + TINY) for s, hyp in zip(final_scores, hyps)]
 
-        return hyps, scores
+        return hyps, final_scores
 
     def predict_beam(self, enc_outs, lengths,
                      max_seq_len=50, width=12, eos=None, bos=None,
