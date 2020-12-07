@@ -1,4 +1,5 @@
 
+import inspect
 import os
 import uuid
 import logging
@@ -6,7 +7,6 @@ import time
 import collections
 import random
 import tempfile
-
 
 import tqdm
 
@@ -150,16 +150,23 @@ class TaskScheduler(object):
 
 
 class LRScheduler(object):
-    def __init__(self, optimizer, lr_scheduler='ReduceLROnPlateau', delay=0, **kwargs):
+    def __init__(self, optimizer,
+                 lr_scheduler='ReduceLROnPlateau',
+                 delay=0, **kwargs):
+
         self.nb_steps: int = 0
         self.delay: int = delay
-        self.lr_scheduler = getattr(optim.lr_scheduler, lr_scheduler)(
-            optimizer, **kwargs)
+        lr_scheduler_cls = getattr(optim.lr_scheduler, lr_scheduler)
+        params = inspect.signature(lr_scheduler_cls).parameters
+        self.lr_scheduler = lr_scheduler_cls(
+            optimizer,
+            # pick kwargs that fit the selected scheduler
+            **{kwarg: val for kwarg, val in kwargs.items() if kwarg in params})
 
     def step(self, score):
         self.nb_steps += 1
 
-        # If we have a delay, we do not apply the step() method of the lr_scheduler until it's reached
+        # apply the step() method of the lr_scheduler when delay is reached
         if self.delay and self.nb_steps <= self.delay:
             return
 
@@ -220,8 +227,7 @@ class Trainer(object):
             self.optimizer,
             lr_scheduler=settings.lr_scheduler,
             delay=settings.lr_scheduler_delay,
-            **settings.lr_scheduler_params
-        )
+            **settings.lr_scheduler_params)
 
         if settings.verbose:
             print()
