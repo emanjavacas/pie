@@ -370,9 +370,9 @@ class AttentionalDecoder(nn.Module):
             non_eos = (inp != eos)  # Tensor(batch_size, dtype=bool)
 
             # Using this mask, we retrieve the Indexes of items that are not EOS
-            #  nonzero() returns a tuple where the first item is a Tensor
-            #  with the indexes. It can be use as a selector for other tensors (see below)
-            keep, *_ = torch.nonzero(non_eos, as_tuple=True)  # Tensor(dtype=int)
+            #  nonzero() returns a 2D Tensor where each row is an index
+            #  not equal to 0. It can be use as a (mask) selector for other tensors (see below)
+            keep = torch.nonzero(non_eos).squeeze(1)  # Tensor(dtype=int)
 
             # Add new chars to hypotheses
             #   We prepare a list the size of the output, filling it with EOS
@@ -390,7 +390,7 @@ class AttentionalDecoder(nn.Module):
             hyps.append(prediction_run_output)
 
             # If there nothing else than EOS, it's the end of the prediction time
-            if True not in non_eos:
+            if non_eos.sum() == 0:
                 break
 
             # Otherwise, we update the tensor_to_batch_indexes by transferring
