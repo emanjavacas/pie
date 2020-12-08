@@ -1,0 +1,48 @@
+{
+      "params": {
+        // Example for changing a category
+        // "cemb_type": {
+        //     "type": "suggest_categorical",
+        //     "args": [
+        //         ["cnn", "rnn"]
+        //     ]
+        // },
+
+        // Example for changing an INT dimension
+        // "cemb_dim": {
+        //     "type": "suggest_int",
+        //     "args": [200, 600]
+        // }
+
+        // Example for nested
+        // "task_defaults": {
+        //     "decoder": {
+        //         "type": "suggest_categorical",
+        //         "args": [["linear", "crf"]]
+        //      }
+        // }
+
+        // See more options using the same
+        //   Architecture there : https://optuna.readthedocs.io/en/stable/tutorial/configurations.html#defining-parameter-spaces
+      },
+      // Pruner are available there : https://optuna.readthedocs.io/en/stable/reference/pruners.html
+      //   Follow this scheme for more detail
+      "pruner": {
+          "name": null,  // eg. null = No pruners, "MedianPruner" = Median pruner, etc.
+          "args": [],
+          "kwargs": {}
+      },
+      "study": {
+        "name": "default-optimization-name",
+        "gpus": [],
+        // "taskname/category/metric" eg. "lemma/all/accuracy". Defaults on focus accuracy
+        "optimize_metric": null,
+        "save_pruned": false,
+        "save_completed": true
+      },
+      "sampler": {
+        "name": null,   // eg. null = No pruners, "GridSampler" = GridSampler, etc.
+        "args": [],
+        "kwargs": {}
+      }
+  }

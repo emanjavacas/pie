@@ -1,0 +1,2 @@
+optuna<1.6.0
+plotly<4.9.0

@@ -3,11 +3,12 @@ import os
 import yaml
 import json
 from json_minify import json_minify
-
+from copy import deepcopy
 from pie import utils
 
 
 DEFAULTPATH = os.sep.join([os.path.dirname(__file__), 'default_settings.json'])
+OPT_DEFAULT_PATH = os.sep.join([os.path.dirname(__file__), 'default_optuna.json'])
 
 
 class Settings(dict):
@@ -38,6 +39,9 @@ class Settings(dict):
     def __delitem__(self, key):
         super(Settings, self).__delitem__(key)
         del self.__dict__[key]
+
+    def __deepcopy__(self, memo=None):
+        return Settings(deepcopy(dict(self.__dict__), memo=memo))
 
 
 def merge_task_defaults(settings):
@@ -109,13 +113,21 @@ def check_settings(settings):
     return settings
 
 
-def settings_from_file(config_path):
+def settings_from_file(
+        config_path: str,
+        default_path: str = DEFAULTPATH,
+        apply_task_default: bool = True
+):
     """Loads and parses a parameter file.
 
     Parameters
     ===========
     config_path : str
         The path to the parameter file, formatted as json.
+    default_path : str
+        The path to the file that contains the default values
+    apply_task_default : bool
+        Apply the defaults value to tasks
 
     Returns
     ===========
@@ -130,7 +142,7 @@ def settings_from_file(config_path):
             "Couldn't read config file: %s. Exception: %s" % (config_path, str(e)))
 
     # add default values for missing settings:
-    with open(DEFAULTPATH, 'r') as f:
+    with open(default_path, 'r') as f:
         defaults = json.loads(json_minify(f.read()))
 
     settings = Settings(
@@ -147,4 +159,7 @@ def settings_from_file(config_path):
         print("\n::: Loaded Config :::\n")
         print(yaml.dump(dict(settings)))
 
-    return check_settings(merge_task_defaults(settings))
+    if apply_task_default:
+        return check_settings(merge_task_defaults(settings))
+    else:
+        return settings

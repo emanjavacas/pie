@@ -7,6 +7,7 @@
 import io
 import os
 import sys
+import glob
 from shutil import rmtree
 
 from setuptools import find_packages, setup, Command
@@ -27,9 +28,12 @@ with open(os.path.join(here, 'requirements.txt')) as f:
     REQUIRED = f.read().splitlines()
 
 # What packages are optional?
-EXTRAS = {
-    # 'fancy feature': ['django'],
-}
+EXTRAS = {}
+
+for file in glob.glob(os.path.join(here, 'requirements-*.txt')):
+    with open(file) as f:
+        feature_name = "-".join(os.path.basename(file)[:-4].split("-")[1:])
+        EXTRAS[feature_name] = f.read().splitlines()
 
 # The rest you shouldn't have to touch too much :)
 # ------------------------------------------------
