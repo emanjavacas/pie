@@ -115,7 +115,7 @@ class RNNEmbedding(nn.Module):
         char, nchars = char[:, sort], nchars[sort]
         if isinstance(self.rnn, nn.RNNBase):
             outs, emb = self.rnn(
-                nn.utils.rnn.pack_padded_sequence(char, nchars), hidden)
+                nn.utils.rnn.pack_padded_sequence(char, nchars.cpu()), hidden)
             outs, _ = nn.utils.rnn.pad_packed_sequence(outs)
             if isinstance(emb, tuple):
                 emb, _ = emb

@@ -38,7 +38,7 @@ class RNNEncoder(nn.Module):
 
         _, sort = torch.sort(lengths, descending=True)
         _, unsort = sort.sort()
-        inp = nn.utils.rnn.pack_padded_sequence(inp[:, sort], lengths[sort])
+        inp = nn.utils.rnn.pack_padded_sequence(inp[:, sort], lengths[sort].cpu())
         outs, hiddens = [], []
 
         for layer, rnn in enumerate(self.rnn):
@@ -46,7 +46,7 @@ class RNNEncoder(nn.Module):
             if layer > 0:
                 inp, lengths = nn.utils.rnn.pad_packed_sequence(inp)
                 inp = torch_utils.sequential_dropout(inp, self.dropout, self.training)
-                inp = nn.utils.rnn.pack_padded_sequence(inp, lengths)
+                inp = nn.utils.rnn.pack_padded_sequence(inp, lengths.cpu())
             # run layer
             louts, lhidden = rnn(inp, hidden[layer])
             # unpack
