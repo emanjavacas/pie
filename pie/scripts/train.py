@@ -6,7 +6,7 @@ from datetime import datetime
 import logging
 
 import pie
-from pie.settings import settings_from_file
+from pie.settings import settings_from_file, get_targets, get_fname_infix
 from pie.trainer import Trainer
 from pie import initialization
 from pie.data import Dataset, Reader, MultiLabelEncoder
@@ -17,18 +17,6 @@ from pie import optimize
 import random
 import numpy
 import torch
-
-
-def get_targets(settings):
-    return [task['name'] for task in settings.tasks if task.get('target')]
-
-
-def get_fname_infix(settings):
-    # fname
-    fname = os.path.join(settings.modelpath, settings.modelname)
-    timestamp = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
-    infix = '+'.join(get_targets(settings)) + '-' + timestamp
-    return fname, infix
 
 
 def run(settings):

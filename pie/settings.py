@@ -1,5 +1,6 @@
 
 import os
+from datetime import datetime
 import yaml
 import json
 from json_minify import json_minify
@@ -148,3 +149,15 @@ def settings_from_file(config_path):
         print(yaml.dump(dict(settings)))
 
     return check_settings(merge_task_defaults(settings))
+
+
+def get_targets(settings):
+    return [task['name'] for task in settings.tasks if task.get('target')]
+
+
+def get_fname_infix(settings):
+    # fname
+    fname = os.path.join(settings.modelpath, settings.modelname)
+    timestamp = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
+    infix = '+'.join(get_targets(settings)) + '-' + timestamp
+    return fname, infix
