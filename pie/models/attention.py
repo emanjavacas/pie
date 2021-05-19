@@ -160,6 +160,7 @@ class Attention(nn.Module):
 
         # apply source length mask
         mask = torch_utils.make_length_mask(lengths)
+        
         # (batch x src_seq_len) => (trg_seq_len x batch x src_seq_len)
         mask = mask.unsqueeze(0).expand_as(weights)
         # weights = weights * mask.float()
