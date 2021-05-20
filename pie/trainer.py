@@ -1,4 +1,3 @@
-
 import inspect
 import os
 import uuid
@@ -7,12 +6,15 @@ import time
 import collections
 import random
 import tempfile
+from typing import ClassVar
 
 import tqdm
 
 import torch
 from torch import optim
+from torch.optim import Optimizer
 from torch.nn.utils import clip_grad_norm_
+import torch_optimizer as ext_optims
 
 logging.basicConfig(format='%(asctime)s : %(message)s', level=logging.INFO)
 
@@ -207,8 +209,8 @@ class Trainer(object):
         self.verbose = settings.verbose
         self.dataset = dataset
         self.model = model
-        self.optimizer = getattr(optim, settings.optimizer)(
-            model.parameters(), lr=settings.lr)
+        self.optimizer = self.get_optimizer(settings.optimizer)(
+            model.parameters(), lr=settings.lr, **settings.optimizer_params)
         self.clip_norm = settings.clip_norm
 
         self.report_freq = settings.report_freq
@@ -242,6 +244,20 @@ class Trainer(object):
             print()
             print(self.lr_scheduler)
             print()
+
+    @staticmethod
+    def get_optimizer(optimizer_name: str) -> ClassVar[Optimizer]:
+        """ Allows for getting new optimizers from the torch-optimizer library without
+        breaking previous behaviour
+        :param optimizer_name: Optimizer Name, eg. Adam, SGD, Ranger
+        :return: Optimizer class
+        """
+        if hasattr(optim, optimizer_name):
+            return getattr(optim, optimizer_name)
+        elif hasattr(ext_optims, optimizer_name):
+            return getattr(ext_optims, optimizer_name)
+        else:
+            raise ValueError("Unknown optimizer %s " % optimizer_name)
 
     def weight_loss(self, loss):
         """

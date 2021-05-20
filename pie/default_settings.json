@@ -122,6 +122,9 @@
   "dropout": 0.0, // dropout
   "word_dropout": 0.0, // input word dropout
   "optimizer": "Adam", // optimizer type
+  "optimizer_params": {
+    // Advance Optimizers params
+  },
   "clip_norm": 5.0, // clip norm of gradient up to this value
   "lr": 0.001,
 
