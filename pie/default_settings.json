@@ -73,7 +73,7 @@
       "schedule": {
         "patience": 2,
         "threshold": 0.001,
-        // Metric to feat on
+        // Metric to fit on
         // Can be "accuracy", "balanced-accuracy", "f1", "precision" or "recall"
          "evaluation": "accuracy"
       },
