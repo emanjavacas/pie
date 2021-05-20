@@ -14,12 +14,12 @@ from setuptools import find_packages, setup, Command
 here = os.path.abspath(os.path.dirname(__file__))
 
 # Package meta-data.
-NAME = 'nlp-pie'
-DESCRIPTION = 'A Framework for Joint Learning of Sequence Labeling Tasks'
-URL = 'https://github.com/emanjavacas/pie'
+NAME = 'PaPie'
+DESCRIPTION = 'A Framework for Joint Learning of Sequence Labeling Tasks, forked from Pie'
+URL = 'https://github.com/lascivaroma/PaPie'
 AUTHOR = 'Enrique Manjavacas; Mike Kestemont; Thibault Clerice'
 REQUIRES_PYTHON = '>=3.6.0'
-VERSION = "0.3.7c"
+VERSION = "0.3.8"
 
 # What packages are required for this module to be executed?
 
