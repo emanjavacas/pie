@@ -106,6 +106,12 @@ def check_settings(settings):
     if not has_target:
         raise ValueError("Needs at least one target task")
 
+    # backward compatibility
+    if "lr_patience" in settings:
+        settings.lr_scheduler_params['patience'] = settings.lr_patience
+    if "lr_factor" in settings:
+        settings.lr_scheduler_params['factor'] = settings.lr_factor
+
     return settings
 
 

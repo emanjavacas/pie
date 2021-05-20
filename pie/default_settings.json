@@ -124,10 +124,17 @@
   "optimizer": "Adam", // optimizer type
   "clip_norm": 5.0, // clip norm of gradient up to this value
   "lr": 0.001,
-  "lr_factor": 0.75, // lr schedule (decrease lr by this factor after `lr_patience` epochs
-  // without improvement on dev-set data)
-  "min_lr": 0.000001, // minimum learning rate
-  "lr_patience": 2, // patience for lr schedule
+
+  "lr_scheduler": "ReduceLROnPlateau",
+  "lr_scheduler_delay": 0, // Number of steps without using the lr_scheduler
+  "lr_scheduler_params": {
+    // needs to be adapted if lr_scheduler is not ReduceLROnPlateau
+    "mode": "max",
+    "factor": 0.75,
+    "patience": 2,
+    "min_lr": 0.000001
+  },
+
   "checks_per_epoch": 1, // check model on dev-set so many times during epoch
 
   // * Model hyperparameters
