@@ -19,7 +19,7 @@ DESCRIPTION = 'A Framework for Joint Learning of Sequence Labeling Tasks, forked
 URL = 'https://github.com/lascivaroma/PaPie'
 AUTHOR = 'Enrique Manjavacas; Mike Kestemont; Thibault Clerice'
 REQUIRES_PYTHON = '>=3.6.0'
-VERSION = "0.3.8"
+VERSION = "0.3.9"
 
 # What packages are required for this module to be executed?
 
