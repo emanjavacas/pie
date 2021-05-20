@@ -411,7 +411,10 @@ class AttentionalDecoder(nn.Module):
 
             # However, hidden is 3D (Tensor(1 x batch_size x _)
             #   So we filter at the second dimension directly
-            hidden = hidden[:, keep, :]
+            if isinstance(hidden, tuple):  # LSTM
+                hidden = tuple([hid[:, keep, :] for hid in hidden])
+            else:  # GRU
+                hidden = hidden[:, keep, :]
 
             # enc_outs is Tensor(max_seq_len x batch x hidden_size)
             #   Seq_len is supposed to be equal to max(lengths),
