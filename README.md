@@ -1,9 +1,11 @@
 
-# PIE: A Framework for Joint Learning of Sequence Labeling Tasks
+# (Pa)PIE: A Framework for Joint Learning of Sequence Labeling Tasks
 
 [![DOI](https://zenodo.org/badge/131014015.svg)](https://zenodo.org/badge/latestdoi/131014015)
 
 ![Improving Lemmatization of Non-Standard Languages with Joint Learning (NAACL19 Paper)](https://www.aclweb.org/anthology/N19-1153/)
+
+**Warning:** This is a fork from [pie](https://github.com/emanjavacas/pie). It provides some sometime *unstable* improvement over the original software.
 
 PIE was primarily conceived to make experimentation on sequence labeling of variation-rich languages easy and user-friendly. PIE has been tested mostly for Lemmatization but other SoTA accuracies from other tasks like POS have been reproduced (cf. Plank et al ). PIE is *highly* configurable both in terms of input preprocessing and model definition, in principle not requiring users to write any code (instead experiments are defined with json files). It is highly modular and therefore easy to extend. It includes transductive lemmatization as an additional sequence labeling task and, finally, it is reasonably fast and memory efficient.
 
