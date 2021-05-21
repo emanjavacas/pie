@@ -76,9 +76,16 @@ def tag_pipe(model_spec, device, batch_size, lower, beam_width, use_beam, tokeni
 @click.option('--markdown', default=False, is_flag=True)
 @click.option('--use_beam', is_flag=True, default=False)
 @click.option('--beam_width', type=int, default=12)
+@click.option('--confusion', default=False, is_flag=True,
+              help="Show the confusion matrix for most common terms at least")
+@click.option('--report', default=False, is_flag=True, help="Show metrics for each label on top of the class results")
+@click.option('--markdown', default=False, is_flag=True, help="Display results in markdown")
+@click.option("--export", default=False, is_flag=True, help="Export the data from the evaluation")
+@click.option("--export-name", default="full_report.json", help="Name of the exported file")
 def evaluate(model_path, test_path, train_path, settings, batch_size,
              buffer_size, device, model_info, full, confusion, report,
-             markdown, use_beam, beam_width):
+             markdown, export, export_name,
+             use_beam, beam_width):
     """ Evaluate [MODEL_PATH] against [TEST_PATH] using [TRAIN_PATH] to compute
     unknown tokens"""
     import pie.scripts.evaluate
@@ -87,7 +94,9 @@ def evaluate(model_path, test_path, train_path, settings, batch_size,
         settings=settings, batch_size=batch_size, buffer_size=buffer_size,
         device=device, model_info=model_info, full=full, confusion=confusion,
         report=report, markdown=markdown,
-        use_beam=use_beam, beam_width=beam_width)
+        use_beam=use_beam, beam_width=beam_width,
+        export_scorer=export, export_name=export_name
+    )
 
 
 @pie_cli.command("train")

@@ -5,7 +5,7 @@ from termcolor import colored
 from terminaltables import github_table
 from collections import Counter, defaultdict
 
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support, balanced_accuracy_score
 from sklearn.utils.multiclass import unique_labels
 import numpy as np
 from pie import utils
@@ -38,11 +38,13 @@ def compute_scores(trues, preds):
 
     with utils.shutup():
         p, r, f1, _ = precision_recall_fscore_support(trues, preds, average="macro")
+        b = format_score(balanced_accuracy_score(trues, preds))
         p = format_score(p)
         r = format_score(r)
         a = format_score(accuracy_score(trues, preds))
 
-    return {'accuracy': a, 'precision': p, 'recall': r, 'support': len(trues)}
+    return {'accuracy': a, 'precision': p, 'recall': r, 'support': len(trues),
+            'balanced-accuracy': b, 'f1': format_score(f1)}
 
 
 class Scorer(object):
@@ -130,6 +132,8 @@ class Scorer(object):
         support = len(amb_trues)
         if support > 0:
             output['ambiguous-tokens'] = compute_scores(amb_trues, amb_preds)
+
+        # compute scores for unknown targets
         support = len(unk_trg_trues)
         if support > 0:
             output['unknown-targets'] = compute_scores(unk_trg_trues, unk_trg_preds)
@@ -323,12 +327,23 @@ class Scorer(object):
 
     @staticmethod
     def scores_in_markdown(scores):
-        measures = ["accuracy", "precision", "recall", "support"]
+        measures = ["accuracy", "precision", "recall",
+                    "f1", "balanced-accuracy", "support"]
         table = [[""] + measures]
         for key in scores:
             table.append([key, *[scores[key][meas] for meas in measures]])
 
         return (github_table.GithubFlavoredMarkdownTable(table)).table
+
+    @property
+    def dict(self):
+        return {
+            "known_tokens": self.known_tokens,
+            "amb_tokens": self.amb_tokens,
+            "preds": self.preds,
+            "trues": self.trues,
+            "tokens": self.tokens
+        }
 
 
 def classification_report(y_true, y_pred, digits=2):

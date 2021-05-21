@@ -271,7 +271,10 @@ class Trainer(object):
         self.model.train()
         dev_scores = {}
         for task, scored in stored_scores.items():
-            dev_scores[task] = scored['all']['accuracy']
+            dev_scores[task] = scored['all'][
+                self.task_scheduler.tasks[task].get("evaluation", "accuracy")
+            ]
+
         # add lm scores
         if 'lm_fwd' in dev_loss or 'lm_bwd' in dev_loss:
             dev_scores['lm_fwd'] = dev_loss['lm_fwd']
